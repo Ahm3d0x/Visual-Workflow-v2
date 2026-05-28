@@ -145,11 +145,11 @@ export function ShareDialog({
   const [inviteError, setInviteError] = useState('');
   const [inviteSuccess, setInviteSuccess] = useState('');
 
-  const [publicLink, setPublicLink] = useState<WorkflowShareRecord | null>(null);
-  const [linkRole, setLinkRole] = useState<'commenter' | 'viewer'>('viewer');
+  const [publicLinks, setPublicLinks] = useState<WorkflowShareRecord[]>([]);
+  const [linkRole, setLinkRole] = useState<ShareRole>('viewer');
   const [linkExpiry, setLinkExpiry] = useState<number | undefined>(undefined);
   const [generatingLink, setGeneratingLink] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [linkError, setLinkError] = useState('');
 
   useEffect(() => {
@@ -157,8 +157,7 @@ export function ShareDialog({
     getWorkflowShares(workflowId).then((result) => {
       if (cancelled) return;
       setShares(result.filter((s) => s.user_id !== null));
-      const link = result.find((s) => s.user_id === null && s.share_token);
-      setPublicLink(link || null);
+      setPublicLinks(result.filter((s) => s.user_id === null && s.share_token));
       setLoadingShares(false);
     });
     return () => { cancelled = true; };
@@ -169,8 +168,7 @@ export function ShareDialog({
     setLoadingShares(true);
     const result = await getWorkflowShares(workflowId);
     setShares(result.filter((s) => s.user_id !== null));
-    const link = result.find((s) => s.user_id === null && s.share_token);
-    setPublicLink(link || null);
+    setPublicLinks(result.filter((s) => s.user_id === null && s.share_token));
     setLoadingShares(false);
   }, [workflowId]);
 
@@ -225,29 +223,23 @@ export function ShareDialog({
   }, [workflowId, workspaceId, linkRole, linkExpiry, loadShares]);
 
   // Copy link
-  const handleCopyLink = useCallback(async () => {
-    if (!publicLink?.share_token) return;
-    const url = `${window.location.origin}/en/share/${publicLink.share_token}`;
+  const handleCopyLink = useCallback(async (shareId: string, token: string) => {
+    const url = `${window.location.origin}/en/share/${token}`;
     await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [publicLink]);
+    setCopiedId(shareId);
+    setTimeout(() => setCopiedId(null), 2000);
+  }, []);
 
   // Revoke link
-  const handleRevokeLink = useCallback(async () => {
-    if (!publicLink) return;
-    const confirmed = window.confirm('Revoke the public share link? Anyone with the current link will lose access.');
+  const handleRevokeLink = useCallback(async (shareId: string) => {
+    const confirmed = window.confirm('Revoke this public share link? Anyone with this link will lose access.');
     if (!confirmed) return;
     startTransition(async () => {
-      await revokeShareLink(publicLink.id, workspaceId);
-      setPublicLink(null);
+      await revokeShareLink(shareId, workspaceId);
       await loadShares();
     });
-  }, [publicLink, workspaceId, loadShares]);
+  }, [workspaceId, loadShares]);
 
-  const publicLinkUrl = publicLink?.share_token
-    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/en/share/${publicLink.share_token}`
-    : '';
 
   return (
     // Backdrop
@@ -385,7 +377,7 @@ export function ShareDialog({
             <div className="flex items-center gap-2 mb-3">
               <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
                 <Globe className="w-3.5 h-3.5" />
-                Share Link
+                Share Links
               </label>
               {!canShareLinks && (
                 <span className="ml-auto flex items-center gap-1 text-[10px] text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">
@@ -404,121 +396,145 @@ export function ShareDialog({
                   View Plans →
                 </Link>
               </div>
-            ) : publicLink ? (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <div className="flex-1 flex items-center gap-2 bg-white/4 border border-white/8 rounded-xl px-3 py-2 min-w-0">
-                    <Link2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                    <span className="text-xs text-zinc-400 truncate font-mono">{publicLinkUrl}</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={handleCopyLink}
-                    className={cn(
-                      'h-9 px-3 rounded-xl font-semibold text-xs cursor-pointer gap-1.5 shrink-0 transition-all',
-                      copied
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-white/8 hover:bg-white/12 text-zinc-300'
+            ) : (
+              <div className="space-y-4">
+                {/* Generate link row (for admins/owners) */}
+                {canManage && (
+                  <div className="space-y-2 border-b border-white/6 pb-4">
+                    <p className="text-[11px] text-zinc-500">Create a new public link with custom permissions:</p>
+                    <div className="flex gap-2">
+                      {/* Link role */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="flex-1 inline-flex items-center justify-between gap-1.5 rounded-xl border border-white/8 bg-white/4 hover:bg-white/8 px-3 py-2 text-xs text-zinc-300 transition-colors focus:outline-none">
+                          <div className="flex items-center gap-1.5">
+                            <Eye className="w-3.5 h-3.5" />
+                            <span className="capitalize font-medium">{linkRole}</span>
+                          </div>
+                          <ChevronDown className="w-3 h-3 text-zinc-500" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="bg-zinc-900 border border-white/8 rounded-xl shadow-2xl w-40 p-1">
+                          {(['viewer', 'commenter', 'editor'] as ShareRole[]).map((r) => (
+                            <DropdownMenuItem
+                              key={r}
+                              onClick={() => setLinkRole(r)}
+                              className={cn('rounded-lg px-3 py-1.5 text-xs cursor-pointer capitalize', linkRole === r ? 'bg-white/8 text-zinc-100' : 'hover:bg-white/5 text-zinc-400')}
+                            >
+                              {r}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+
+                      {/* Expiry */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger className="flex-1 inline-flex items-center justify-between gap-1.5 rounded-xl border border-white/8 bg-white/4 hover:bg-white/8 px-3 py-2 text-xs text-zinc-300 transition-colors focus:outline-none">
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5" />
+                            <span className="font-medium">
+                              {EXPIRY_OPTIONS.find((o) => o.days === linkExpiry)?.label ?? 'Never expires'}
+                            </span>
+                          </div>
+                          <ChevronDown className="w-3 h-3 text-zinc-500" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-zinc-900 border border-white/8 rounded-xl shadow-2xl w-44 p-1">
+                          {EXPIRY_OPTIONS.map((opt) => (
+                            <DropdownMenuItem
+                              key={opt.label}
+                              onClick={() => setLinkExpiry(opt.days)}
+                              className={cn('rounded-lg px-3 py-1.5 text-xs cursor-pointer', linkExpiry === opt.days ? 'bg-white/8 text-zinc-100' : 'hover:bg-white/5 text-zinc-400')}
+                            >
+                              {opt.label}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+
+                      <Button
+                        size="sm"
+                        onClick={handleGenerateLink}
+                        disabled={generatingLink}
+                        className="h-9 px-4 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold text-xs cursor-pointer shrink-0 gap-1.5"
+                      >
+                        {generatingLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+                        Generate
+                      </Button>
+                    </div>
+                    {linkError && (
+                      <p className="text-xs text-red-400 flex items-center gap-1.5 mt-1">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        {linkError}
+                      </p>
                     )}
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? 'Copied!' : 'Copy'}
-                  </Button>
-                </div>
+                  </div>
+                )}
 
-                <div className="flex items-center justify-between text-[10px] text-zinc-600">
-                  <span className="flex items-center gap-1">
-                    <Eye className="w-3 h-3" />
-                    Role: <span className="text-zinc-400 font-semibold capitalize ml-1">{publicLink.role}</span>
-                  </span>
-                  {publicLink.expires_at && (
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      Expires: <span className="text-zinc-400 font-semibold ml-1">
-                        {new Date(publicLink.expires_at).toLocaleDateString()}
-                      </span>
-                    </span>
-                  )}
-                  {canManage && (
-                    <button
-                      onClick={handleRevokeLink}
-                      disabled={isPending}
-                      className="flex items-center gap-1 text-red-400 hover:text-red-300 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Revoke
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : canManage ? (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  {/* Link role */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="flex-1 inline-flex items-center justify-between gap-1.5 rounded-xl border border-white/8 bg-white/4 hover:bg-white/8 px-3 py-2 text-xs text-zinc-300 transition-colors focus:outline-none">
-                      <div className="flex items-center gap-1.5">
-                        <Eye className="w-3.5 h-3.5" />
-                        <span className="capitalize font-medium">{linkRole}</span>
-                      </div>
-                      <ChevronDown className="w-3 h-3 text-zinc-500" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="bg-zinc-900 border border-white/8 rounded-xl shadow-2xl w-40 p-1">
-                      {(['viewer', 'commenter'] as const).map((r) => (
-                        <DropdownMenuItem
-                          key={r}
-                          onClick={() => setLinkRole(r)}
-                          className={cn('rounded-lg px-3 py-1.5 text-xs cursor-pointer capitalize', linkRole === r ? 'bg-white/8 text-zinc-100' : 'hover:bg-white/5 text-zinc-400')}
-                        >
-                          {r}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                {/* List of generated links */}
+                {publicLinks.length === 0 ? (
+                  <p className="text-xs text-zinc-600 py-2 text-center">No active share links created yet.</p>
+                ) : (
+                  <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+                    {publicLinks.map((link) => {
+                      const linkUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/en/share/${link.share_token}`;
+                      const isCopied = copiedId === link.id;
+                      const RoleIcon = ROLE_OPTIONS.find((o) => o.value === link.role)?.icon || Eye;
 
-                  {/* Expiry */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="flex-1 inline-flex items-center justify-between gap-1.5 rounded-xl border border-white/8 bg-white/4 hover:bg-white/8 px-3 py-2 text-xs text-zinc-300 transition-colors focus:outline-none">
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span className="font-medium">
-                          {EXPIRY_OPTIONS.find((o) => o.days === linkExpiry)?.label ?? 'Never expires'}
-                        </span>
-                      </div>
-                      <ChevronDown className="w-3 h-3 text-zinc-500" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-zinc-900 border border-white/8 rounded-xl shadow-2xl w-44 p-1">
-                      {EXPIRY_OPTIONS.map((opt) => (
-                        <DropdownMenuItem
-                          key={opt.label}
-                          onClick={() => setLinkExpiry(opt.days)}
-                          className={cn('rounded-lg px-3 py-1.5 text-xs cursor-pointer', linkExpiry === opt.days ? 'bg-white/8 text-zinc-100' : 'hover:bg-white/5 text-zinc-400')}
-                        >
-                          {opt.label}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                      return (
+                        <div key={link.id} className="border border-white/6 bg-white/2 rounded-xl p-3 space-y-2">
+                          <div className="flex gap-2">
+                            <div className="flex-1 flex items-center gap-2 bg-white/4 border border-white/8 rounded-xl px-3 py-1.5 min-w-0">
+                              <Link2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                              <span className="text-xs text-zinc-400 truncate font-mono">{linkUrl}</span>
+                            </div>
+                            <Button
+                              size="sm"
+                              onClick={() => handleCopyLink(link.id, link.share_token || '')}
+                              className={cn(
+                                'h-8 px-2.5 rounded-lg font-semibold text-[11px] cursor-pointer gap-1 shrink-0 transition-all',
+                                isCopied
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-white/8 hover:bg-white/12 text-zinc-300'
+                              )}
+                            >
+                              {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              {isCopied ? 'Copied!' : 'Copy'}
+                            </Button>
+                          </div>
 
-                  <Button
-                    size="sm"
-                    onClick={handleGenerateLink}
-                    disabled={generatingLink}
-                    className="h-9 px-4 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold text-xs cursor-pointer shrink-0 gap-1.5"
-                  >
-                    {generatingLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
-                    Generate
-                  </Button>
-                </div>
-                {linkError && (
-                  <p className="text-xs text-red-400 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    {linkError}
-                  </p>
+                          <div className="flex items-center justify-between text-[10px] text-zinc-500 pl-1">
+                            <span className="flex items-center gap-1.5">
+                              <RoleIcon className="w-3.5 h-3.5 text-sky-400" />
+                              Permission: <span className="text-zinc-300 font-semibold capitalize">{link.role}</span>
+                            </span>
+                            {link.expires_at ? (
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                Expires: <span className="text-zinc-300 font-semibold">
+                                  {new Date(link.expires_at).toLocaleDateString()}
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                Never expires
+                              </span>
+                            )}
+                            {canManage && (
+                              <button
+                                onClick={() => handleRevokeLink(link.id)}
+                                disabled={isPending}
+                                className="flex items-center gap-1 text-red-400 hover:text-red-300 transition-colors cursor-pointer ml-2 disabled:opacity-40"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                Revoke
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
-            ) : (
-              <p className="text-xs text-zinc-600 py-2">No public link created yet.</p>
             )}
           </div>
         </div>

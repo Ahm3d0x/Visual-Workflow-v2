@@ -108,7 +108,7 @@ export default async function SharedWorkflowPage({
           This share link has expired. Please contact the workflow owner to get a new link.
         </p>
         <a
-          href={`/${locale}/sign-in`}
+          href={`/${locale}/auth/sign-in`}
           className="px-6 py-2.5 bg-accent hover:bg-accent/90 text-accent-foreground rounded-xl text-sm font-bold transition-all"
         >
           Sign in to your account
@@ -121,7 +121,7 @@ export default async function SharedWorkflowPage({
   if (share.role === 'commenter') {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      redirect(`/${locale}/sign-in?redirect=/${locale}/share/${shareId}`);
+      redirect(`/${locale}/auth/sign-in?redirect=/${locale}/share/${shareId}`);
     }
   }
 

@@ -197,7 +197,7 @@ export async function removeShare(
 export async function createShareLink(
   workflowId: string,
   workspaceId: string,
-  role: 'commenter' | 'viewer',
+  role: ShareRole,
   expiresInDays?: number
 ): Promise<ActionResult & { url?: string; token?: string }> {
   const supabase = await createClient();

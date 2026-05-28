@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -14,6 +15,26 @@ import '@xyflow/react/dist/style.css';
 import { nodeTypes } from '@/components/nodes/nodeTypes';
 import { ExternalLink, Eye, MessageSquare, User } from 'lucide-react';
 import Link from 'next/link';
+
+import { useParams } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+
+interface NodeRecord {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  data: Record<string, unknown>;
+  style?: Record<string, unknown>;
+}
+
+interface EdgeRecord {
+  id: string;
+  source_node_id: string;
+  target_node_id: string;
+  source_handle: string | null;
+  target_handle: string | null;
+  data: Record<string, unknown>;
+}
 
 interface SharedWorkflowViewerProps {
   workflow: {
@@ -36,6 +57,138 @@ function ViewerInner({
   role,
   creatorName,
 }: SharedWorkflowViewerProps) {
+  const params = useParams();
+  const locale = params?.locale || 'en';
+  const supabase = createClient();
+
+  const [localNodes, setLocalNodes] = useState<Node[]>(() => nodes);
+  const [localEdges, setLocalEdges] = useState<Edge[]>(() => edges);
+
+  // Sync props asynchronously if they change, avoiding synchronous React cascade warning
+  useEffect(() => {
+    const handle = requestAnimationFrame(() => {
+      setLocalNodes(nodes);
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [nodes]);
+
+  useEffect(() => {
+    const handle = requestAnimationFrame(() => {
+      setLocalEdges(edges);
+    });
+    return () => cancelAnimationFrame(handle);
+  }, [edges]);
+
+  useEffect(() => {
+    const activeChannel = supabase.channel(`workflow:${workflow.id}`);
+
+    // Fetch latest data from database
+    async function fetchLatestData() {
+      try {
+        const { data: nodeRecords } = await supabase
+          .from('workflow_nodes')
+          .select('id, type, position, data, style')
+          .eq('workflow_id', workflow.id);
+        if (nodeRecords) {
+          const records = nodeRecords as unknown as NodeRecord[];
+          setLocalNodes(records.map((n) => ({
+            id: n.id,
+            type: n.type,
+            position: n.position || { x: 100, y: 100 },
+            data: n.data || {},
+            style: n.style || {},
+          })));
+        }
+
+        const { data: edgeRecords } = await supabase
+          .from('workflow_edges')
+          .select('id, source_node_id, target_node_id, source_handle, target_handle, data')
+          .eq('workflow_id', workflow.id);
+        if (edgeRecords) {
+          const records = edgeRecords as unknown as EdgeRecord[];
+          setLocalEdges(records.map((e) => ({
+            id: e.id,
+            source: e.source_node_id,
+            target: e.target_node_id,
+            sourceHandle: e.source_handle,
+            targetHandle: e.target_handle,
+            data: e.data || {},
+          })));
+        }
+      } catch (err) {
+        console.error('Failed to pull latest shared data:', err);
+      }
+    }
+
+    // 1. Listen to broadcast element changes
+    activeChannel.on('broadcast', { event: 'node_change' }, ({ payload }) => {
+      const { eventType, node, nodeId } = payload as {
+        eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+        node?: Node;
+        nodeId?: string;
+      };
+
+      if (eventType === 'INSERT' && node) {
+        setLocalNodes((prev) => {
+          if (prev.some((n) => n.id === node.id)) return prev;
+          return [...prev, node];
+        });
+      } else if (eventType === 'UPDATE' && node) {
+        setLocalNodes((prev) => prev.map((n) => (n.id === node.id ? node : n)));
+      } else if (eventType === 'DELETE' && nodeId) {
+        setLocalNodes((prev) => prev.filter((n) => n.id !== nodeId));
+        setLocalEdges((prev) => prev.filter((e) => e.source !== nodeId && e.target !== nodeId));
+      } else if (eventType === 'UPDATE' && !node) {
+        // Generic update
+        fetchLatestData();
+      }
+    });
+
+    activeChannel.on('broadcast', { event: 'edge_change' }, ({ payload }) => {
+      const { eventType, edge, edgeId } = payload as {
+        eventType: 'INSERT' | 'DELETE';
+        edge?: Edge;
+        edgeId?: string;
+      };
+
+      if (eventType === 'INSERT' && edge) {
+        setLocalEdges((prev) => {
+          if (prev.some((e) => e.id === edge.id)) return prev;
+          return [...prev, edge];
+        });
+      } else if (eventType === 'DELETE' && edgeId) {
+        setLocalEdges((prev) => prev.filter((e) => e.id !== edgeId));
+      } else if (eventType === 'INSERT' && !edge) {
+        // Generic update
+        fetchLatestData();
+      }
+    });
+
+    // 2. Listen to PostgreSQL changes on nodes and edges
+    activeChannel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'workflow_nodes', filter: `workflow_id=eq.${workflow.id}` },
+      () => {
+        fetchLatestData();
+      }
+    );
+
+    activeChannel.on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'workflow_edges', filter: `workflow_id=eq.${workflow.id}` },
+      () => {
+        fetchLatestData();
+      }
+    );
+
+    activeChannel.subscribe();
+
+    return () => {
+      supabase.removeChannel(activeChannel);
+    };
+  }, [workflow.id, supabase]);
+
+
   return (
     <div className="h-screen w-screen flex flex-col bg-zinc-950 text-zinc-100 overflow-hidden">
       {/* ── Shared Header Banner ── */}
@@ -62,7 +215,7 @@ function ViewerInner({
             )}
             <span className="flex items-center gap-1">
               <Eye className="w-3 h-3" />
-              {nodes.length} nodes
+              {localNodes.length} nodes
             </span>
             {role === 'commenter' && (
               <span className="flex items-center gap-1 text-sky-400">
@@ -85,7 +238,7 @@ function ViewerInner({
 
         {/* CTA */}
         <Link
-          href="/sign-up"
+          href={`/${locale}/auth/sign-up`}
           className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-accent hover:bg-accent/90 text-accent-foreground rounded-xl text-xs font-bold transition-all"
         >
           <ExternalLink className="w-3.5 h-3.5" />
@@ -96,8 +249,8 @@ function ViewerInner({
       {/* ── Read-only Canvas ── */}
       <div className="flex-1 relative overflow-hidden">
         <ReactFlow
-          nodes={nodes}
-          edges={edges}
+          nodes={localNodes}
+          edges={localEdges}
           nodeTypes={nodeTypes}
           nodesDraggable={false}
           nodesConnectable={false}
@@ -127,7 +280,7 @@ function ViewerInner({
             <Eye className="w-3.5 h-3.5 text-zinc-500" />
             <span className="text-xs text-zinc-500 font-medium">Read-only view</span>
             <span className="text-zinc-700">·</span>
-            <Link href="/sign-up" className="text-xs text-accent font-semibold hover:text-accent/80 pointer-events-auto transition-colors">
+            <Link href={`/${locale}/auth/sign-up`} className="text-xs text-accent font-semibold hover:text-accent/80 pointer-events-auto transition-colors">
               Sign up to collaborate →
             </Link>
           </div>
