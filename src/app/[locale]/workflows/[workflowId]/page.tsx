@@ -52,7 +52,7 @@ export default async function WorkflowEditorPage({
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(`/${locale}/sign-in`);
+    redirect(`/${locale}/auth/sign-in?redirect=/${locale}/workflows/${workflowId}`);
   }
 
   // 2. Fetch the target workflow
@@ -66,7 +66,8 @@ export default async function WorkflowEditorPage({
     notFound();
   }
 
-  // 3. Verify user membership and role in this workspace
+  // 3. Verify user membership and role in this workspace (or fallback to direct workflow share role)
+  let userRole: string | null = null;
   const { data: member } = await (supabase
     .from('workspace_members')
     .select('role')
@@ -74,7 +75,24 @@ export default async function WorkflowEditorPage({
     .eq('user_id', user.id)
     .maybeSingle() as unknown as { data: WorkspaceMemberRecord | null });
 
-  if (!member) {
+  if (member) {
+    userRole = member.role;
+  } else {
+    // Check if there is a direct share for this user
+    const { data: share } = await supabase
+      .from('workflow_shares')
+      .select('role')
+      .eq('workflow_id', workflowId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (share) {
+      // @ts-expect-error - Custom table type not in auto-generated schema
+      userRole = share.role;
+    }
+  }
+
+  if (!userRole) {
     redirect(`/${locale}/dashboard`);
   }
 
@@ -122,7 +140,7 @@ export default async function WorkflowEditorPage({
       workflow={workflow}
       initialNodes={initialNodes}
       initialEdges={initialEdges}
-      userRole={member.role}
+      userRole={userRole}
       userId={user.id}
       locale={locale}
       canShareLinks={canShareLinks}

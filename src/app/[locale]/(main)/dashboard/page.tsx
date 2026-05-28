@@ -120,6 +120,42 @@ export default async function DashboardPage({
 
   const workflows = (workflowsRecord || []) as WorkflowItem[];
 
+  // Fetch workflows shared with this user (where user_id = user.id)
+  const { data: sharedRecords } = await supabase
+    .from('workflow_shares')
+    .select(`
+      role,
+      workflows:workflow_id (
+        id,
+        name,
+        description,
+        status,
+        node_count,
+        updated_at
+      )
+    `)
+    .eq('user_id', user.id);
+
+  interface SharedWorkflowJoint {
+    role: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    workflows: any;
+  }
+
+  const sharedWorkflows = sharedRecords
+    ? (sharedRecords as unknown as SharedWorkflowJoint[])
+        .filter((r) => r.workflows !== null && r.workflows.id !== undefined && (workflows.length === 0 || !workflows.some((w) => w.id === r.workflows?.id)))
+        .map((r) => ({
+          id: r.workflows.id,
+          name: r.workflows.name,
+          description: r.workflows.description,
+          status: r.workflows.status,
+          node_count: r.workflows.node_count,
+          updated_at: r.workflows.updated_at,
+          role: r.role,
+        }))
+    : [];
+
   // 4. Fetch metrics for StatsBar
   const { count: customNodesCount } = await supabase
     .from('custom_node_templates')
@@ -170,7 +206,12 @@ export default async function DashboardPage({
       <QuickActions workspaceId={activeWorkspace.id} locale={locale} />
 
       {/* Localized Workflows list */}
-      <WorkflowsList initialWorkflows={workflows} workspaceId={activeWorkspace.id} locale={locale} />
+      <WorkflowsList
+        initialWorkflows={workflows}
+        sharedWorkflows={sharedWorkflows}
+        workspaceId={activeWorkspace.id}
+        locale={locale}
+      />
     </div>
   );
 }

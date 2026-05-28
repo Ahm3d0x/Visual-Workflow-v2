@@ -51,12 +51,18 @@ export async function proxy(request: NextRequest) {
   const locale = pathname.split('/')[1] === 'ar' ? 'ar' : 'en';
 
   if (isProtected && !user) {
-    // Redirect unauthenticated user to sign-in page under their current locale
-    return NextResponse.redirect(new URL(`/${locale}/auth/sign-in`, request.url));
+    // Redirect unauthenticated user to sign-in page under their current locale, preserving the original page as redirect parameter
+    const redirectUrl = new URL(`/${locale}/auth/sign-in`, request.url);
+    redirectUrl.searchParams.set('redirect', request.nextUrl.pathname + request.nextUrl.search);
+    return NextResponse.redirect(redirectUrl);
   }
 
   if (isPublicOnly && user) {
-    // Redirect authenticated user away from auth pages straight to dashboard
+    // Redirect authenticated user away from auth pages
+    const redirectParam = request.nextUrl.searchParams.get('redirect');
+    if (redirectParam) {
+      return NextResponse.redirect(new URL(redirectParam, request.url));
+    }
     return NextResponse.redirect(new URL(`/${locale}/dashboard`, request.url));
   }
 

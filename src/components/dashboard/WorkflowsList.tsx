@@ -41,18 +41,24 @@ interface WorkflowItem {
   updated_at: string;
 }
 
+interface SharedWorkflowItem extends WorkflowItem {
+  role: string;
+}
+
 interface WorkflowsListProps {
   initialWorkflows: WorkflowItem[];
+  sharedWorkflows?: SharedWorkflowItem[];
   workspaceId: string;
   locale: string;
 }
 
-export function WorkflowsList({ initialWorkflows, workspaceId, locale }: WorkflowsListProps) {
+export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspaceId, locale }: WorkflowsListProps) {
   const router = useRouter();
   const t = useTranslations('dashboard');
   const supabase = createClient();
 
   const [workflows, setWorkflows] = useState<WorkflowItem[]>(initialWorkflows);
+  const [activeTab, setActiveTab] = useState<'my-workflows' | 'shared'>('my-workflows');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'active' | 'archived' | 'published'>('all');
@@ -133,7 +139,9 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
   };
 
   // Filter & Sort Logic
-  const filteredWorkflows = workflows
+  const listToRender = activeTab === 'my-workflows' ? workflows : sharedWorkflows;
+
+  const filteredWorkflows = listToRender
     .filter((w) => {
       const matchesSearch =
         w.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -153,6 +161,19 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
       }
       return 0;
     });
+
+  const getShareRoleBadge = (role: string) => {
+    const colors: Record<string, string> = {
+      editor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+      commenter: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
+      viewer: 'bg-zinc-500/10 text-zinc-400 border-white/10',
+    };
+    return (
+      <Badge variant="outline" className={`rounded-md font-semibold text-[10px] uppercase px-2 py-0.5 ${colors[role] || colors.viewer}`}>
+        {role}
+      </Badge>
+    );
+  };
 
   const getStatusBadge = (status: string) => {
     const colors: Record<string, string> = {
@@ -181,6 +202,35 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
 
   return (
     <div className="space-y-6 mt-8">
+      {/* Tab Switcher */}
+      <div className="flex border-b border-border gap-6">
+        <button
+          onClick={() => setActiveTab('my-workflows')}
+          className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
+            activeTab === 'my-workflows'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          My Workflows
+        </button>
+        <button
+          onClick={() => setActiveTab('shared')}
+          className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'shared'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <span>Shared with me</span>
+          {sharedWorkflows.length > 0 && (
+            <Badge variant="secondary" className="px-1.5 py-0 rounded-full text-[10px] bg-accent/10 text-accent font-semibold border border-accent/20">
+              {sharedWorkflows.length}
+            </Badge>
+          )}
+        </button>
+      </div>
+
       {/* Search, Filter, Sort and View Toggles */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Search */}
@@ -282,31 +332,45 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
 
               <CardHeader className="p-5 space-y-1">
                 <div className="flex items-start justify-between gap-2">
-                  <Link href={`/${locale}/workflows/${wf.id}`} className="hover:underline">
-                    <CardTitle className="text-lg font-bold font-sans tracking-tight line-clamp-1">
-                      {wf.name}
-                    </CardTitle>
-                  </Link>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Link href={`/${locale}/workflows/${wf.id}`} className="hover:underline">
+                        <CardTitle className="text-lg font-bold font-sans tracking-tight line-clamp-1">
+                          {wf.name}
+                        </CardTitle>
+                      </Link>
+                      {activeTab === 'shared' && getShareRoleBadge((wf as SharedWorkflowItem).role)}
+                    </div>
+                  </div>
                   {/* Options Menu */}
                   <DropdownMenu>
                     <DropdownMenuTrigger className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-muted shrink-0 cursor-pointer focus:outline-hidden">
                       <MoreVertical className="w-4 h-4 text-muted-foreground" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-40">
-                      <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                        <Edit2 className="w-4 h-4 text-muted-foreground" /> Edit Canvas
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                        <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                        <Archive className="w-4 h-4 text-muted-foreground" />
-                        <span>{wf.status === 'archived' ? 'Restore Draft' : 'Archive'}</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => handleDelete(wf.id)} className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive">
-                        <Trash2 className="w-4 h-4" /> Delete
-                      </DropdownMenuItem>
+                      {activeTab === 'shared' ? (
+                        <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                          <Edit2 className="w-4 h-4 text-muted-foreground" />
+                          <span>{(wf as SharedWorkflowItem).role === 'editor' ? 'Edit Canvas' : 'Open Canvas'}</span>
+                        </DropdownMenuItem>
+                      ) : (
+                        <>
+                          <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Edit2 className="w-4 h-4 text-muted-foreground" /> Edit Canvas
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Archive className="w-4 h-4 text-muted-foreground" />
+                            <span>{wf.status === 'archived' ? 'Restore Draft' : 'Archive'}</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => handleDelete(wf.id)} className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive">
+                            <Trash2 className="w-4 h-4" /> Delete
+                          </DropdownMenuItem>
+                        </>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -338,9 +402,12 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
                     <WorkflowIcon className="w-5 h-5 opacity-60 text-accent" />
                   </div>
                   <div className="min-w-0">
-                    <Link href={`/${locale}/workflows/${wf.id}`} className="hover:underline">
-                      <h4 className="font-bold font-sans text-sm truncate">{wf.name}</h4>
-                    </Link>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Link href={`/${locale}/workflows/${wf.id}`} className="hover:underline">
+                        <h4 className="font-bold font-sans text-sm truncate">{wf.name}</h4>
+                      </Link>
+                      {activeTab === 'shared' && getShareRoleBadge((wf as SharedWorkflowItem).role)}
+                    </div>
                     <p className="text-xs font-light text-muted-foreground truncate max-w-md">
                       {wf.description || 'No description provided.'}
                     </p>
@@ -363,20 +430,29 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
                       <MoreVertical className="w-4 h-4 text-muted-foreground" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-40">
-                      <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                        <Edit2 className="w-4 h-4 text-muted-foreground" /> Edit Canvas
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                        <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                        <Archive className="w-4 h-4 text-muted-foreground" />
-                        <span>{wf.status === 'archived' ? 'Restore Draft' : 'Archive'}</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => handleDelete(wf.id)} className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive">
-                        <Trash2 className="w-4 h-4" /> Delete
-                      </DropdownMenuItem>
+                      {activeTab === 'shared' ? (
+                        <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                          <Edit2 className="w-4 h-4 text-muted-foreground" />
+                          <span>{(wf as SharedWorkflowItem).role === 'editor' ? 'Edit Canvas' : 'Open Canvas'}</span>
+                        </DropdownMenuItem>
+                      ) : (
+                        <>
+                          <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Edit2 className="w-4 h-4 text-muted-foreground" /> Edit Canvas
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Archive className="w-4 h-4 text-muted-foreground" />
+                            <span>{wf.status === 'archived' ? 'Restore Draft' : 'Archive'}</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => handleDelete(wf.id)} className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive">
+                            <Trash2 className="w-4 h-4" /> Delete
+                          </DropdownMenuItem>
+                        </>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

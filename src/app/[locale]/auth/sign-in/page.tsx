@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, use } from 'react';
-import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -15,6 +14,7 @@ import { Workflow, Loader2, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageToggle } from '@/components/LanguageToggle';
+import { useSearchParams } from 'next/navigation';
 
 export default function SignInPage({
   params
@@ -22,7 +22,9 @@ export default function SignInPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = use(params);
-  const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || `/${locale}/dashboard`;
+
   const t = useTranslations('auth');
   const tCommon = useTranslations('common');
   const [loading, setLoading] = useState(false);
@@ -58,20 +60,24 @@ export default function SignInPage({
       setServerError(result.error);
       setLoading(false);
     } else {
-      router.push('/dashboard');
+      if (typeof window !== 'undefined') {
+        window.location.assign(redirectTo);
+      }
     }
   };
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     setServerError(null);
-    const result = await signInWithGoogle(locale);
+    const result = await signInWithGoogle(locale, redirectTo);
     
     if (result?.error) {
       setServerError(result.error);
       setGoogleLoading(false);
     } else if (result?.url) {
-      window.location.href = result.url;
+      if (typeof window !== 'undefined') {
+        window.location.assign(result.url);
+      }
     }
   };
 
@@ -190,7 +196,10 @@ export default function SignInPage({
 
             <div className="text-center text-sm font-light text-muted-foreground mt-4">
               Don&apos;t have an account?{' '}
-              <Link href={`/${locale}/auth/sign-up`} className="font-semibold text-accent hover:underline">
+              <Link
+                href={`/${locale}/auth/sign-up${searchParams.get('redirect') ? `?redirect=${encodeURIComponent(searchParams.get('redirect')!)}` : ''}`}
+                className="font-semibold text-accent hover:underline"
+              >
                 Create Account
               </Link>
             </div>

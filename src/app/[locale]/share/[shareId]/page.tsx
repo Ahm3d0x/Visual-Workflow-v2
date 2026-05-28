@@ -18,6 +18,7 @@ interface ShareRecord {
 
 interface WorkflowRecord {
   id: string;
+  workspace_id: string;
   name: string;
   description: string | null;
   created_at: string;
@@ -117,22 +118,47 @@ export default async function SharedWorkflowPage({
     );
   }
 
-  // 3. If commenter link: require authentication
-  if (share.role === 'commenter') {
-    const { data: { user } } = await supabase.auth.getUser();
+  // 3. Get user and enforce authentication for commenter and editor roles
+  const { data: { user } } = await supabase.auth.getUser();
+  if (share.role === 'commenter' || share.role === 'editor') {
     if (!user) {
       redirect(`/${locale}/auth/sign-in?redirect=/${locale}/share/${shareId}`);
     }
   }
 
-  // 4. Fetch the workflow
+  // 4. Fetch the workflow (including workspace_id)
   const { data: workflow } = await (supabase
     .from('workflows')
-    .select('id, name, description, created_at, updated_at')
+    .select('id, workspace_id, name, description, created_at, updated_at')
     .eq('id', share.workflow_id)
     .maybeSingle() as unknown as Promise<{ data: WorkflowRecord | null }>);
 
   if (!workflow) notFound();
+
+  // 5. Handle direct workspace auto-linking and editor redirect
+  if (user) {
+    const { data: member } = await supabase
+      .from('workspace_members')
+      .select('role')
+      .eq('workspace_id', workflow.workspace_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!member) {
+      // Direct database linkage so it appears in Shared with me dashboard
+      // @ts-expect-error - Custom RPC type not in auto-generated types
+      await supabase.rpc('join_shared_workflow', {
+        p_workflow_id: share.workflow_id,
+        p_user_id: user.id,
+        p_role: share.role,
+        p_created_by: share.created_by,
+      });
+    }
+
+    if (share.role === 'editor') {
+      redirect(`/${locale}/workflows/${share.workflow_id}`);
+    }
+  }
 
   // 5. Fetch creator profile
   const { data: creatorProfile } = await (supabase

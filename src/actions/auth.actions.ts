@@ -3,14 +3,15 @@
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
-export async function signUp(email: string, password: string, fullName: string, locale: string = 'en') {
+export async function signUp(email: string, password: string, fullName: string, locale: string = 'en', redirectTo?: string) {
   try {
     const supabase = await createClient();
+    const nextUrl = redirectTo || `/${locale}/dashboard`;
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/${locale}/dashboard`,
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=${encodeURIComponent(nextUrl)}`,
         data: {
           full_name: fullName,
         },
@@ -46,13 +47,14 @@ export async function signIn(email: string, password: string) {
   }
 }
 
-export async function signInWithGoogle(locale: string = 'en') {
+export async function signInWithGoogle(locale: string = 'en', redirectTo?: string) {
   try {
     const supabase = await createClient();
+    const nextUrl = redirectTo || `/${locale}/dashboard`;
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/${locale}/dashboard`,
+        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=${encodeURIComponent(nextUrl)}`,
       },
     });
 
