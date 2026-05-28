@@ -125,7 +125,7 @@ export default async function DashboardPage({
     .from('workflow_shares')
     .select(`
       role,
-      workflows:workflow_id (
+      workflows (
         id,
         name,
         description,
@@ -144,15 +144,19 @@ export default async function DashboardPage({
 
   const sharedWorkflows = sharedRecords
     ? (sharedRecords as unknown as SharedWorkflowJoint[])
-        .filter((r) => r.workflows !== null && r.workflows.id !== undefined && (workflows.length === 0 || !workflows.some((w) => w.id === r.workflows?.id)))
-        .map((r) => ({
-          id: r.workflows.id,
-          name: r.workflows.name,
-          description: r.workflows.description,
-          status: r.workflows.status,
-          node_count: r.workflows.node_count,
-          updated_at: r.workflows.updated_at,
-          role: r.role,
+        .map((r) => {
+          const wf = Array.isArray(r.workflows) ? r.workflows[0] : r.workflows;
+          return { wf, role: r.role };
+        })
+        .filter((item) => item.wf !== null && item.wf !== undefined && item.wf.id !== undefined && (workflows.length === 0 || !workflows.some((w) => w.id === item.wf.id)))
+        .map((item) => ({
+          id: item.wf.id,
+          name: item.wf.name,
+          description: item.wf.description,
+          status: item.wf.status,
+          node_count: item.wf.node_count,
+          updated_at: item.wf.updated_at,
+          role: item.role,
         }))
     : [];
 
