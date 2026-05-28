@@ -1,0 +1,286 @@
+'use client';
+
+import { create } from 'zustand';
+import { 
+  type Node, 
+  type Edge, 
+  type OnNodesChange, 
+  type OnEdgesChange, 
+  type OnConnect,
+  applyNodeChanges, 
+  applyEdgeChanges, 
+  addEdge 
+} from '@xyflow/react';
+
+export interface EditorPanels {
+  library: boolean;
+  properties: boolean;
+  comments: boolean;
+  history: boolean;
+  aiAssistant: boolean;
+}
+
+export interface Collaborator {
+  userId: string;
+  fullName: string;
+  avatarUrl: string | null;
+  color: string;
+  role: string;
+  x?: number;
+  y?: number;
+}
+
+export interface EditorComment {
+  id: string;
+  workflow_id: string;
+  node_id: string | null;
+  parent_id: string | null;
+  body: string;
+  created_by: string;
+  created_at: string;
+  resolved_at: string | null;
+  profiles?: {
+    full_name: string | null;
+    avatar_url: string | null;
+    email: string;
+  };
+}
+
+export interface EditorState {
+  nodes: Node[];
+  edges: Edge[];
+  selectedNodeId: string | null;
+  selectedEdgeId: string | null;
+  panels: EditorPanels;
+  isSaving: boolean;
+  lastSavedAt: Date | null;
+  hasUnsavedChanges: boolean;
+  undoStack: { nodes: Node[]; edges: Edge[] }[];
+  redoStack: { nodes: Node[]; edges: Edge[] }[];
+  
+  // Real-time Collaborators
+  collaborators: Record<string, Collaborator>;
+  
+  // Real-time Comments Thread
+  comments: EditorComment[];
+
+  // React Flow Handlers
+  onNodesChange: OnNodesChange;
+  onEdgesChange: OnEdgesChange;
+  onConnect: OnConnect;
+
+  // Actions
+  setNodes: (nodes: Node[]) => void;
+  setEdges: (edges: Edge[]) => void;
+  addNode: (node: Node) => void;
+  updateNode: (id: string, nodeData: Record<string, unknown>) => void;
+  deleteNode: (id: string) => void;
+  addEdge: (edge: Edge) => void;
+  deleteEdge: (id: string) => void;
+  setSelectedNode: (id: string | null) => void;
+  setSelectedEdge: (id: string | null) => void;
+  togglePanel: (panel: keyof EditorPanels) => void;
+  pushToUndo: () => void;
+  undo: () => void;
+  redo: () => void;
+  setSaving: (saving: boolean) => void;
+  setLastSaved: (date: Date | null) => void;
+  setHasUnsavedChanges: (hasChanges: boolean) => void;
+  clearHistory: () => void;
+
+  // Collaboration Actions
+  setCollaborators: (collaborators: Record<string, Collaborator>) => void;
+  updateCollaboratorCursor: (userId: string, x: number, y: number) => void;
+
+  // Comments Actions
+  setComments: (comments: EditorComment[]) => void;
+  addComment: (comment: EditorComment) => void;
+  updateComment: (id: string, updates: Partial<EditorComment>) => void;
+}
+
+export const useEditorStore = create<EditorState>((set, get) => ({
+  nodes: [],
+  edges: [],
+  selectedNodeId: null,
+  selectedEdgeId: null,
+  panels: {
+    library: true,
+    properties: false,
+    comments: false,
+    history: false,
+    aiAssistant: false,
+  },
+  isSaving: false,
+  lastSavedAt: null,
+  hasUnsavedChanges: false,
+  undoStack: [],
+  redoStack: [],
+  collaborators: {},
+  comments: [],
+
+  setNodes: (nodes) => set({ nodes }),
+  setEdges: (edges) => set({ edges }),
+
+  onNodesChange: (changes) => {
+    // Only push to undo on specific structural changes, not every micro-movement to prevent bloating the stack
+    const structuralChange = changes.some(c => c.type === 'remove' || c.type === 'add');
+    if (structuralChange) {
+      get().pushToUndo();
+    }
+
+    set((state) => ({
+      nodes: applyNodeChanges(changes, state.nodes),
+      hasUnsavedChanges: true,
+    }));
+  },
+
+  onEdgesChange: (changes) => {
+    const structuralChange = changes.some(c => c.type === 'remove');
+    if (structuralChange) {
+      get().pushToUndo();
+    }
+
+    set((state) => ({
+      edges: applyEdgeChanges(changes, state.edges),
+      hasUnsavedChanges: true,
+    }));
+  },
+
+  onConnect: (connection) => {
+    get().pushToUndo();
+    set((state) => ({
+      edges: addEdge({ ...connection, id: `edge-${Date.now()}` }, state.edges),
+      hasUnsavedChanges: true,
+    }));
+  },
+
+  pushToUndo: () => {
+    const snapshot = {
+      nodes: JSON.parse(JSON.stringify(get().nodes)),
+      edges: JSON.parse(JSON.stringify(get().edges)),
+    };
+    const undoStack = [snapshot, ...get().undoStack].slice(0, 50);
+    set({ undoStack, redoStack: [] });
+  },
+
+  addNode: (node) => {
+    get().pushToUndo();
+    set((state) => ({
+      nodes: [...state.nodes, node],
+      hasUnsavedChanges: true,
+    }));
+  },
+
+  updateNode: (id, nodeData) => {
+    get().pushToUndo();
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, ...nodeData } } : n
+      ),
+      hasUnsavedChanges: true,
+    }));
+  },
+
+  deleteNode: (id) => {
+    get().pushToUndo();
+    set((state) => ({
+      nodes: state.nodes.filter((n) => n.id !== id),
+      edges: state.edges.filter((e) => e.source !== id && e.target !== id),
+      selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+      hasUnsavedChanges: true,
+    }));
+  },
+
+  addEdge: (edge) => {
+    get().pushToUndo();
+    set((state) => ({
+      edges: [...state.edges, edge],
+      hasUnsavedChanges: true,
+    }));
+  },
+
+  deleteEdge: (id) => {
+    get().pushToUndo();
+    set((state) => ({
+      edges: state.edges.filter((e) => e.id !== id),
+      selectedEdgeId: state.selectedEdgeId === id ? null : state.selectedEdgeId,
+      hasUnsavedChanges: true,
+    }));
+  },
+
+  setSelectedNode: (id) => set({ selectedNodeId: id, selectedEdgeId: null }),
+  setSelectedEdge: (id) => set({ selectedEdgeId: id, selectedNodeId: null }),
+
+  togglePanel: (panel) =>
+    set((state) => ({
+      panels: {
+        ...state.panels,
+        [panel]: !state.panels[panel],
+      },
+    })),
+
+  undo: () => {
+    const { undoStack, redoStack, nodes, edges } = get();
+    if (undoStack.length === 0) return;
+
+    const [prev, ...rest] = undoStack;
+    const currentSnapshot = {
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    };
+
+    set({
+      nodes: prev.nodes,
+      edges: prev.edges,
+      undoStack: rest,
+      redoStack: [currentSnapshot, ...redoStack],
+      hasUnsavedChanges: true,
+    });
+  },
+
+  redo: () => {
+    const { redoStack, undoStack, nodes, edges } = get();
+    if (redoStack.length === 0) return;
+
+    const [next, ...rest] = redoStack;
+    const currentSnapshot = {
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    };
+
+    set({
+      nodes: next.nodes,
+      edges: next.edges,
+      redoStack: rest,
+      undoStack: [currentSnapshot, ...undoStack],
+      hasUnsavedChanges: true,
+    });
+  },
+
+  setSaving: (saving) => set({ isSaving: saving }),
+  setLastSaved: (date) => set({ lastSavedAt: date, hasUnsavedChanges: false }),
+  setHasUnsavedChanges: (hasChanges) => set({ hasUnsavedChanges: hasChanges }),
+  clearHistory: () => set({ undoStack: [], redoStack: [] }),
+
+  setCollaborators: (collaborators) => set({ collaborators }),
+  updateCollaboratorCursor: (userId, x, y) => set((state) => {
+    const col = state.collaborators[userId];
+    if (!col) return {};
+    return {
+      collaborators: {
+        ...state.collaborators,
+        [userId]: { ...col, x, y },
+      },
+    };
+  }),
+
+  setComments: (comments) => set({ comments }),
+  addComment: (comment) => set((state) => {
+    // Avoid duplicate insertions
+    if (state.comments.some((c) => c.id === comment.id)) return {};
+    return { comments: [...state.comments, comment] };
+  }),
+  updateComment: (id, updates) => set((state) => ({
+    comments: state.comments.map((c) => (c.id === id ? { ...c, ...updates } : c)),
+  })),
+}));

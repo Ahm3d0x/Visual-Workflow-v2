@@ -1,0 +1,100 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "success": "Done!",
+    "upgrade": "Upgrade Plan",
+    "trial_banner": "{days} days left in your Legend trial"
+  },
+  "auth": {
+    "sign_in": "Sign In",
+    "sign_up": "Create Account",
+    "sign_out": "Sign Out",
+    "email": "Email address",
+    "password": "Password",
+    "full_name": "Full Name",
+    "forgot_password": "Forgot password?",
+    "google_login": "Continue with Google",
+    "verify_email_title": "Check your inbox",
+    "verify_email_desc": "We sent a verification link to {email}"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "new_workflow": "New Workflow",
+    "search_placeholder": "Search workflows...",
+    "no_workflows": "No workflows yet. Create your first one!",
+    "last_modified": "Last modified",
+    "node_count": "{count} nodes"
+  },
+  "editor": {
+    "auto_saved": "Saved",
+    "saving": "Saving...",
+    "unsaved": "Unsaved changes",
+    "undo": "Undo",
+    "redo": "Redo",
+    "export": "Export",
+    "share": "Share",
+    "fit_view": "Fit View",
+    "zoom_in": "Zoom In",
+    "zoom_out": "Zoom Out"
+  },
+  "nodes": {
+    "categories": {
+      "basic": "Basic",
+      "logic": "Logic",
+      "data": "Data",
+      "integration": "Integration",
+      "human": "Human",
+      "ai": "AI"
+    },
+    "types": {
+      "start": "Start",
+      "end": "End",
+      "process": "Process",
+      "decision": "Decision",
+      "note": "Note",
+      "group": "Group",
+      "delay": "Delay",
+      "if_else": "If / Else",
+      "switch": "Switch",
+      "loop": "Loop",
+      "parallel": "Parallel",
+      "merge": "Merge",
+      "retry": "Retry",
+      "error_handler": "Error Handler",
+      "api_request": "API Request",
+      "webhook": "Webhook",
+      "email": "Email",
+      "database": "Database Query",
+      "google_sheets": "Google Sheets",
+      "form_step": "Form Step",
+      "approval": "Approval Step",
+      "ai_generate": "Generate Text",
+      "ai_classify": "Classify",
+      "ai_summarize": "Summarize"
+    }
+  },
+  "billing": {
+    "current_plan": "Current Plan",
+    "upgrade": "Upgrade",
+    "trial_ends": "Trial ends {date}",
+    "plans": {
+      "free": "Free",
+      "warrior": "Warrior",
+      "elite": "Elite",
+      "champion": "Champion",
+      "legend": "Legend"
+    }
+  },
+  "errors": {
+    "limit_reached": "You've reached the {plan} plan limit for {resource}. Upgrade to continue.",
+    "no_credits": "You have no AI credits remaining. Upgrade your plan to continue.",
+    "permission_denied": "You don't have permission to perform this action.",
+    "not_found": "This workflow doesn't exist or you don't have access."
+  }
+}

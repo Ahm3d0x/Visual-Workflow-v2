@@ -1,0 +1,240 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import { useRouter } from '@/i18n/routing';
+import { useTranslations } from 'next-intl';
+import { signOut } from '@/actions/auth.actions';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Workflow,
+  Home,
+  GitBranch,
+  Settings,
+  CreditCard,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
+  User,
+  Building,
+  Menu,
+} from 'lucide-react';
+import Link from 'next/link';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { LanguageToggle } from '@/components/LanguageToggle';
+
+interface DashboardShellProps {
+  children: React.ReactNode;
+  locale: string;
+  profile: {
+    full_name: string | null;
+    email: string;
+    avatar_url: string | null;
+  } | null;
+  workspaces: Array<{
+    id: string;
+    name: string;
+    plan: string;
+  }>;
+}
+
+export function DashboardShell({ children, locale, profile, workspaces }: DashboardShellProps) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [activeWorkspace, setActiveWorkspace] = useState(workspaces[0] || null);
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+  const t = useTranslations('dashboard');
+  const tAuth = useTranslations('auth');
+
+  const handleSignOut = async () => {
+    startTransition(async () => {
+      const res = await signOut();
+      if (!res?.error) {
+        router.push('/auth/sign-in');
+      }
+    });
+  };
+
+  const navItems = [
+    { name: t('title'), href: `/${locale}/dashboard`, icon: Home },
+    { name: 'Workflows', href: `/${locale}/dashboard`, icon: GitBranch },
+    { name: 'Workspace settings', href: `/${locale}/settings/workspace`, icon: Settings },
+    { name: 'Billing & Plans', href: `/${locale}/dashboard`, icon: CreditCard },
+  ];
+
+  return (
+    <div className="min-h-screen flex bg-canvas text-foreground transition-colors duration-300">
+      {/* 1. SIDEBAR */}
+      <aside
+        className={`fixed inset-y-0 start-0 z-40 flex flex-col bg-sidebar border-e border-border transition-all duration-300 ${
+          collapsed ? 'w-20' : 'w-64'
+        }`}
+      >
+        {/* Sidebar Header */}
+        <div className="h-16 flex items-center justify-between px-4 border-b border-border">
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="bg-primary text-primary-foreground p-2 rounded-xl flex items-center justify-center shrink-0">
+              <Workflow className="w-5 h-5 animate-pulse" />
+            </div>
+            {!collapsed && (
+              <span className="font-bold text-base tracking-tight truncate bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                Visual Workflow
+              </span>
+            )}
+          </div>
+          {!collapsed && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCollapsed(true)}
+              className="w-8 h-8 rounded-lg hover:bg-muted text-muted-foreground hidden lg:flex"
+            >
+              <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
+            </Button>
+          )}
+          {collapsed && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setCollapsed(false)}
+              className="w-8 h-8 rounded-lg hover:bg-muted text-muted-foreground hidden lg:flex mx-auto"
+            >
+              <ChevronRight className="w-4 h-4 rtl:rotate-180" />
+            </Button>
+          )}
+        </div>
+
+        {/* Sidebar Navigation */}
+        <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
+          {navItems.map((item, idx) => (
+            <Link key={idx} href={item.href} passHref>
+              <Button
+                variant="ghost"
+                className={`w-full justify-start gap-3 py-6 rounded-xl hover:bg-muted transition-all cursor-pointer ${
+                  collapsed ? 'px-0 justify-center' : 'px-4'
+                }`}
+              >
+                <item.icon className="w-5 h-5 text-accent shrink-0" />
+                {!collapsed && <span className="font-medium text-sm">{item.name}</span>}
+              </Button>
+            </Link>
+          ))}
+        </nav>
+
+        {/* Sidebar Footer */}
+        <div className="p-4 border-t border-border flex flex-col gap-2">
+          {!collapsed && (
+            <Button
+              onClick={handleSignOut}
+              disabled={isPending}
+              variant="outline"
+              className="w-full border-border hover:bg-destructive/10 hover:text-destructive font-medium rounded-xl py-5 transition-all cursor-pointer flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>{tAuth('sign_out')}</span>
+            </Button>
+          )}
+          {collapsed && (
+            <Button
+              onClick={handleSignOut}
+              disabled={isPending}
+              variant="outline"
+              size="icon"
+              className="w-10 h-10 border-border hover:bg-destructive/10 hover:text-destructive rounded-xl mx-auto cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      </aside>
+
+      {/* 2. MAIN BODY */}
+      <div className={`flex-1 flex flex-col transition-all duration-300 ${collapsed ? 'ps-20' : 'ps-64'}`}>
+        {/* Top Navbar */}
+        <header className="h-16 sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-6 flex items-center justify-between transition-colors duration-300">
+          <div className="flex items-center gap-4">
+            {/* Mobile Sidebar Trigger */}
+            <Button variant="ghost" size="icon" className="lg:hidden w-10 h-10 border border-border rounded-xl">
+              <Menu className="w-5 h-5" />
+            </Button>
+
+            {/* Workspace Switcher */}
+            {activeWorkspace && (
+              <DropdownMenu>
+                <DropdownMenuTrigger className="inline-flex items-center gap-2 px-4 py-2 border border-border bg-background rounded-xl text-sm font-semibold hover:bg-muted cursor-pointer transition-all focus:outline-hidden select-none">
+                  <Building className="w-4 h-4 text-accent" />
+                  <span className="max-w-[120px] truncate">{activeWorkspace.name}</span>
+                  <span className="text-[10px] uppercase font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-md">
+                    {activeWorkspace.plan}
+                  </span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="bg-background border border-border rounded-xl shadow-lg w-56">
+                  <DropdownMenuLabel className="text-xs text-muted-foreground font-light px-2 py-1.5">
+                    Select Workspace
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-border" />
+                  {workspaces.map((ws) => (
+                    <DropdownMenuItem
+                      key={ws.id}
+                      onClick={() => setActiveWorkspace(ws)}
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
+                    >
+                      <Building className="w-4 h-4 text-muted-foreground" />
+                      <span className="truncate flex-1">{ws.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4">
+            <LanguageToggle currentLocale={locale} />
+            <ThemeToggle />
+
+            {/* Profile Dropdown */}
+            {profile && (
+              <DropdownMenu>
+                <DropdownMenuTrigger className="rounded-full w-10 h-10 cursor-pointer overflow-hidden border-2 border-primary/20 hover:border-primary/50 transition-all focus:outline-hidden">
+                  <div className="w-full h-full bg-accent text-accent-foreground font-bold flex items-center justify-center uppercase text-sm">
+                    {profile.full_name?.charAt(0) || profile.email.charAt(0)}
+                  </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-56">
+                  <DropdownMenuLabel className="px-3 py-2">
+                    <p className="font-bold text-sm truncate">{profile.full_name || 'User'}</p>
+                    <p className="font-light text-xs text-muted-foreground truncate">{profile.email}</p>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator className="bg-border" />
+                  <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                    <User className="w-4 h-4 text-muted-foreground" /> Profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                    <Settings className="w-4 h-4 text-muted-foreground" /> Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-border" />
+                  <DropdownMenuItem
+                    onClick={handleSignOut}
+                    className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive"
+                  >
+                    <LogOut className="w-4 h-4" /> Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </header>
+
+        {/* Main Content Pane */}
+        <main className="flex-1 p-6 max-w-7xl mx-auto w-full">{children}</main>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,100 @@
+{
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "create": "إنشاء",
+    "loading": "جاري التحميل...",
+    "error": "حدث خطأ ما",
+    "success": "تم بنجاح!",
+    "upgrade": "ترقية الباقة",
+    "trial_banner": "تبقي {days} أيام في الفترة التجريبية لباقة Legend"
+  },
+  "auth": {
+    "sign_in": "تسجيل الدخول",
+    "sign_up": "إنشاء حساب",
+    "sign_out": "تسجيل الخروج",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "full_name": "الاسم الكامل",
+    "forgot_password": "هل نسيت كلمة المرور؟",
+    "google_login": "المتابعة باستخدام Google",
+    "verify_email_title": "تحقق من صندوق الوارد",
+    "verify_email_desc": "لقد أرسلنا رابط التحقق إلى {email}"
+  },
+  "dashboard": {
+    "title": "لوحة التحكم",
+    "new_workflow": "مخطط سير عمل جديد",
+    "search_placeholder": "البحث في مخططات سير العمل...",
+    "no_workflows": "لا يوجد مخططات سير عمل بعد. أنشئ مخططك الأول!",
+    "last_modified": "آخر تعديل",
+    "node_count": "{count} عقد"
+  },
+  "editor": {
+    "auto_saved": "تم الحفظ",
+    "saving": "جاري الحفظ...",
+    "unsaved": "تغييرات غير محفوظة",
+    "undo": "تراجع",
+    "redo": "إعادة",
+    "export": "تصدير",
+    "share": "مشاركة",
+    "fit_view": "ملاءمة الشاشة",
+    "zoom_in": "تكبير",
+    "zoom_out": "تصغير"
+  },
+  "nodes": {
+    "categories": {
+      "basic": "أساسي",
+      "logic": "منطق",
+      "data": "بيانات",
+      "integration": "تكامل",
+      "human": "بشري",
+      "ai": "ذكاء اصطناعي"
+    },
+    "types": {
+      "start": "البداية",
+      "end": "النهاية",
+      "process": "معالجة",
+      "decision": "قرار",
+      "note": "ملاحظة",
+      "group": "مجموعة",
+      "delay": "تأخير",
+      "if_else": "إذا / وإلا",
+      "switch": "تحويل (Switch)",
+      "loop": "تكرار (Loop)",
+      "parallel": "توازي",
+      "merge": "دمج",
+      "retry": "إعادة المحاولة",
+      "error_handler": "معالج الأخطاء",
+      "api_request": "طلب API",
+      "webhook": "ويب هوك (Webhook)",
+      "email": "بريد إلكتروني",
+      "database": "استعلام قاعدة البيانات",
+      "google_sheets": "جداول بيانات Google",
+      "form_step": "خطوة نموذج",
+      "approval": "خطوة موافقة",
+      "ai_generate": "توليد نص",
+      "ai_classify": "تصنيف",
+      "ai_summarize": "تلخيص"
+    }
+  },
+  "billing": {
+    "current_plan": "الباقة الحالية",
+    "upgrade": "ترقية الباقة",
+    "trial_ends": "تنتهي الفترة التجريبية في {date}",
+    "plans": {
+      "free": "المجانية",
+      "warrior": "المحارب (Warrior)",
+      "elite": "النخبة (Elite)",
+      "champion": "البطل (Champion)",
+      "legend": "الأسطورة (Legend)"
+    }
+  },
+  "errors": {
+    "limit_reached": "لقد وصلت إلى الحد الأقصى لباقة {plan} بالنسبة لـ {resource}. يرجى الترقية للمتابعة.",
+    "no_credits": "لم يتبقى لديك رصيد ذكاء اصطناعي. يرجى ترقية باقتك للمتابعة.",
+    "permission_denied": "ليس لديك الصلاحية لإجراء هذا الإجراء.",
+    "not_found": "مخطط سير العمل هذا غير موجود أو ليس لديك صلاحية الوصول إليه."
+  }
+}
