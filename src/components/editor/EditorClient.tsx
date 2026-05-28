@@ -534,6 +534,13 @@ function EditorInner({
             edges={edges}
             onNodesChange={permissions.canEdit ? onNodesChange : undefined}
             onEdgesChange={permissions.canEdit ? onEdgesChange : undefined}
+            onNodeDrag={
+              permissions.canEdit
+                ? (event, node) => {
+                    realtime.broadcastNodeChange('UPDATE', node);
+                  }
+                : undefined
+            }
             onConnect={
               permissions.canEdit 
                 ? (conn) => {

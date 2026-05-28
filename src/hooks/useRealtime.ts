@@ -72,13 +72,27 @@ export function useRealtime(
       }
     }, 33);
 
-    broadcastNodeChangeRef.current = (eventType, node, nodeId) => {
+    const sendThrottledNodeUpdate = throttle((nodeToUpdate: Node) => {
       if (activeChannel.state === 'joined') {
         activeChannel.send({
           type: 'broadcast',
           event: 'node_change',
-          payload: { eventType, node, nodeId },
+          payload: { eventType: 'UPDATE', node: nodeToUpdate },
         });
+      }
+    }, 40); // 25fps throttle for smooth rendering
+
+    broadcastNodeChangeRef.current = (eventType, node, nodeId) => {
+      if (activeChannel.state === 'joined') {
+        if (eventType === 'UPDATE' && node) {
+          sendThrottledNodeUpdate(node);
+        } else {
+          activeChannel.send({
+            type: 'broadcast',
+            event: 'node_change',
+            payload: { eventType, node, nodeId },
+          });
+        }
       }
     };
 
