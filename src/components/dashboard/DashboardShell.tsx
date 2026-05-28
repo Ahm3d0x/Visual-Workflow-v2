@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -176,20 +177,22 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                   </span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="bg-background border border-border rounded-xl shadow-lg w-56">
-                  <DropdownMenuLabel className="text-xs text-muted-foreground font-light px-2 py-1.5">
-                    Select Workspace
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator className="bg-border" />
-                  {workspaces.map((ws) => (
-                    <DropdownMenuItem
-                      key={ws.id}
-                      onClick={() => setActiveWorkspace(ws)}
-                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
-                    >
-                      <Building className="w-4 h-4 text-muted-foreground" />
-                      <span className="truncate flex-1">{ws.name}</span>
-                    </DropdownMenuItem>
-                  ))}
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="text-xs text-muted-foreground font-light px-2 py-1.5">
+                      Select Workspace
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator className="bg-border" />
+                    {workspaces.map((ws) => (
+                      <DropdownMenuItem
+                        key={ws.id}
+                        onClick={() => setActiveWorkspace(ws)}
+                        className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
+                      >
+                        <Building className="w-4 h-4 text-muted-foreground" />
+                        <span className="truncate flex-1">{ws.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
@@ -208,24 +211,26 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                   </div>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-56">
-                  <DropdownMenuLabel className="px-3 py-2">
-                    <p className="font-bold text-sm truncate">{profile.full_name || 'User'}</p>
-                    <p className="font-light text-xs text-muted-foreground truncate">{profile.email}</p>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator className="bg-border" />
-                  <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                    <User className="w-4 h-4 text-muted-foreground" /> Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                    <Settings className="w-4 h-4 text-muted-foreground" /> Settings
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="bg-border" />
-                  <DropdownMenuItem
-                    onClick={handleSignOut}
-                    className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive"
-                  >
-                    <LogOut className="w-4 h-4" /> Sign Out
-                  </DropdownMenuItem>
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="px-3 py-2">
+                      <p className="font-bold text-sm truncate">{profile.full_name || 'User'}</p>
+                      <p className="font-light text-xs text-muted-foreground truncate">{profile.email}</p>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator className="bg-border" />
+                    <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                      <User className="w-4 h-4 text-muted-foreground" /> Profile
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                      <Settings className="w-4 h-4 text-muted-foreground" /> Settings
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-border" />
+                    <DropdownMenuItem
+                      onClick={handleSignOut}
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive"
+                    >
+                      <LogOut className="w-4 h-4" /> Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
             )}

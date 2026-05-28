@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { DashboardShell } from '@/components/dashboard/DashboardShell';
+import { provisionWorkspaceIfNeeded } from '@/lib/supabase/provision';
 
 interface ProfileRecord {
   full_name: string | null;
@@ -53,13 +54,31 @@ export default async function MainLayout({
     .eq('user_id', user.id) as unknown as { data: WorkspaceRecord[] | null });
 
   // Map joined records to workspace lists
-  const workspaces = memberRecords
+  let workspaces = memberRecords
     ? memberRecords
         .map((r) => r.workspaces)
         .filter((w): w is { id: string; name: string; plan: string } => w !== null)
     : [];
 
   // Fallback workspace if user trigger hasn't finished in rare races
+  if (workspaces.length === 0) {
+    // Dynamically self-heal profile by provisioning missing workspaces
+    await provisionWorkspaceIfNeeded(user.id, user.email || '', profile?.full_name || null);
+
+    // Refetch membership records
+    const { data: refetchedRecords } = await (supabase
+      .from('workspace_members')
+      .select('role, workspaces(id, name, plan)')
+      .eq('user_id', user.id) as unknown as { data: WorkspaceRecord[] | null });
+
+    workspaces = refetchedRecords
+      ? refetchedRecords
+          .map((r) => r.workspaces)
+          .filter((w): w is { id: string; name: string; plan: string } => w !== null)
+      : [];
+  }
+
+  // Double fallback to local mock workspace if RLS prevents inserts
   if (workspaces.length === 0) {
     workspaces.push({
       id: 'default',

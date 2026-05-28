@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getWorkspaceSubscription, getUsageMetrics } from '@/actions/billing.actions';
 import { BillingClient } from '@/components/billing/BillingClient';
 import { PlanType } from '@/lib/planLimits';
+import { provisionWorkspaceIfNeeded } from '@/lib/supabase/provision';
 
 interface WorkspaceRecord {
   role: string;
@@ -37,11 +38,34 @@ export default async function BillingPage({
     .select('role, workspaces(id, name, plan, stripe_customer_id)')
     .eq('user_id', user.id) as unknown as { data: WorkspaceRecord[] | null });
 
-  const workspaces = memberRecords
+  let workspaces = memberRecords
     ? memberRecords
         .map((r) => r.workspaces)
         .filter((w): w is { id: string; name: string; plan: string; stripe_customer_id: string | null } => w !== null)
     : [];
+
+  // Fallback dynamic self-healing provisioning if empty
+  if (workspaces.length === 0) {
+    const { data: profile } = await (supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .maybeSingle() as unknown as Promise<{ data: { full_name: string | null } | null }>);
+
+    await provisionWorkspaceIfNeeded(user.id, user.email || '', profile?.full_name || null);
+
+    // Refetch membership records
+    const { data: refetchedRecords } = await (supabase
+      .from('workspace_members')
+      .select('role, workspaces(id, name, plan, stripe_customer_id)')
+      .eq('user_id', user.id) as unknown as { data: WorkspaceRecord[] | null });
+
+    workspaces = refetchedRecords
+      ? refetchedRecords
+          .map((r) => r.workspaces)
+          .filter((w): w is { id: string; name: string; plan: string; stripe_customer_id: string | null } => w !== null)
+      : [];
+  }
 
   const activeWorkspace = workspaces[0];
 

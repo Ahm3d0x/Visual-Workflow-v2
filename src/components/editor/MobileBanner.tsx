@@ -9,7 +9,7 @@ export function MobileBanner() {
   if (!visible) return null;
 
   return (
-    <div className="absolute top-4 left-4 right-4 z-[999] flex items-center justify-between gap-3 bg-zinc-900/85 backdrop-blur-md border border-zinc-800/80 px-4 py-3 rounded-2xl shadow-xl animate-in slide-in-from-top-4 duration-300 select-none">
+    <div className="absolute top-4 left-4 right-4 z-999 flex items-center justify-between gap-3 bg-zinc-900/85 backdrop-blur-md border border-zinc-800/80 px-4 py-3 rounded-2xl shadow-xl animate-in slide-in-from-top-4 duration-300 select-none">
       <div className="flex items-center gap-2.5 text-left">
         <div className="p-2 rounded-xl bg-accent/15 text-accent shrink-0">
           <Monitor className="w-4 h-4 animate-pulse" />
