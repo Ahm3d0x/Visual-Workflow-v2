@@ -64,6 +64,9 @@ export interface EditorState {
   // Real-time Comments Thread
   comments: EditorComment[];
 
+  // Simulation state
+  activeSimNodeId: string | null;
+
   // React Flow Handlers
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
@@ -87,6 +90,7 @@ export interface EditorState {
   setLastSaved: (date: Date | null) => void;
   setHasUnsavedChanges: (hasChanges: boolean) => void;
   clearHistory: () => void;
+  setActiveSimNodeId: (id: string | null) => void;
 
   // Collaboration Actions
   setCollaborators: (collaborators: Record<string, Collaborator>) => void;
@@ -117,9 +121,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   redoStack: [],
   collaborators: {},
   comments: [],
+  activeSimNodeId: null,
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
+  setActiveSimNodeId: (activeSimNodeId) => set({ activeSimNodeId }),
 
   onNodesChange: (changes) => {
     // Only push to undo on specific structural changes, not every micro-movement to prevent bloating the stack

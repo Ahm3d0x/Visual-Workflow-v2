@@ -10,6 +10,20 @@ interface BaseNodeProps {
   data: {
     label: string;
     description?: string;
+    customStyle?: {
+      colorClass?: string;
+      accentBar?: string;
+      badgeColor?: string;
+      iconName?: string;
+      imageUrl?: string;
+      hexBg?: string;
+      hexBorder?: string;
+      hexText?: string;
+      borderRadius?: number;
+      borderWidth?: number;
+      width?: number;
+      height?: number;
+    };
     [key: string]: unknown;
   };
   selected?: boolean;
@@ -36,14 +50,44 @@ export function BaseNode({
   const comments = useEditorStore((s) => s.comments);
   const togglePanel = useEditorStore((s) => s.togglePanel);
   const setSelectedNode = useEditorStore((s) => s.setSelectedNode);
+  const activeSimNodeId = useEditorStore((s) => s.activeSimNodeId);
+  const isSimActive = activeSimNodeId === id;
 
   const unresolvedComments = comments.filter((c) => c.node_id === id && !c.resolved_at);
   const commentCount = unresolvedComments.length;
 
+  // Retrieve custom styles overrides if any
+  const customStyle = data.customStyle || {};
+  const inlineStyles: React.CSSProperties = {};
+  
+  if (customStyle.hexBg) inlineStyles.backgroundColor = customStyle.hexBg;
+  if (customStyle.hexBorder) inlineStyles.borderColor = customStyle.hexBorder;
+  if (customStyle.hexText) inlineStyles.color = customStyle.hexText;
+  
+  if (customStyle.borderRadius !== undefined) {
+    inlineStyles.borderRadius = `${customStyle.borderRadius}px`;
+  }
+  if (customStyle.borderWidth !== undefined) {
+    inlineStyles.borderWidth = `${customStyle.borderWidth}px`;
+  }
+  if (customStyle.width !== undefined) {
+    inlineStyles.width = `${customStyle.width}px`;
+    inlineStyles.minWidth = 'unset';
+    inlineStyles.maxWidth = 'unset';
+  }
+  if (customStyle.height !== undefined) {
+    inlineStyles.height = `${customStyle.height}px`;
+  }
+
   return (
     <div
+      style={inlineStyles}
       className={`min-w-[200px] max-w-[280px] rounded-2xl border backdrop-blur-md transition-all shadow-md select-none group relative ${color} ${
         selected ? 'ring-2 ring-offset-2 ring-accent scale-[1.02]' : 'hover:scale-[1.01]'
+      } ${
+        isSimActive 
+          ? 'ring-4 ring-emerald-500 shadow-[0_0_25px_rgba(16,185,129,0.7)] scale-[1.03] border-emerald-400/80 animate-pulse z-50' 
+          : ''
       }`}
     >
       {/* Dynamic Incoming Input Handles along Top border */}
@@ -73,7 +117,10 @@ export function BaseNode({
             <div className="w-6.5 h-6.5 rounded-lg bg-muted flex items-center justify-center border border-border/40 shrink-0">
               {icon}
             </div>
-            <h4 className="font-bold text-sm font-sans tracking-tight text-foreground line-clamp-1 leading-tight truncate">
+            <h4 
+              style={customStyle.hexText ? { color: customStyle.hexText } : undefined} 
+              className={`font-bold text-sm font-sans tracking-tight line-clamp-1 leading-tight truncate ${customStyle.hexText ? '' : 'text-foreground'}`}
+            >
               {data.label || type}
             </h4>
           </div>
@@ -100,7 +147,10 @@ export function BaseNode({
         </div>
 
         {data.description && (
-          <p className="text-[11px] font-light text-muted-foreground line-clamp-2 leading-tight">
+          <p 
+            style={customStyle.hexText ? { color: customStyle.hexText, opacity: 0.8 } : undefined} 
+            className={`text-[11px] font-light line-clamp-2 leading-tight ${customStyle.hexText ? '' : 'text-muted-foreground'}`}
+          >
             {data.description}
           </p>
         )}

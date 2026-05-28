@@ -58,7 +58,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
   const isOpen = panels.library;
 
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'favorites' | 'basic' | 'logic' | 'data' | 'integration' | 'human' | 'ai'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'favorites' | 'custom' | 'basic' | 'logic' | 'data' | 'integration' | 'human' | 'ai'>('all');
 
   // Supabase states
   const supabase = createClient();
@@ -76,6 +76,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
   const categories = [
     { id: 'all', label: 'All', icon: <Sliders className="w-3.5 h-3.5" /> },
     { id: 'favorites', label: 'Favorites', icon: <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> },
+    { id: 'custom', label: 'Custom Elements', icon: <Sparkles className="w-3.5 h-3.5 text-accent animate-pulse" /> },
     { id: 'basic', label: 'Basic', icon: <Play className="w-3.5 h-3.5" /> },
     { id: 'logic', label: 'Logic', icon: <GitFork className="w-3.5 h-3.5" /> },
     { id: 'data', label: 'Data', icon: <ArrowRightLeft className="w-3.5 h-3.5" /> },
@@ -268,32 +269,34 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
   };
 
   // Filter Catalog / Favorites
-  const filteredCatalog = activeTab === 'favorites' 
-    ? nodeCatalog.filter(item => 
-        favorites.some(f => f.node_type === item.type) &&
-        (item.label.toLowerCase().includes(search.toLowerCase()) || 
-         item.description.toLowerCase().includes(search.toLowerCase()))
+  const filteredCatalog = activeTab === 'custom'
+    ? []
+    : activeTab === 'favorites' 
+      ? nodeCatalog.filter(item => 
+          favorites.some(f => f.node_type === item.type) &&
+          (item.label.toLowerCase().includes(search.toLowerCase()) || 
+           item.description.toLowerCase().includes(search.toLowerCase()))
+        )
+      : nodeCatalog.filter((item) => {
+          const matchesSearch = item.label.toLowerCase().includes(search.toLowerCase()) || 
+                                item.description.toLowerCase().includes(search.toLowerCase()) ||
+                                item.type.toLowerCase().includes(search.toLowerCase());
+          const matchesTab = activeTab === 'all' || item.category === activeTab;
+          return matchesSearch && matchesTab;
+        });
+ 
+  const filteredCustomTemplates = activeTab === 'custom'
+    ? customTemplates.filter(tpl =>
+        tpl.name.toLowerCase().includes(search.toLowerCase()) || 
+        (tpl.description && tpl.description.toLowerCase().includes(search.toLowerCase()))
       )
-    : nodeCatalog.filter((item) => {
-        const matchesSearch = item.label.toLowerCase().includes(search.toLowerCase()) || 
-                              item.description.toLowerCase().includes(search.toLowerCase()) ||
-                              item.type.toLowerCase().includes(search.toLowerCase());
-        const matchesTab = activeTab === 'all' || item.category === activeTab;
-        return matchesSearch && matchesTab;
-      });
-
-  const filteredCustomTemplates = activeTab === 'favorites'
-    ? customTemplates.filter(tpl => 
-        favorites.some(f => f.custom_node_template_id === tpl.id) &&
-        (tpl.name.toLowerCase().includes(search.toLowerCase()) || 
-         (tpl.description && tpl.description.toLowerCase().includes(search.toLowerCase())))
-      )
-    : customTemplates.filter(tpl => {
-        const matchesSearch = tpl.name.toLowerCase().includes(search.toLowerCase()) || 
-                              (tpl.description && tpl.description.toLowerCase().includes(search.toLowerCase()));
-        const matchesTab = activeTab === 'all' || tpl.base_type === activeTab;
-        return matchesSearch && matchesTab;
-      });
+    : activeTab === 'favorites'
+      ? customTemplates.filter(tpl => 
+          favorites.some(f => f.custom_node_template_id === tpl.id) &&
+          (tpl.name.toLowerCase().includes(search.toLowerCase()) || 
+           (tpl.description && tpl.description.toLowerCase().includes(search.toLowerCase())))
+        )
+      : []; // Custom templates are isolated completely and do not render in standard basic/logic categories!
 
   if (!isOpen) {
     return (
@@ -362,21 +365,30 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
       </div>
 
       {/* 3. Horizontal Scrollable Tabs */}
-      <div className="border-b border-border bg-background/10 py-1.5 px-2 overflow-x-auto flex gap-1.5 scrollbar-thin select-none">
-        {categories.map((cat) => (
-          <button
-            key={cat.id}
-            onClick={() => setActiveTab(cat.id)}
-            className={`px-3 py-1.5 rounded-lg text-[10px] font-semibold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
-              activeTab === cat.id
-                ? 'bg-accent text-accent-foreground shadow-sm'
-                : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {cat.icon}
-            <span>{cat.label}</span>
-          </button>
-        ))}
+      <div className="border-b border-border bg-background/10 py-1.5 px-2 overflow-x-auto flex gap-1.5 scrollbar-none select-none">
+        {categories.map((cat) => {
+          const isCustomTab = cat.id === 'custom';
+          const isActive = activeTab === cat.id;
+          
+          return (
+            <button
+              key={cat.id}
+              onClick={() => setActiveTab(cat.id)}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-semibold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all duration-200 ${
+                isActive
+                  ? isCustomTab
+                    ? 'bg-gradient-to-r from-purple-600 to-accent text-white shadow-md border border-purple-500/20 scale-[1.02]'
+                    : 'bg-accent text-accent-foreground shadow-sm'
+                  : isCustomTab
+                    ? 'border border-dashed border-purple-500/40 text-purple-400 hover:bg-purple-950/20 hover:text-purple-300'
+                    : 'hover:bg-muted text-muted-foreground hover:text-foreground border border-transparent'
+              }`}
+            >
+              {cat.icon}
+              <span>{cat.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* 4. List of Items */}
@@ -439,7 +451,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
             </div>
 
             {/* Custom reusable nodes section */}
-            {activeTab !== 'favorites' && (
+            {(activeTab === 'custom' || activeTab === 'all') && (
               <div className="pt-4 border-t border-border/60 space-y-3">
                 <div className="flex items-center justify-between pl-1">
                   <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">

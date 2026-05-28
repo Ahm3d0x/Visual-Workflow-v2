@@ -3,7 +3,9 @@
 import { 
   Play, StopCircle, Settings, GitFork, Clipboard,
   Send, Database, CheckSquare, BrainCircuit, 
-  Clock, ArrowRightLeft, RefreshCw
+  Clock, ArrowRightLeft, RefreshCw, Heart, Award,
+  Shield, Cpu, Mail, Bell, Globe, User, Zap,
+  Image as ImageIcon, Activity, Cloud, Code, Lock, Key
 } from 'lucide-react';
 import { BaseNode } from './BaseNode';
 import { NODE_SCHEMAS } from '@/lib/nodeSchemas';
@@ -20,6 +22,7 @@ interface CustomNodeProps {
       accentBar?: string;
       badgeColor?: string;
       iconName?: string;
+      imageUrl?: string;
     };
     customHandles?: {
       inputsCount?: number;
@@ -45,6 +48,21 @@ export function CustomNode({ id, type, data, selected }: CustomNodeProps) {
       case 'ai': return <BrainCircuit className="w-4 h-4 text-rose-500" />;
       case 'timer': return <Clock className="w-4 h-4 text-zinc-500" />;
       case 'loop': return <RefreshCw className="w-4 h-4 text-violet-500" />;
+      case 'heart': return <Heart className="w-4 h-4 text-rose-500" />;
+      case 'award': return <Award className="w-4 h-4 text-yellow-500" />;
+      case 'shield': return <Shield className="w-4 h-4 text-emerald-500" />;
+      case 'cpu': return <Cpu className="w-4 h-4 text-sky-500" />;
+      case 'mail': return <Mail className="w-4 h-4 text-blue-500" />;
+      case 'bell': return <Bell className="w-4 h-4 text-amber-500" />;
+      case 'globe': return <Globe className="w-4 h-4 text-cyan-500" />;
+      case 'user': return <User className="w-4 h-4 text-indigo-500" />;
+      case 'zap': return <Zap className="w-4 h-4 text-yellow-400" />;
+      case 'image': return <ImageIcon className="w-4 h-4 text-pink-500" />;
+      case 'activity': return <Activity className="w-4 h-4 text-emerald-400" />;
+      case 'cloud': return <Cloud className="w-4 h-4 text-sky-400" />;
+      case 'code': return <Code className="w-4 h-4 text-amber-600" />;
+      case 'lock': return <Lock className="w-4 h-4 text-rose-400" />;
+      case 'key': return <Key className="w-4 h-4 text-yellow-600" />;
       default: return <Settings className="w-4 h-4" />;
     }
   };
@@ -55,16 +73,8 @@ export function CustomNode({ id, type, data, selected }: CustomNodeProps) {
   let badgeColor = 'bg-primary/10 text-primary';
   let accentBar = 'bg-primary';
 
-  // Check if it's a dynamic custom template first
-  if (type === 'custom_template' || data.customNode) {
-    const customStyle = data.customStyle || {};
-    colorClass = customStyle.colorClass || colorClass;
-    accentBar = customStyle.accentBar || accentBar;
-    badgeColor = customStyle.badgeColor || badgeColor;
-    icon = getCustomIcon(customStyle.iconName || 'settings');
-  }
   // Basic Categories
-  else if (['start', 'end', 'process', 'decision', 'note', 'group', 'delay', 'connector'].includes(type)) {
+  if (['start', 'end', 'process', 'decision', 'note', 'group', 'delay', 'connector'].includes(type)) {
     if (type === 'start') {
       icon = <Play className="w-4 h-4 text-emerald-500" />;
       colorClass = 'border-emerald-500/20 bg-background/90 text-emerald-600 dark:border-emerald-500/40';
@@ -124,6 +134,20 @@ export function CustomNode({ id, type, data, selected }: CustomNodeProps) {
     colorClass = 'border-rose-500/20 bg-background/90 text-rose-600 dark:border-rose-500/40';
     badgeColor = 'bg-rose-500/10 text-rose-600';
     accentBar = 'bg-rose-500';
+  }
+
+  // Check if it's a dynamic custom template first OR if customStyle is provided dynamically to override styling!
+  if (type === 'custom_template' || data.customNode || data.customStyle) {
+    const customStyle = data.customStyle || {};
+    colorClass = customStyle.colorClass || colorClass;
+    accentBar = customStyle.accentBar || accentBar;
+    badgeColor = customStyle.badgeColor || badgeColor;
+    
+    if (customStyle.imageUrl) {
+      icon = <img src={customStyle.imageUrl} className="w-5.5 h-5.5 rounded-lg object-cover border border-border/20 shrink-0" alt="custom logo" />;
+    } else if (customStyle.iconName) {
+      icon = getCustomIcon(customStyle.iconName);
+    }
   }
 
   // 2. Fetch connection handle structures dynamically
