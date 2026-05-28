@@ -1,6 +1,9 @@
 import { CustomNode } from './CustomNode';
+import { BoardNode } from './BoardNode';
 
 export const nodeTypes = {
+  // Board Node
+  board: BoardNode,
   // Custom Reusable Templates
   custom_template: CustomNode,
   // Basic
@@ -53,10 +56,12 @@ export interface LibraryItem {
   type: keyof typeof nodeTypes;
   label: string;
   description: string;
-  category: 'basic' | 'logic' | 'data' | 'integration' | 'human' | 'ai';
+  category: 'basic' | 'logic' | 'data' | 'integration' | 'human' | 'ai' | 'board';
 }
 
 export const nodeCatalog: LibraryItem[] = [
+  // 0. Board
+  { type: 'board', label: 'Whiteboard', description: 'Full-featured collaborative drawing board with shapes, text, freehand and real-time sync', category: 'board' },
   // 1. Basic Nodes
   { type: 'start', label: 'Start Trigger', description: 'Starting entrypoint trigger for visual flow', category: 'basic' },
   { type: 'process', label: 'Process Step', description: 'Apply a generic computational operation', category: 'basic' },

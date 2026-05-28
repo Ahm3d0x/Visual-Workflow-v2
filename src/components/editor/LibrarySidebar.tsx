@@ -58,7 +58,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
   const isOpen = panels.library;
 
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'favorites' | 'custom' | 'basic' | 'logic' | 'data' | 'integration' | 'human' | 'ai'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'favorites' | 'custom' | 'board' | 'basic' | 'logic' | 'data' | 'integration' | 'human' | 'ai'>('all');
 
   // Supabase states
   const supabase = createClient();
@@ -76,13 +76,14 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
   const categories = [
     { id: 'all', label: 'All', icon: <Sliders className="w-3.5 h-3.5" /> },
     { id: 'favorites', label: 'Favorites', icon: <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> },
-    { id: 'custom', label: 'Custom Elements', icon: <Sparkles className="w-3.5 h-3.5 text-accent animate-pulse" /> },
+    { id: 'custom', label: 'Custom', icon: <Sparkles className="w-3.5 h-3.5 text-accent animate-pulse" /> },
+    { id: 'board', label: 'Boards', icon: <span className="text-[10px]">🎨</span> },
     { id: 'basic', label: 'Basic', icon: <Play className="w-3.5 h-3.5" /> },
     { id: 'logic', label: 'Logic', icon: <GitFork className="w-3.5 h-3.5" /> },
     { id: 'data', label: 'Data', icon: <ArrowRightLeft className="w-3.5 h-3.5" /> },
-    { id: 'integration', label: 'Integration', icon: <Send className="w-3.5 h-3.5" /> },
+    { id: 'integration', label: 'Integrat.', icon: <Send className="w-3.5 h-3.5" /> },
     { id: 'human', label: 'Human', icon: <Play className="w-3.5 h-3.5" /> },
-    { id: 'ai', label: 'AI Agent', icon: <BrainCircuit className="w-3.5 h-3.5 text-rose-500" /> },
+    { id: 'ai', label: 'AI', icon: <BrainCircuit className="w-3.5 h-3.5 text-rose-500" /> },
   ] as const;
 
   // 1. Fetch Sidebar Data (Favorites, Subscriptions, Templates) asynchronously in useEffect
@@ -232,6 +233,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
   // Get color indicators by category
   const getCategoryColor = (cat: string) => {
     switch (cat) {
+      case 'board': return 'bg-fuchsia-500';
       case 'basic': return 'bg-primary';
       case 'logic': return 'bg-amber-500';
       case 'data': return 'bg-sky-500';
@@ -364,31 +366,38 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
         </div>
       </div>
 
-      {/* 3. Horizontal Scrollable Tabs */}
-      <div className="border-b border-border bg-background/10 py-1.5 px-2 overflow-x-auto flex gap-1.5 scrollbar-none select-none">
-        {categories.map((cat) => {
-          const isCustomTab = cat.id === 'custom';
-          const isActive = activeTab === cat.id;
-          
-          return (
-            <button
-              key={cat.id}
-              onClick={() => setActiveTab(cat.id)}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-semibold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all duration-200 ${
-                isActive
-                  ? isCustomTab
-                    ? 'bg-gradient-to-r from-purple-600 to-accent text-white shadow-md border border-purple-500/20 scale-[1.02]'
-                    : 'bg-accent text-accent-foreground shadow-sm'
-                  : isCustomTab
-                    ? 'border border-dashed border-purple-500/40 text-purple-400 hover:bg-purple-950/20 hover:text-purple-300'
-                    : 'hover:bg-muted text-muted-foreground hover:text-foreground border border-transparent'
-              }`}
-            >
-              {cat.icon}
-              <span>{cat.label}</span>
-            </button>
-          );
-        })}
+      {/* 3. Category Grid Tabs — 2 rows, no overflow */}
+      <div className="border-b border-border bg-background/10 py-2 px-2">
+        <div className="grid grid-cols-5 gap-1">
+          {categories.map((cat) => {
+            const isCustomTab = cat.id === 'custom';
+            const isBoardTab = cat.id === 'board';
+            const isActive = activeTab === cat.id;
+
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setActiveTab(cat.id)}
+                className={`flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-xl text-[9px] font-semibold transition-all duration-150 cursor-pointer leading-none ${
+                  isActive
+                    ? isCustomTab
+                      ? 'bg-purple-600 text-white shadow-md'
+                      : isBoardTab
+                        ? 'bg-fuchsia-500 text-white shadow-md'
+                        : 'bg-accent text-accent-foreground shadow-sm'
+                    : isCustomTab
+                      ? 'border border-dashed border-purple-500/40 text-purple-400 hover:bg-purple-950/30'
+                      : isBoardTab
+                        ? 'text-fuchsia-400/70 hover:bg-fuchsia-500/10 hover:text-fuchsia-400'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                <span className="flex items-center justify-center w-4 h-4">{cat.icon}</span>
+                <span className="truncate w-full text-center">{cat.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 4. List of Items */}

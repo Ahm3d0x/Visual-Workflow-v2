@@ -23,13 +23,26 @@ export interface FieldSchema {
 
 export interface NodeSchema {
   type: string;
-  category: 'basic' | 'logic' | 'data' | 'integration' | 'human' | 'ai';
+  category: 'basic' | 'logic' | 'data' | 'integration' | 'human' | 'ai' | 'board';
   label: string;
   description: string;
   fields: FieldSchema[];
   inputs: { id: string; label?: string }[];
   outputs: { id: string; label?: string }[];
 }
+// 0. Board Node
+export const boardSchema: NodeSchema = {
+  type: 'board',
+  category: 'board',
+  label: 'Whiteboard',
+  description: 'Full-featured collaborative drawing board with shapes, text, freehand and real-time sync',
+  fields: [
+    { key: 'label', label: 'Board Title', type: 'text', required: true, default: 'Whiteboard' },
+    { key: 'description', label: 'Description', type: 'textarea', placeholder: 'Optional board description...' },
+  ],
+  inputs: [{ id: 'in', label: 'Flow in' }],
+  outputs: [{ id: 'out', label: 'Flow out' }],
+};
 
 // 1. Basic Nodes
 export const startSchema: NodeSchema = {
@@ -351,6 +364,8 @@ export const aiSummarizeSchema: NodeSchema = {
 
 // Master Mapping Catalog (supports all 40+ standard/advanced types elegantly)
 export const NODE_SCHEMAS: Record<string, NodeSchema> = {
+  // Board
+  board: boardSchema,
   // Basic
   start: startSchema,
   end: endSchema,
