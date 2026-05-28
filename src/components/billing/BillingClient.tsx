@@ -206,7 +206,7 @@ export function BillingClient({
       {/* 1. Header Banners */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/60 pb-6">
         <div className="flex flex-col gap-1.5 max-w-xl">
-          <h1 className="text-3xl font-extrabold tracking-tight font-sans bg-clip-text bg-gradient-to-r from-foreground to-foreground/80">
+          <h1 className="text-3xl font-extrabold tracking-tight font-sans bg-clip-text bg-linear-to-r from-foreground to-foreground/80">
             {t.title}
           </h1>
           <p className="text-sm text-muted-foreground font-light leading-relaxed">
@@ -337,7 +337,7 @@ export function BillingClient({
             >
               {/* Highlight badge for Legend tier */}
               {plan === 'legend' && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-[8px] uppercase tracking-widest font-extrabold px-3 py-1 rounded-full border border-emerald-400 shadow-md">
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-linear-to-r from-emerald-500 to-teal-600 text-white text-[8px] uppercase tracking-widest font-extrabold px-3 py-1 rounded-full border border-emerald-400 shadow-md">
                   {isRtl ? 'الأقوى' : 'Ultimate'}
                 </div>
               )}

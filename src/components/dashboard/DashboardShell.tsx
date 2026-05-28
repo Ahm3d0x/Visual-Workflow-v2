@@ -85,7 +85,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
               <Workflow className="w-5 h-5 animate-pulse" />
             </div>
             {!collapsed && (
-              <span className="font-bold text-base tracking-tight truncate bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              <span className="font-bold text-base tracking-tight truncate bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
                 Visual Workflow
               </span>
             )}

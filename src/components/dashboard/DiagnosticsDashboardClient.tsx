@@ -22,6 +22,7 @@ interface LogEntry {
   message: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function DiagnosticsDashboardClient({ workspaceId, locale: _locale }: DiagnosticsDashboardClientProps) {
   const supabase = createClient();
   const consoleEndRef = useRef<HTMLDivElement | null>(null);

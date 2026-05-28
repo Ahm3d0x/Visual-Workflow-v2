@@ -25,7 +25,7 @@ export default async function LandingPage({
             <div className="bg-primary text-primary-foreground p-2 rounded-xl shadow-lg shadow-primary/20 flex items-center justify-center">
               <Workflow className="w-6 h-6 animate-pulse" />
             </div>
-            <span className="font-sans font-bold text-xl tracking-tight bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+            <span className="font-sans font-bold text-xl tracking-tight bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
               Visual Workflow SaaS
             </span>
           </div>
@@ -55,7 +55,7 @@ export default async function LandingPage({
         
         <h1 className="text-5xl md:text-7xl font-sans font-extrabold tracking-tight max-w-4xl leading-[1.15] mb-8">
           Build & Automate{" "}
-          <span className="bg-gradient-to-r from-accent to-node-ai bg-clip-text text-transparent">
+          <span className="bg-linear-to-r from-accent to-node-ai bg-clip-text text-transparent">
             Agentic Workflows
           </span>{" "}
           Visually

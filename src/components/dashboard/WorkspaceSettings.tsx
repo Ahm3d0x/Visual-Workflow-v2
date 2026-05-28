@@ -14,7 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Shield, Building, Trash2, Edit2, Loader2, ChevronDown, Check } from 'lucide-react';
+import { Shield, Building, Trash2, Loader2, ChevronDown, Check } from 'lucide-react';
 
 interface Member {
   role: 'owner' | 'admin' | 'editor' | 'commenter' | 'viewer';
@@ -44,7 +44,6 @@ export function WorkspaceSettings({
   initialMembers,
   currentUserRole,
   currentUserId,
-  locale,
 }: WorkspaceSettingsProps) {
   const router = useRouter();
   const supabase = createClient();
@@ -55,7 +54,6 @@ export function WorkspaceSettings({
   const [memberLoading, setMemberLoading] = useState<string | null>(null);
 
   const canManage = currentUserRole === 'owner' || currentUserRole === 'admin';
-  const isOwner = currentUserRole === 'owner';
 
   const handleRenameWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +61,7 @@ export function WorkspaceSettings({
 
     setLoading(true);
     const { error } = await (supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('workspaces') as any)
       .update({ name: wsName.trim() })
       .eq('id', initialWorkspace.id);
@@ -76,9 +75,11 @@ export function WorkspaceSettings({
     setLoading(false);
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleChangeRole = async (targetUserId: string, nextRole: any) => {
     setMemberLoading(targetUserId);
     const { error } = await (supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('workspace_members') as any)
       .update({ role: nextRole })
       .eq('workspace_id', initialWorkspace.id)
@@ -99,6 +100,7 @@ export function WorkspaceSettings({
 
     setMemberLoading(targetUserId);
     const { error } = await (supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('workspace_members') as any)
       .delete()
       .eq('workspace_id', initialWorkspace.id)

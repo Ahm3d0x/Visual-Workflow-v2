@@ -81,7 +81,7 @@ export default function SignInPage({
       <div className="absolute top-6 right-6 left-6 flex justify-between items-center z-50">
         <div className="flex items-center gap-3">
           <Workflow className="w-6 h-6 text-accent" />
-          <span className="font-bold hidden sm:inline-block bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          <span className="font-bold hidden sm:inline-block bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
             Visual Workflow SaaS
           </span>
         </div>
@@ -189,7 +189,7 @@ export default function SignInPage({
             </Button>
 
             <div className="text-center text-sm font-light text-muted-foreground mt-4">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <Link href={`/${locale}/auth/sign-up`} className="font-semibold text-accent hover:underline">
                 Create Account
               </Link>

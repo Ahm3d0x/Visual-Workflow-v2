@@ -318,7 +318,7 @@ function EditorInner({
             handles?: Record<string, unknown>;
           };
           newNode = {
-            id: `node_${Date.now()}`,
+            id: crypto.randomUUID(),
             type: 'custom_template',
             position,
             data: {
@@ -334,7 +334,7 @@ function EditorInner({
         }
       } else {
         newNode = {
-          id: `node_${Date.now()}`,
+          id: crypto.randomUUID(),
           type,
           position,
           data: { 
@@ -373,7 +373,7 @@ function EditorInner({
           handles?: Record<string, unknown>;
         };
         newNode = {
-          id: `node_${Date.now()}`,
+          id: crypto.randomUUID(),
           type: 'custom_template',
           position,
           data: {
@@ -386,7 +386,7 @@ function EditorInner({
         };
       } else {
         newNode = {
-          id: `node_${Date.now()}`,
+          id: crypto.randomUUID(),
           type,
           position,
           data: { 
@@ -540,7 +540,7 @@ function EditorInner({
                     onConnect(conn);
                     // Broadcast new edge creation immediately
                     const newEdge = {
-                      id: `edge-${Date.now()}`,
+                      id: crypto.randomUUID(),
                       source: conn.source,
                       target: conn.target,
                       sourceHandle: conn.sourceHandle,

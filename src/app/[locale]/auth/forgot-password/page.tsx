@@ -65,7 +65,7 @@ export default function ForgotPasswordPage({
       <div className="absolute top-6 right-6 left-6 flex justify-between items-center z-50">
         <div className="flex items-center gap-3">
           <Workflow className="w-6 h-6 text-accent" />
-          <span className="font-bold hidden sm:inline-block bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          <span className="font-bold hidden sm:inline-block bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
             Visual Workflow SaaS
           </span>
         </div>
@@ -93,7 +93,7 @@ export default function ForgotPasswordPage({
                 </div>
                 <h3 className="font-bold text-lg">Check your inbox</h3>
                 <p className="text-sm font-light text-muted-foreground">
-                  We've sent a password reset link to your email address. Please follow the instructions to secure your account.
+                  We&apos;ve sent a password reset link to your email address. Please follow the instructions to secure your account.
                 </p>
                 <Link href={`/${locale}/auth/sign-in`} passHref>
                   <Button className="w-full bg-primary hover:bg-primary/95 text-primary-foreground font-semibold py-6 rounded-xl mt-4 cursor-pointer">

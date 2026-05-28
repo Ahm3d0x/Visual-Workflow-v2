@@ -62,12 +62,14 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
   const handleArchive = async (id: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'archived' ? 'draft' : 'archived';
     const { error } = await (supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('workflows') as any)
       .update({ status: nextStatus, updated_at: new Date().toISOString() })
       .eq('id', id);
 
     if (!error) {
       setWorkflows((prev) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         prev.map((w) => (w.id === id ? { ...w, status: nextStatus as any, updated_at: new Date().toISOString() } : w))
       );
     }
@@ -78,6 +80,7 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
     
     // 1. Insert duplicated workflow
     const { data, error } = await (supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('workflows') as any)
       .insert({
         workspace_id: workspaceId,
@@ -93,11 +96,13 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
     if (data && !error) {
       // 2. Fetch original nodes and duplicate them
       const { data: nodes } = await (supabase
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('workflow_nodes') as any)
         .select()
         .eq('workflow_id', workflow.id);
 
       if (nodes && nodes.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const nodesToInsert = nodes.map((n: any) => ({
           workflow_id: data.id,
           type: n.type,
@@ -105,9 +110,11 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
           data: n.data,
           style: n.style,
         }));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase.from('workflow_nodes') as any).insert(nodesToInsert);
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setWorkflows((prev) => [data as any, ...prev]);
       alert('Workflow successfully duplicated!');
     }
@@ -116,6 +123,7 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to permanently delete this workflow? This action is irreversible.')) return;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase.from('workflows') as any).delete().eq('id', id);
 
     if (!error) {
@@ -198,6 +206,7 @@ export function WorkflowsList({ initialWorkflows, workspaceId, locale }: Workflo
               {['all', 'draft', 'active', 'archived', 'published'].map((st) => (
                 <DropdownMenuItem
                   key={st}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   onClick={() => setStatusFilter(st as any)}
                   className="cursor-pointer capitalize rounded-lg m-1 font-medium"
                 >

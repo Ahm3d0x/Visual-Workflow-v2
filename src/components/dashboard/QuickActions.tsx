@@ -30,7 +30,7 @@ interface QuickActionsProps {
   locale: string;
 }
 
-export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
+export function QuickActions({ workspaceId }: QuickActionsProps) {
   const router = useRouter();
   const t = useTranslations('dashboard');
   const supabase = createClient();
@@ -67,8 +67,10 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
         status: 'draft',
         node_count: wfTemplate === 'blank' ? 0 : 3,
         created_by: userData.user?.id || null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       .select('id')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .single() as any);
 
     if (error) {
@@ -77,6 +79,7 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
     } else if (data) {
       // Insert mock preset nodes
       if (wfTemplate !== 'blank') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase.from('workflow_nodes') as any).insert([
           { workflow_id: data.id, type: 'start', position: { x: 100, y: 150 }, data: { label: 'Start Trigger' } },
           { workflow_id: data.id, type: 'process', position: { x: 300, y: 150 }, data: { label: 'Process Action' } },
@@ -104,6 +107,7 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
       .from('profiles')
       .select('id')
       .eq('email', inviteEmail.trim())
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .maybeSingle() as any);
 
     if (!profile) {
@@ -115,6 +119,7 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
     }
 
     // 2. Add member to public.workspace_members
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase.from('workspace_members') as any).insert({
       workspace_id: workspaceId,
       user_id: profile.id,
@@ -222,7 +227,7 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
             </div>
             <div className="space-y-2">
               <Label className="font-semibold text-sm">Access Role</Label>
-              <Select value={inviteRole} onValueChange={(val: any) => setInviteRole(val)}>
+              <Select value={inviteRole} onValueChange={(val: string | null) => setInviteRole((val || 'editor') as 'editor' | 'commenter' | 'viewer')}>
                 <SelectTrigger className="rounded-xl border-border">
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>

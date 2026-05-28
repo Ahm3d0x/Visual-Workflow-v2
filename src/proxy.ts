@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 const intlMiddleware = createMiddleware(routing);
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // 1. Run next-intl middleware first to get the response containing locale redirects/cookies
   const response = intlMiddleware(request);
 

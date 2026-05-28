@@ -149,7 +149,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   onConnect: (connection) => {
     get().pushToUndo();
     set((state) => ({
-      edges: addEdge({ ...connection, id: `edge-${Date.now()}` }, state.edges),
+      edges: addEdge({ ...connection, id: crypto.randomUUID() }, state.edges),
       hasUnsavedChanges: true,
     }));
   },

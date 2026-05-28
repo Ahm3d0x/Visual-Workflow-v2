@@ -1,6 +1,4 @@
-'use client';
-
-import { useEffect, useCallback, useState, useMemo } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useEditorStore, Collaborator } from '@/stores/editorStore';
 import { type Node, type Edge } from '@xyflow/react';
@@ -52,55 +50,52 @@ export function useRealtime(
   const setCollaborators = useEditorStore((s) => s.setCollaborators);
   const updateCollaboratorCursor = useEditorStore((s) => s.updateCollaboratorCursor);
 
-  // Initialize Supabase realtime channel once on mount to avoid refs in render
-  const [channel] = useState(() => supabase.channel(`workflow:${workflowId}`));
+  // Stable references for action callbacks populated inside useEffect
+  const broadcastCursorRef = useRef<(x: number, y: number) => void>(() => {});
+  const broadcastNodeChangeRef = useRef<(eventType: 'INSERT' | 'UPDATE' | 'DELETE', node?: Node, nodeId?: string) => void>(() => {});
+  const broadcastEdgeChangeRef = useRef<(eventType: 'INSERT' | 'DELETE', edge?: Edge, edgeId?: string) => void>(() => {});
 
-  // Throttled cursor broadcaster memoized to satisfy react hooks inline bounds
-  const broadcastCursor = useMemo(() => {
-    return throttle((x: number, y: number) => {
-      if (channel.state === 'joined') {
-        channel.send({
+  // Destructure primitive values to prevent effect triggers from inline object re-creation
+  const { fullName, avatarUrl, role } = userInfo;
+
+  useEffect(() => {
+    const activeChannel = supabase.channel(`workflow:${workflowId}`);
+
+    // Populate the refs with the active channel implementations
+    broadcastCursorRef.current = throttle((x: number, y: number) => {
+      if (activeChannel.state === 'joined') {
+        activeChannel.send({
           type: 'broadcast',
           event: 'cursor',
           payload: { userId, x, y },
         });
       }
     }, 33);
-  }, [channel, userId]);
 
-  // Broadcast node changes
-  const broadcastNodeChange = useCallback(
-    (eventType: 'INSERT' | 'UPDATE' | 'DELETE', node?: Node, nodeId?: string) => {
-      if (channel.state === 'joined') {
-        channel.send({
+    broadcastNodeChangeRef.current = (eventType, node, nodeId) => {
+      if (activeChannel.state === 'joined') {
+        activeChannel.send({
           type: 'broadcast',
           event: 'node_change',
           payload: { eventType, node, nodeId },
         });
       }
-    },
-    [channel]
-  );
+    };
 
-  // Broadcast edge changes
-  const broadcastEdgeChange = useCallback(
-    (eventType: 'INSERT' | 'DELETE', edge?: Edge, edgeId?: string) => {
-      if (channel.state === 'joined') {
-        channel.send({
+    broadcastEdgeChangeRef.current = (eventType, edge, edgeId) => {
+      if (activeChannel.state === 'joined') {
+        activeChannel.send({
           type: 'broadcast',
           event: 'edge_change',
           payload: { eventType, edge, edgeId },
         });
       }
-    },
-    [channel]
-  );
+    };
 
-  useEffect(() => {
     // 1. Listen to active collaborators Presence Events
-    channel
+    activeChannel
       .on('presence', { event: 'sync' }, () => {
-        const presenceState = channel.presenceState();
+        const presenceState = activeChannel.presenceState();
         const activeCollaborators: Record<string, Collaborator> = {};
         
         Object.keys(presenceState).forEach((key) => {
@@ -135,14 +130,14 @@ export function useRealtime(
       .on('presence', { event: 'leave' }, () => {});
 
     // 2. Listen to broadcast cursor events
-    channel.on('broadcast', { event: 'cursor' }, ({ payload }) => {
+    activeChannel.on('broadcast', { event: 'cursor' }, ({ payload }) => {
       if (payload && payload.userId !== userId) {
         updateCollaboratorCursor(payload.userId, payload.x, payload.y);
       }
     });
 
     // 3. Listen to node change events from collaborators
-    channel.on('broadcast', { event: 'node_change' }, ({ payload }) => {
+    activeChannel.on('broadcast', { event: 'node_change' }, ({ payload }) => {
       const { eventType, node, nodeId } = payload as {
         eventType: 'INSERT' | 'UPDATE' | 'DELETE';
         node?: Node;
@@ -164,7 +159,7 @@ export function useRealtime(
     });
 
     // 4. Listen to edge change events from collaborators
-    channel.on('broadcast', { event: 'edge_change' }, ({ payload }) => {
+    activeChannel.on('broadcast', { event: 'edge_change' }, ({ payload }) => {
       const { eventType, edge, edgeId } = payload as {
         eventType: 'INSERT' | 'DELETE';
         edge?: Edge;
@@ -182,7 +177,7 @@ export function useRealtime(
     });
 
     // 5. Postgres Changes for workflow comments
-    channel.on(
+    activeChannel.on(
       'postgres_changes',
       { 
         event: 'INSERT', 
@@ -198,22 +193,38 @@ export function useRealtime(
     );
 
     // Subscribe to presence tracking session
-    channel.subscribe(async (status) => {
+    activeChannel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        await channel.track({
+        await activeChannel.track({
           userId,
-          fullName: userInfo.fullName,
-          avatarUrl: userInfo.avatarUrl,
+          fullName,
+          avatarUrl,
           color: getCollaboratorColor(userId),
-          role: userInfo.role,
+          role,
         });
       }
     });
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(activeChannel);
+      broadcastCursorRef.current = () => {};
+      broadcastNodeChangeRef.current = () => {};
+      broadcastEdgeChangeRef.current = () => {};
     };
-  }, [workflowId, userId, userInfo, setCollaborators, updateCollaboratorCursor, onCommentReceived, channel, supabase]);
+  }, [workflowId, userId, fullName, avatarUrl, role, setCollaborators, updateCollaboratorCursor, onCommentReceived, supabase]);
+
+  // Return stable wrappers that forward to the ref values
+  const broadcastCursor = useCallback((x: number, y: number) => {
+    broadcastCursorRef.current(x, y);
+  }, []);
+
+  const broadcastNodeChange = useCallback((eventType: 'INSERT' | 'UPDATE' | 'DELETE', node?: Node, nodeId?: string) => {
+    broadcastNodeChangeRef.current(eventType, node, nodeId);
+  }, []);
+
+  const broadcastEdgeChange = useCallback((eventType: 'INSERT' | 'DELETE', edge?: Edge, edgeId?: string) => {
+    broadcastEdgeChangeRef.current(eventType, edge, edgeId);
+  }, []);
 
   return {
     broadcastCursor,

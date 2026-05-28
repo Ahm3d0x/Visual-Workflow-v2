@@ -22,8 +22,8 @@ export async function signUp(email: string, password: string, fullName: string, 
     }
 
     return { success: true, data };
-  } catch (err: any) {
-    return { error: err.message || 'An unexpected error occurred' };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'An unexpected error occurred' };
   }
 }
 
@@ -41,8 +41,8 @@ export async function signIn(email: string, password: string) {
 
     revalidatePath('/', 'layout');
     return { success: true, data };
-  } catch (err: any) {
-    return { error: err.message || 'An unexpected error occurred' };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'An unexpected error occurred' };
   }
 }
 
@@ -61,8 +61,8 @@ export async function signInWithGoogle(locale: string = 'en') {
     }
 
     return { success: true, url: data.url };
-  } catch (err: any) {
-    return { error: err.message || 'An unexpected error occurred' };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'An unexpected error occurred' };
   }
 }
 
@@ -77,8 +77,8 @@ export async function signOut() {
 
     revalidatePath('/', 'layout');
     return { success: true };
-  } catch (err: any) {
-    return { error: err.message || 'An unexpected error occurred' };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'An unexpected error occurred' };
   }
 }
 
@@ -94,8 +94,8 @@ export async function resetPassword(email: string, locale: string = 'en') {
     }
 
     return { success: true };
-  } catch (err: any) {
-    return { error: err.message || 'An unexpected error occurred' };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'An unexpected error occurred' };
   }
 }
 
@@ -111,7 +111,7 @@ export async function updatePassword(password: string) {
     }
 
     return { success: true, data };
-  } catch (err: any) {
-    return { error: err.message || 'An unexpected error occurred' };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'An unexpected error occurred' };
   }
 }

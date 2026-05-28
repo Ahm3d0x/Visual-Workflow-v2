@@ -91,7 +91,7 @@ export default function SignUpPage({
       <div className="absolute top-6 right-6 left-6 flex justify-between items-center z-50">
         <div className="flex items-center gap-3">
           <Workflow className="w-6 h-6 text-accent" />
-          <span className="font-bold hidden sm:inline-block bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+          <span className="font-bold hidden sm:inline-block bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
             Visual Workflow SaaS
           </span>
         </div>
