@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
@@ -23,12 +23,116 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, FileJson, Layout, Loader2 } from 'lucide-react';
+import { Plus, FileJson, Layout, Loader2, Sparkles, BookOpen, Info } from 'lucide-react';
 
 interface QuickActionsProps {
   workspaceId: string;
   locale: string;
 }
+
+interface GalleryTemplate {
+  id: string;
+  name: string;
+  nameAr: string;
+  desc: string;
+  descAr: string;
+  badge: string;
+  badgeAr: string;
+  colorClass: string;
+  nodes: { type: string; position: { x: number; y: number }; data: Record<string, any> }[];
+  edges: { sourceIndex: number; targetIndex: number; sourceHandle?: string; targetHandle?: string }[];
+}
+
+const GALLERY_TEMPLATES: GalleryTemplate[] = [
+  {
+    id: 'ai_chatbot',
+    name: 'AI Agent Customer Assistant',
+    nameAr: 'مساعد خدمة العملاء بالذكاء الاصطناعي',
+    desc: 'Automates client request parsing, routes through AI Classifier, and triggers notifications via Email & Slack.',
+    descAr: 'أتمتة تحليل طلبات العملاء وتصنيفها بالذكاء الاصطناعي وتنبيه الفريق عبر Slack والبريد الإلكتروني.',
+    badge: 'AI & Automation',
+    badgeAr: 'ذكاء اصطناعي وأتمتة',
+    colorClass: 'from-pink-500/10 to-rose-500/10 border-rose-500/20 text-rose-400',
+    nodes: [
+      { type: 'start', position: { x: 100, y: 200 }, data: { label: 'Client Email Received / استقبال إيميل العميل' } },
+      { type: 'ai_classify', position: { x: 300, y: 200 }, data: { label: 'AI Sentiment Classifier / مصنف المشاعر' } },
+      { type: 'if_else', position: { x: 520, y: 200 }, data: { label: 'Is Urgent? / هل هو عاجل؟' } },
+      { type: 'slack', position: { x: 740, y: 100 }, data: { label: 'Slack Alert to On-Call / تنبيه Slack' } },
+      { type: 'email', position: { x: 740, y: 300 }, data: { label: 'Auto-Reply Acknowledgement / رد تلقائي' } },
+    ],
+    edges: [
+      { sourceIndex: 0, targetIndex: 1, sourceHandle: 'out', targetHandle: 'in' },
+      { sourceIndex: 1, targetIndex: 2, sourceHandle: 'out', targetHandle: 'in' },
+      { sourceIndex: 2, targetIndex: 3, sourceHandle: 'out_true', targetHandle: 'in' },
+      { sourceIndex: 2, targetIndex: 4, sourceHandle: 'out_false', targetHandle: 'in' },
+    ],
+  },
+  {
+    id: 'lead_nurturing',
+    name: 'SaaS Lead Scoring & CRM Sync',
+    nameAr: 'تقييم العملاء المحتملين ومزامنة CRM',
+    desc: 'Captures new sign-ups, checks database history, applies lead scoring logic, and syncs automatically with CRM.',
+    descAr: 'تسجيل الاشتراكات الجديدة، التحقق من قاعدة البيانات، تطبيق تقييم العملاء والمزامنة التلقائية مع لوحة CRM.',
+    badge: 'Marketing & CRM',
+    badgeAr: 'تسويق ومزامنة CRM',
+    colorClass: 'from-blue-500/10 to-indigo-500/10 border-indigo-500/20 text-indigo-400',
+    nodes: [
+      { type: 'form_step', position: { x: 100, y: 200 }, data: { label: 'New Signup Form / استمارة تسجيل جديدة' } },
+      { type: 'database', position: { x: 320, y: 200 }, data: { label: 'Fetch User Profile / جلب بيانات البروفايل' } },
+      { type: 'transform', position: { x: 540, y: 200 }, data: { label: 'Calculate Lead Score / احتساب نقاط العميل' } },
+      { type: 'crm', position: { x: 760, y: 200 }, data: { label: 'Sync with CRM Hub / مزامنة مع لوحة CRM' } },
+    ],
+    edges: [
+      { sourceIndex: 0, targetIndex: 1, sourceHandle: 'out', targetHandle: 'in' },
+      { sourceIndex: 1, targetIndex: 2, sourceHandle: 'out', targetHandle: 'in' },
+      { sourceIndex: 2, targetIndex: 3, sourceHandle: 'out', targetHandle: 'in' },
+    ],
+  },
+  {
+    id: 'data_pipeline',
+    name: 'Scheduled Sheets to Database ETL',
+    nameAr: 'مزامنة وتطهير البيانات المجدولة',
+    desc: 'Runs on a cron timer, extracts Google Sheets records, filters and validates columns, and upserts into Postgres table.',
+    descAr: 'تشغيل مجدول تلقائي، استخراج صفوف Google Sheets، تطهير البيانات وتحديث قاعدة بيانات Postgres.',
+    badge: 'Data Pipeline',
+    badgeAr: 'خط معالجة البيانات',
+    colorClass: 'from-amber-500/10 to-orange-500/10 border-orange-500/20 text-orange-400',
+    nodes: [
+      { type: 'timer', position: { x: 100, y: 200 }, data: { label: 'Trigger Every 24h / تشغيل كل ٢٤ ساعة' } },
+      { type: 'google_sheets', position: { x: 320, y: 200 }, data: { label: 'Fetch New Rows / جلب صفوف Sheets' } },
+      { type: 'filter', position: { x: 540, y: 200 }, data: { label: 'Validate Columns / التحقق وتطهير البيانات' } },
+      { type: 'database', position: { x: 760, y: 200 }, data: { label: 'Upsert into Postgres / تحديث قاعدة البيانات' } },
+    ],
+    edges: [
+      { sourceIndex: 0, targetIndex: 1, sourceHandle: 'out', targetHandle: 'in' },
+      { sourceIndex: 1, targetIndex: 2, sourceHandle: 'out', targetHandle: 'in' },
+      { sourceIndex: 2, targetIndex: 3, sourceHandle: 'out', targetHandle: 'in' },
+    ],
+  },
+  {
+    id: 'document_approval',
+    name: 'Document Review & Approval Flow',
+    nameAr: 'مسار مراجعة واعتماد المستندات',
+    desc: 'Requires human approval on uploaded files, routes dynamically, and updates status values upon review comments.',
+    descAr: 'طلب مراجعة واعتماد بشري على الملفات المرفوعة، توجيه ديناميكي وتحديث الحالات فور كتابة تعليق المراجعة.',
+    badge: 'Operations',
+    badgeAr: 'عمليات وتنسيق',
+    colorClass: 'from-teal-500/10 to-emerald-500/10 border-emerald-500/20 text-emerald-400',
+    nodes: [
+      { type: 'file_upload', position: { x: 100, y: 200 }, data: { label: 'Contract PDF Uploaded / رفع العقد بصيغة PDF' } },
+      { type: 'approval', position: { x: 320, y: 200 }, data: { label: 'Manager Review & Approval / مراجعة واعتماد المدير' } },
+      { type: 'if_else', position: { x: 540, y: 200 }, data: { label: 'Is Approved? / هل تمت الموافقة؟' } },
+      { type: 'webhook', position: { x: 760, y: 100 }, data: { label: 'Trigger Finance Webhook / تشغيل فينيانس ويبهوك' } },
+      { type: 'sms', position: { x: 760, y: 300 }, data: { label: 'Notify Submitter to Revise / إشعار مقدم الطلب' } },
+    ],
+    edges: [
+      { sourceIndex: 0, targetIndex: 1, sourceHandle: 'out', targetHandle: 'in' },
+      { sourceIndex: 1, targetIndex: 2, sourceHandle: 'out', targetHandle: 'in' },
+      { sourceIndex: 2, targetIndex: 3, sourceHandle: 'out_true', targetHandle: 'in' },
+      { sourceIndex: 2, targetIndex: 4, sourceHandle: 'out_false', targetHandle: 'in' },
+    ],
+  }
+];
 
 export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
   const isRtl = locale === 'ar';
@@ -36,15 +140,19 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
   const t = useTranslations('dashboard');
   const supabase = createClient();
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Modals state
   const [workflowOpen, setWorkflowOpen] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
 
-  // Workflow Form State
+  // Form State
   const [wfName, setWfName] = useState('');
   const [wfDesc, setWfDesc] = useState('');
   const [wfTemplate, setWfTemplate] = useState('blank');
   const [wfLoading, setWfLoading] = useState(false);
 
+  // ─── Native Workflow Creation ──────────────────────────────────────────────
   const handleCreateWorkflow = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!wfName.trim()) return;
@@ -62,10 +170,8 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
         status: 'draft',
         node_count: wfTemplate === 'blank' ? 0 : 3,
         created_by: userData.user?.id || null,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
       .select('id')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .single() as any);
 
     if (error) {
@@ -74,7 +180,6 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
     } else if (data) {
       // Insert mock preset nodes
       if (wfTemplate !== 'blank') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase.from('workflow_nodes') as any).insert([
           { workflow_id: data.id, type: 'start', position: { x: 100, y: 150 }, data: { label: isRtl ? 'مُشغل البداية' : 'Start Trigger' } },
           { workflow_id: data.id, type: 'process', position: { x: 300, y: 150 }, data: { label: isRtl ? 'إجراء معالجة' : 'Process Action' } },
@@ -90,11 +195,198 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
     }
   };
 
+  // ─── Import Workflow from JSON ─────────────────────────────────────────────
+  const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const importData = JSON.parse(text);
+
+      if (!importData.nodes || !Array.isArray(importData.nodes)) {
+        alert(isRtl ? 'ملف JSON غير صالح: مصفوفة العقد مفقودة.' : 'Invalid JSON file: nodes array is missing.');
+        return;
+      }
+
+      setWfLoading(true);
+      const { data: userData } = await supabase.auth.getUser();
+
+      const workflowName = importData.name || file.name.replace('.json', '');
+      const { data: workflow, error: wfError } = await (supabase
+        .from('workflows')
+        .insert({
+          workspace_id: workspaceId,
+          name: workflowName.trim(),
+          description: importData.description || (isRtl ? 'مستورد من ملف JSON' : 'Imported from JSON file'),
+          status: 'draft',
+          node_count: importData.nodes.length,
+          created_by: userData.user?.id || null,
+        } as any)
+        .select('id')
+        .single() as any);
+
+      if (wfError || !workflow) {
+        alert('Failed to create imported workflow: ' + wfError?.message);
+        setWfLoading(false);
+        return;
+      }
+
+      // Insert imported nodes (mapping original IDs to new unique UUIDs)
+      const nodeIdMap: Record<string, string> = {};
+      const nodesToInsert = importData.nodes.map((n: any) => {
+        const newId = crypto.randomUUID();
+        nodeIdMap[n.id] = newId;
+        return {
+          id: newId,
+          workflow_id: workflow.id,
+          type: n.type,
+          position: n.position || { x: 100, y: 100 },
+          data: n.data || {},
+          style: n.style || {},
+        };
+      });
+
+      const { error: nodesError } = await (supabase
+        .from('workflow_nodes') as any)
+        .insert(nodesToInsert);
+
+      if (nodesError) {
+        alert('Failed to import nodes: ' + nodesError.message);
+        setWfLoading(false);
+        return;
+      }
+
+      // Insert imported edges (mapping source and target to the new node UUIDs)
+      if (importData.edges && Array.isArray(importData.edges) && importData.edges.length > 0) {
+        const edgesToInsert = importData.edges
+          .map((e: any) => {
+            const sourceId = nodeIdMap[e.source];
+            const targetId = nodeIdMap[e.target];
+            if (!sourceId || !targetId) return null;
+            return {
+              workflow_id: workflow.id,
+              source_node_id: sourceId,
+              target_node_id: targetId,
+              source_handle: e.sourceHandle || null,
+              target_handle: e.targetHandle || null,
+              data: e.data || {},
+            };
+          })
+          .filter(Boolean);
+
+        if (edgesToInsert.length > 0) {
+          const { error: edgesError } = await (supabase
+            .from('workflow_edges') as any)
+            .insert(edgesToInsert);
+
+          if (edgesError) {
+            console.error('Failed to import edges:', edgesError.message);
+          }
+        }
+      }
+
+      setWfLoading(false);
+      if (e.target) e.target.value = '';
+      router.push(`/workflows/${workflow.id}`);
+    } catch (err) {
+      alert((isRtl ? 'حدث خطأ أثناء قراءة الملف: ' : 'Error reading file: ') + (err as Error).message);
+      setWfLoading(false);
+    }
+  };
+
+  // ─── Load Gallery Template ──────────────────────────────────────────────────
+  const handleLoadTemplate = async (template: GalleryTemplate) => {
+    setWfLoading(true);
+    const { data: userData } = await supabase.auth.getUser();
+
+    // Create a new workflow record
+    const { data, error } = await (supabase
+      .from('workflows')
+      .insert({
+        workspace_id: workspaceId,
+        name: isRtl ? template.nameAr : template.name,
+        description: isRtl ? template.descAr : template.desc,
+        status: 'draft',
+        node_count: template.nodes.length,
+        created_by: userData.user?.id || null,
+      } as any)
+      .select('id')
+      .single() as any);
+
+    if (error || !data) {
+      alert('Failed to create workflow from template: ' + error?.message);
+      setWfLoading(false);
+      return;
+    }
+
+    // Insert nodes (generating new UUIDs and mapping original indexes to UUIDs)
+    const nodeIdList: string[] = [];
+    const nodesToInsert = template.nodes.map((n) => {
+      const newId = crypto.randomUUID();
+      nodeIdList.push(newId);
+      return {
+        id: newId,
+        workflow_id: data.id,
+        type: n.type,
+        position: n.position,
+        data: n.data,
+      };
+    });
+
+    const { error: nodesError } = await (supabase
+      .from('workflow_nodes') as any)
+      .insert(nodesToInsert);
+
+    if (nodesError) {
+      alert('Failed to import template nodes: ' + nodesError.message);
+      setWfLoading(false);
+      return;
+    }
+
+    // Insert edges (mapping sourceIndex and targetIndex to generated UUIDs)
+    const edgesToInsert = template.edges.map((e) => {
+      const sourceId = nodeIdList[e.sourceIndex];
+      const targetId = nodeIdList[e.targetIndex];
+      return {
+        workflow_id: data.id,
+        source_node_id: sourceId,
+        target_node_id: targetId,
+        source_handle: e.sourceHandle || null,
+        target_handle: e.targetHandle || null,
+        data: {},
+      };
+    });
+
+    if (edgesToInsert.length > 0) {
+      const { error: edgesError } = await (supabase
+        .from('workflow_edges') as any)
+        .insert(edgesToInsert);
+
+      if (edgesError) {
+        console.error('Failed to import template edges:', edgesError.message);
+      }
+    }
+
+    setGalleryOpen(false);
+    setWfLoading(false);
+    router.push(`/workflows/${data.id}`);
+  };
+
   return (
-    <div className="flex flex-wrap items-center gap-3 bg-background/40 border border-border backdrop-blur-md p-4 rounded-2xl shadow-sm font-sans">
+    <div className="flex flex-wrap items-center gap-3 bg-background/40 border border-border backdrop-blur-md p-4 rounded-2xl shadow-xs font-sans">
+      {/* Hidden File Input for JSON Import */}
+      <input
+        type="file"
+        accept=".json"
+        ref={fileInputRef}
+        onChange={handleImportJson}
+        className="hidden"
+      />
+
       {/* 1. Create Workflow Trigger Dialog */}
       <Dialog open={workflowOpen} onOpenChange={setWorkflowOpen}>
-        <DialogTrigger className="inline-flex items-center justify-center bg-accent hover:bg-accent/90 text-accent-foreground font-semibold px-5 py-2.5 rounded-xl transition-all hover:scale-[1.01] cursor-pointer gap-2 focus:outline-hidden text-sm">
+        <DialogTrigger className="inline-flex items-center justify-center bg-accent hover:bg-accent/90 text-accent-foreground font-semibold px-5 py-2.5 rounded-xl transition-all hover:scale-[1.01] cursor-pointer gap-2 focus:outline-hidden text-sm h-10">
           <Plus className="w-5 h-5" />
           <span>{t('new_workflow')}</span>
         </DialogTrigger>
@@ -152,16 +444,98 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
           </form>
         </DialogContent>
       </Dialog>
- 
-      {/* 3. Demo placeholders */}
-      <Button variant="ghost" disabled className="text-muted-foreground opacity-60 font-medium rounded-xl flex items-center gap-2">
-        <FileJson className="w-4 h-4" />
+
+      {/* 2. Import JSON Feature */}
+      <Button
+        variant="ghost"
+        onClick={() => !wfLoading && fileInputRef.current?.click()}
+        disabled={wfLoading}
+        className="text-muted-foreground hover:text-foreground font-medium rounded-xl flex items-center gap-2 cursor-pointer h-10 border border-transparent hover:border-border/30 hover:bg-muted/30"
+      >
+        {wfLoading ? <Loader2 className="w-4 h-4 animate-spin text-accent" /> : <FileJson className="w-4 h-4 text-sky-500" />}
         <span>{isRtl ? 'استيراد ملف JSON' : 'Import JSON'}</span>
       </Button>
-      <Button variant="ghost" disabled className="text-muted-foreground opacity-60 font-medium rounded-xl flex items-center gap-2">
-        <Layout className="w-4 h-4" />
-        <span>{isRtl ? 'تصفح المعرض' : 'Browse Gallery'}</span>
-      </Button>
+
+      {/* 3. Workflow Gallery Template Selector Dialog */}
+      <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>
+        <DialogTrigger className="text-muted-foreground hover:text-foreground font-medium rounded-xl flex items-center gap-2 cursor-pointer h-10 border border-transparent hover:border-border/30 hover:bg-muted/30 px-3 transition-all">
+          <Layout className="w-4 h-4 text-purple-500" />
+          <span>{isRtl ? 'تصفح المعرض' : 'Browse Gallery'}</span>
+        </DialogTrigger>
+        <DialogContent className="bg-zinc-950 border border-white/8 rounded-3xl shadow-2xl max-w-4xl p-6 font-sans overflow-hidden flex flex-col max-h-[85vh]">
+          <DialogHeader className="flex-row items-center gap-3 border-b border-white/6 pb-4 shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+              <BookOpen className="w-5 h-5 text-purple-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <DialogTitle className="text-xl font-bold text-zinc-100 flex items-center gap-2">
+                <span>{isRtl ? 'معرض نماذج سير العمل' : 'Workflow Templates Gallery'}</span>
+                <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/10">
+                  {isRtl ? 'جاهز للاستخدام' : 'Production Ready'}
+                </span>
+              </DialogTitle>
+              <p className="text-xs text-zinc-500 mt-0.5 font-light">
+                {isRtl
+                  ? 'اختر من بين القوالب المسبقة والمعدة باحترافية للبدء فوراً وتوفير الوقت.'
+                  : 'Kickstart your workflow pipeline with professional pre-built automation blueprints in one click.'}
+              </p>
+            </div>
+          </DialogHeader>
+
+          {/* Grid layout cards */}
+          <div className="overflow-y-auto py-6 grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 pr-1" dir={isRtl ? 'rtl' : 'ltr'}>
+            {GALLERY_TEMPLATES.map((tmpl) => (
+              <div
+                key={tmpl.id}
+                onClick={() => !wfLoading && handleLoadTemplate(tmpl)}
+                className="group relative border border-white/6 bg-white/2 hover:bg-white/4 rounded-2xl p-5 cursor-pointer flex flex-col justify-between transition-all hover:scale-[1.01] hover:border-purple-500/30 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)]"
+              >
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border bg-linear-to-r ${tmpl.colorClass}`}>
+                      {isRtl ? tmpl.badgeAr : tmpl.badge}
+                    </span>
+                    <span className="text-[10px] text-zinc-600 font-mono group-hover:text-zinc-500 transition-colors">
+                      {tmpl.nodes.length} {isRtl ? 'عقد' : 'nodes'}
+                    </span>
+                  </div>
+
+                  <h3 className="text-sm font-bold text-zinc-200 group-hover:text-purple-300 transition-colors">
+                    {isRtl ? tmpl.nameAr : tmpl.name}
+                  </h3>
+                  
+                  <p className="text-[11px] text-zinc-500 leading-normal font-light">
+                    {isRtl ? tmpl.descAr : tmpl.desc}
+                  </p>
+                </div>
+
+                <div className="mt-5 pt-3.5 border-t border-white/4 flex items-center justify-between text-[10px] text-zinc-600 font-bold group-hover:text-purple-400 transition-colors">
+                  <div className="flex items-center gap-1.5 font-light">
+                    <Info className="w-3.5 h-3.5" />
+                    <span>{isRtl ? 'يتضمن خوارزمية الربط الآلي' : 'Includes auto-routing edges'}</span>
+                  </div>
+                  <span className="underline group-hover:no-underline">{isRtl ? 'تحميل القالب ←' : 'Load Blueprint →'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter className="border-t border-white/6 pt-4 shrink-0 flex items-center justify-between">
+            <p className="text-[10px] text-zinc-500 flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              {isRtl ? 'سيتم حفظ القالب مباشرة وتوجيهك لصفحة التحرير.' : 'Blueprint is instantly saved in your active workspace dashboard.'}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setGalleryOpen(false)}
+              className="rounded-xl border-white/8 hover:bg-white/5 text-zinc-400 hover:text-zinc-200 cursor-pointer h-9 px-4 text-xs font-semibold"
+            >
+              {isRtl ? 'إغلاق' : 'Close'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
