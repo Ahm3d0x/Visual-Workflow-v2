@@ -194,42 +194,65 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         n.id === id ? { ...n, data: { ...n.data, ...nodeData } } : n
       );
 
-      // 2. Automatically migrate edges when polar handles are configured or updated
+      // 2. Automatically migrate or clean up edges when polar handles are configured or updated
       let nextEdges = state.edges;
       if ('polarHandles' in nodeData) {
         const polarHandles = nodeData.polarHandles as PolarHandle[] | undefined;
-        
+        const oldNode = state.nodes.find((n) => n.id === id);
+        const oldPolarHandles = oldNode?.data?.polarHandles as PolarHandle[] | undefined;
+
         if (polarHandles && polarHandles.length > 0) {
-          // Polar mode enabled or custom handles list updated!
-          const firstTarget = polarHandles.find((h) => h.type === 'target');
-          const firstSource = polarHandles.find((h) => h.type === 'source');
+          // Polar mode active
+          if (!oldPolarHandles || oldPolarHandles.length === 0) {
+            // TRANSITION A: Polar mode just enabled!
+            // Migrate standard 'in'/'out' handles to the first polar handles.
+            const firstTarget = polarHandles.find((h) => h.type === 'target');
+            const firstSource = polarHandles.find((h) => h.type === 'source');
 
-          nextEdges = state.edges.map((e) => {
-            let updated = false;
-            const newEdge = { ...e };
+            nextEdges = state.edges.map((e) => {
+              let updated = false;
+              const newEdge = { ...e };
 
-            // Migrate incoming edge targetHandle
-            if (e.target === id) {
-              const targetExists = polarHandles.some((h) => h.id === e.targetHandle);
-              if (!targetExists && firstTarget) {
+              if (e.target === id && e.targetHandle === 'in' && firstTarget) {
                 newEdge.targetHandle = firstTarget.id;
                 updated = true;
               }
-            }
 
-            // Migrate outgoing edge sourceHandle
-            if (e.source === id) {
-              const sourceExists = polarHandles.some((h) => h.id === e.sourceHandle);
-              if (!sourceExists && firstSource) {
+              if (e.source === id && e.sourceHandle === 'out' && firstSource) {
                 newEdge.sourceHandle = firstSource.id;
                 updated = true;
               }
-            }
 
-            return updated ? newEdge : e;
-          });
+              return updated ? newEdge : e;
+            });
+          } else {
+            // TRANSITION B: Polar handles list edited (modified/deleted/added)!
+            // DO NOT automatically re-route edges. Instead, if a handle is deleted or its type changed,
+            // simply DELETE (disconnect) the connected edge!
+            nextEdges = state.edges.filter((e) => {
+              // If the edge connects to this node as target, the targetHandle MUST exist and be a 'target'
+              if (e.target === id) {
+                const handle = polarHandles.find((h) => h.id === e.targetHandle);
+                if (!handle || handle.type !== 'target') {
+                  // Deleted or role changed -> disconnect edge!
+                  return false;
+                }
+              }
+
+              // If the edge connects to this node as source, the sourceHandle MUST exist and be a 'source'
+              if (e.source === id) {
+                const handle = polarHandles.find((h) => h.id === e.sourceHandle);
+                if (!handle || handle.type !== 'source') {
+                  // Deleted or role changed -> disconnect edge!
+                  return false;
+                }
+              }
+
+              return true;
+            });
+          }
         } else {
-          // Polar mode disabled (Reset to Standard)!
+          // TRANSITION C: Polar mode disabled (Reset to Standard)!
           // Restore standard 'in' and 'out' handles.
           nextEdges = state.edges.map((e) => {
             let updated = false;
