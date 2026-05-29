@@ -67,9 +67,11 @@ export default async function WorkspaceSettingsPage({
   let activeRecord = memberRecords[0];
   if (activeWorkspaceId) {
     const found = memberRecords.find((r) => r.workspaces?.id === activeWorkspaceId);
-    if (found) {
-      activeRecord = found;
+    if (!found) {
+      // Security fallback: Redirect if trying to access settings of an unauthorized workspace
+      redirect(`/${locale}/dashboard`);
     }
+    activeRecord = found;
   }
 
   if (!activeRecord || !activeRecord.workspaces) {
@@ -94,10 +96,15 @@ export default async function WorkspaceSettingsPage({
 
   const currentUserRole = activeRecord.role;
 
-  // 3. Fetch all members inside this workspace
+  // Restrict access strictly to workspace owners
+  if (currentUserRole !== 'owner') {
+    redirect(`/${locale}/dashboard${activeRecord.workspaces ? `?w=${activeRecord.workspaces.id}` : ''}`);
+  }
+
+  // 3. Fetch all members inside this workspace (qualifying foreign key relation to avoid PostgREST embedding ambiguity)
   const { data: membersRecord } = await (supabase
     .from('workspace_members')
-    .select('role, joined_at, profiles(id, email, full_name, avatar_url)')
+    .select('role, joined_at, profiles:profiles!workspace_members_user_id_fkey(id, email, full_name, avatar_url)')
     .eq('workspace_id', workspace.id) as unknown as { data: MemberRecord[] | null });
 
   const members = membersRecord || [];

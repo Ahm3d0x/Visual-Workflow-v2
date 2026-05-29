@@ -53,11 +53,11 @@ export default async function MainLayout({
     .select('role, workspaces(id, name, plan)')
     .eq('user_id', user.id) as unknown as { data: WorkspaceRecord[] | null });
 
-  // Map joined records to workspace lists
-  let workspaces = memberRecords
+  // Map joined records to workspace lists (including user role in workspace)
+  let workspaces: Array<{ id: string; name: string; plan: string; role?: string }> = memberRecords
     ? memberRecords
-        .map((r) => r.workspaces)
-        .filter((w): w is { id: string; name: string; plan: string } => w !== null)
+        .map((r) => r.workspaces ? { ...r.workspaces, role: r.role } : null)
+        .filter((w): w is { id: string; name: string; plan: string; role: string } => w !== null)
     : [];
 
   // Fallback workspace if user trigger hasn't finished in rare races
@@ -73,8 +73,8 @@ export default async function MainLayout({
 
     workspaces = refetchedRecords
       ? refetchedRecords
-          .map((r) => r.workspaces)
-          .filter((w): w is { id: string; name: string; plan: string } => w !== null)
+          .map((r) => r.workspaces ? { ...r.workspaces, role: r.role } : null)
+          .filter((w): w is { id: string; name: string; plan: string; role: string } => w !== null)
       : [];
   }
 
@@ -84,6 +84,7 @@ export default async function MainLayout({
       id: 'default',
       name: `${profile?.full_name || 'My'} Workspace`,
       plan: 'legend',
+      role: 'owner',
     });
   }
 

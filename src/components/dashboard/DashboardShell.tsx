@@ -55,6 +55,7 @@ interface DashboardShellProps {
     id: string;
     name: string;
     plan: string;
+    role?: string;
   }>;
 }
 
@@ -128,7 +129,9 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
   const navItems = [
     { name: isRtl ? 'لوحة التحكم' : 'Dashboard', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Home },
     { name: isRtl ? 'مخططات العمل' : 'Workflows', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: GitBranch },
-    { name: isRtl ? 'إعدادات مساحة العمل' : 'Workspace settings', href: `/${locale}/settings/workspace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Settings },
+    ...(activeWorkspace && activeWorkspace.role === 'owner' ? [
+      { name: isRtl ? 'إعدادات مساحة العمل' : 'Workspace settings', href: `/${locale}/settings/workspace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Settings }
+    ] : []),
     { name: isRtl ? 'الخطط والاشتراكات' : 'Billing & Plans', href: `/${locale}/billing${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: CreditCard },
   ];
 
@@ -288,9 +291,14 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                     <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
                       <User className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الملف الشخصي' : 'Profile'}
                     </DropdownMenuItem>
-                    <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                      <Settings className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الإعدادات' : 'Settings'}
-                    </DropdownMenuItem>
+                    {activeWorkspace && activeWorkspace.role === 'owner' && (
+                      <DropdownMenuItem
+                        onClick={() => router.push(`/${locale}/settings/workspace?w=${activeWorkspace.id}`)}
+                        className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
+                      >
+                        <Settings className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الإعدادات' : 'Settings'}
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator className="bg-border" />
                     <DropdownMenuItem
                       onClick={handleSignOut}

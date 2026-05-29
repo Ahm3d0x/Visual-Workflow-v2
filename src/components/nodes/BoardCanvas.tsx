@@ -251,6 +251,13 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           ...prev,
           [payload.userId]: payload.drawing,
         }));
+      } else {
+        setRemoteDrawings((prev) => {
+          if (!prev[payload.userId]) return prev;
+          const next = { ...prev };
+          delete next[payload.userId];
+          return next;
+        });
       }
     });
 
@@ -338,6 +345,56 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       setTimeout(() => setIsSyncing(false), 600);
     }, 800);
   }, [nodeId, updateNode, bgColor]);
+
+  // Synchronize picker state to selected stroke properties on selection
+  useEffect(() => {
+    if (!selectedStrokeId) return;
+    const target = strokes.find((s) => s.id === selectedStrokeId);
+    if (target) {
+      if (target.color) setColor(target.color);
+      if (target.width) setStrokeWidth(target.width);
+      if (target.fill !== undefined) setUseFill(target.fill);
+      if (target.fillColor) setFillColor(target.fillColor);
+    }
+  }, [selectedStrokeId]);
+
+  // Reactively apply picker modifications to the selected shape's properties
+  useEffect(() => {
+    if (!selectedStrokeId) return;
+    const target = strokes.find((s) => s.id === selectedStrokeId);
+    if (!target) return;
+
+    const hasColorChanged = target.color !== color;
+    const hasWidthChanged = target.width !== strokeWidth;
+    const hasFillChanged = target.fill !== useFill;
+    const hasFillColorChanged = useFill && target.fillColor !== fillColor;
+
+    if (hasColorChanged || hasWidthChanged || hasFillChanged || hasFillColorChanged) {
+      const updatedStrokes = strokes.map((s) => {
+        if (s.id !== selectedStrokeId) return s;
+        return {
+          ...s,
+          color,
+          width: strokeWidth,
+          fill: useFill,
+          fillColor: useFill ? fillColor : undefined,
+        };
+      });
+
+      setStrokes(updatedStrokes);
+      persistStrokes(updatedStrokes);
+
+      // Broadcast update to all collaborators
+      const updatedStroke = updatedStrokes.find((s) => s.id === selectedStrokeId);
+      if (updatedStroke && channelRef.current?.state === 'joined') {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'stroke_add',
+          payload: { stroke: updatedStroke, userId: currentUserId }
+        });
+      }
+    }
+  }, [color, strokeWidth, useFill, fillColor, selectedStrokeId, strokes, persistStrokes, currentUserId]);
 
   /* ─── Draw stroke helper (defined before renderCanvas so it can be called) ─── */
   const drawStroke = useCallback(function drawStrokeImpl(ctx: CanvasRenderingContext2D, stroke: BoardStroke, isSelected = false) {
