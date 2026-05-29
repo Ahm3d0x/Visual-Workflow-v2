@@ -169,19 +169,17 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
           )}
         </div>
 
-        {/* Sidebar Navigation */}
         <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
           {navItems.map((item, idx) => (
-            <Link key={idx} href={item.href} passHref>
-              <Button
-                variant="ghost"
-                className={`w-full justify-start gap-3 py-6 rounded-xl hover:bg-muted transition-all cursor-pointer ${
-                  collapsed ? 'px-0 justify-center' : 'px-4'
-                }`}
-              >
-                <item.icon className="w-5 h-5 text-accent shrink-0" />
-                {!collapsed && <span className="font-medium text-sm">{item.name}</span>}
-              </Button>
+            <Link
+              key={idx}
+              href={item.href}
+              className={`w-full justify-start gap-3 py-3 rounded-xl hover:bg-muted transition-all cursor-pointer flex items-center text-foreground hover:no-underline select-none ${
+                collapsed ? 'px-0 justify-center' : 'px-4'
+              }`}
+            >
+              <item.icon className="w-5 h-5 text-accent shrink-0" />
+              {!collapsed && <span className="font-medium text-sm">{item.name}</span>}
             </Link>
           ))}
         </nav>
