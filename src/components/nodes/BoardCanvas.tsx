@@ -709,11 +709,38 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     setShowBgPicker(false);
   }, [nodeId, updateNode]);
 
-  /* ─── Zoom ─── */
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setView((v) => ({ ...v, scale: Math.min(Math.max(v.scale * delta, 0.15), 4) }));
+  /* ─── Zoom & Touch Gesture Event Listeners (Non-Passive) ─── */
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      setView((v) => ({ ...v, scale: Math.min(Math.max(v.scale * delta, 0.15), 4) }));
+    };
+
+    wrap.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      wrap.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+
+    const preventTouchDefault = (e: TouchEvent) => {
+      e.preventDefault();
+    };
+
+    overlay.addEventListener('touchstart', preventTouchDefault, { passive: false });
+    overlay.addEventListener('touchmove', preventTouchDefault, { passive: false });
+
+    return () => {
+      overlay.removeEventListener('touchstart', preventTouchDefault);
+      overlay.removeEventListener('touchmove', preventTouchDefault);
+    };
   }, []);
 
   const handleZoomIn = () => setView((v) => ({ ...v, scale: Math.min(v.scale * 1.2, 4) }));
@@ -1052,7 +1079,6 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           ref={wrapRef}
           className="flex-1 overflow-hidden relative"
           style={{ background: `radial-gradient(ellipse at center, ${bgColor}22 0%, #09090b 100%)` }}
-          onWheel={handleWheel}
         >
           {/* Canvas stack */}
           <div
