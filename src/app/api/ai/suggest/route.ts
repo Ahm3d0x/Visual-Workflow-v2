@@ -76,9 +76,9 @@ Priorities: "high" | "medium" | "low"`;
     }
 
     const genAI = new GoogleGenerativeAI(geminiKey);
-    // Use gemini-1.5-flash for fast and cheap structural improvement advice
+    // Use gemini-2.5-flash for rapid, highly intelligent structural improvement advice
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       generationConfig: {
         responseMimeType: 'application/json',
       },

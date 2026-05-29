@@ -101,9 +101,9 @@ DO NOT include any markdown code blocks, explanation, or HTML formatting. Return
     }
 
     const genAI = new GoogleGenerativeAI(geminiKey);
-    // Use gemini-1.5-pro for high-fidelity workflow design & layout planning
+    // Use gemini-2.5-flash for world-class high-fidelity structured workflow design
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-pro',
+      model: 'gemini-2.5-flash',
       generationConfig: {
         responseMimeType: 'application/json',
       },
