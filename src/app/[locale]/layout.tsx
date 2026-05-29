@@ -44,7 +44,17 @@ export default async function LocaleLayout({
     </html>
   );
 }
-export const metadata = {
-  title: "Visual Workflow SaaS",
-  description: "Advanced Agentic Visual Workflow SaaS Platform",
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  const isAr = locale === 'ar';
+  return {
+    title: isAr ? 'لوحة سير العمل المرئي SaaS' : 'Visual Workflow SaaS',
+    description: isAr
+      ? 'منصة متطورة لتصميم وإدارة سير العمل المرئي المدعوم بالذكاء الاصطناعي.'
+      : 'Advanced Agentic Visual Workflow SaaS Platform',
+  };
+}

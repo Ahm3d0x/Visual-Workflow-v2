@@ -147,3 +147,18 @@ export default async function WorkflowEditorPage({
     />
   );
 }
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string; workflowId: string }>;
+}) {
+  const { locale } = await params;
+  const isAr = locale === 'ar';
+  return {
+    title: isAr ? 'محرر مسار العمل — Visual Workflow SaaS' : 'Workflow Editor — Visual Workflow SaaS',
+    description: isAr
+      ? 'صمم وعالج وقم بتحسين مسار العمل البصري الخاص بك في الوقت الفعلي.'
+      : 'Design, edit, and optimize your visual workflow canvas in real time.',
+  };
+}

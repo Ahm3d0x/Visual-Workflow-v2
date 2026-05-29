@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { GitBranch, Sparkles, Users, Layers, Award, ChevronDown } from 'lucide-react';
+import { useParams } from 'next/navigation';
 
 interface StatsBarProps {
   stats: {
@@ -17,6 +18,9 @@ interface StatsBarProps {
 
 export function StatsBar({ stats }: StatsBarProps) {
   const [showMobileStats, setShowMobileStats] = useState(false);
+  const params = useParams();
+  const locale = params?.locale as string || 'en';
+  const isRtl = locale === 'ar';
 
   // Plan limits mapping based on standard tiers
   const planLimits: Record<string, { workflows: number; nodes: number; members: number; ai: number }> = {
@@ -31,28 +35,28 @@ export function StatsBar({ stats }: StatsBarProps) {
 
   const metrics = [
     {
-      title: 'Workflows',
+      title: isRtl ? 'مخططات العمل' : 'Workflows',
       current: stats.workflowsCount,
       limit: limits.workflows,
       icon: GitBranch,
       color: 'text-node-data bg-node-data/10',
     },
     {
-      title: 'Custom Elements',
+      title: isRtl ? 'العناصر المخصصة' : 'Custom Elements',
       current: stats.customNodesCount,
       limit: limits.nodes,
       icon: Layers,
       color: 'text-node-ai bg-node-ai/10',
     },
     {
-      title: 'Collaborators',
+      title: isRtl ? 'المتعاونون' : 'Collaborators',
       current: stats.membersCount,
       limit: limits.members,
       icon: Users,
       color: 'text-node-integration bg-node-integration/10',
     },
     {
-      title: 'AI Credits Used',
+      title: isRtl ? 'رصيد الذكاء الاصطناعي المستخدم' : 'AI Credits Used',
       current: stats.aiCreditsUsed,
       limit: limits.ai,
       icon: Sparkles,
@@ -67,7 +71,7 @@ export function StatsBar({ stats }: StatsBarProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans">
       {/* 1. Trial / Active Plan Banner */}
       {stats.trialDaysRemaining > 0 && (
         <div className="bg-linear-to-r from-primary/95 to-accent/95 text-primary-foreground p-5 rounded-2xl shadow-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fadeIn transition-all duration-300">
@@ -75,19 +79,19 @@ export function StatsBar({ stats }: StatsBarProps) {
             <div className="bg-background/10 p-3 rounded-full flex items-center justify-center">
               <Award className="w-8 h-8 text-yellow-300 animate-bounce" />
             </div>
-            <div>
-              <h3 className="font-bold text-lg">🎉 You&apos;re on an active Legend trial!</h3>
-              <p className="text-sm font-light text-primary-foreground/80">
-                You have unrestricted access to all elite canvas editors, custom element designers, and real-time multiplayer boards.
+            <div className="text-left rtl:text-right">
+              <h3 className="font-bold text-lg">{isRtl ? '🎉 أنت في فترة تجريبية نشطة لباقة Legend!' : "🎉 You're on an active Legend trial!"}</h3>
+              <p className="text-sm font-light text-primary-foreground/80 mt-1">
+                {isRtl ? 'لديك وصول غير محدود إلى جميع محرري اللوحات النخبة، ومصممي العناصر المخصصة، ولوحات اللعب المتعدد في الوقت الفعلي.' : 'You have unrestricted access to all elite canvas editors, custom element designers, and real-time multiplayer boards.'}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-4 shrink-0 w-full md:w-auto justify-between md:justify-start">
             <span className="font-bold text-sm bg-background/25 px-4 py-2 rounded-xl">
-              {stats.trialDaysRemaining} days remaining
+              {isRtl ? `متبقي ${stats.trialDaysRemaining} أيام` : `${stats.trialDaysRemaining} days remaining`}
             </span>
             <button className="bg-white text-primary hover:bg-zinc-50 font-bold px-5 py-2.5 rounded-xl shadow-md transition-all duration-300 hover:scale-[1.02] cursor-pointer">
-              Upgrade Now
+              {isRtl ? 'الترقية الآن' : 'Upgrade Now'}
             </button>
           </div>
         </div>
@@ -100,16 +104,16 @@ export function StatsBar({ stats }: StatsBarProps) {
             <div className="p-1.5 rounded-lg bg-accent/10 text-accent">
               <Award className="w-4 h-4" />
             </div>
-            <div className="text-left">
-              <span className="text-xs text-muted-foreground block font-light">Workspace Plan</span>
-              <span className="text-sm font-bold capitalize text-foreground">{stats.plan} Tier</span>
+            <div className="text-left rtl:text-right">
+              <span className="text-xs text-muted-foreground block font-light">{isRtl ? 'خطة مساحة العمل' : 'Workspace Plan'}</span>
+              <span className="text-sm font-bold capitalize text-foreground">{isRtl ? `فئة ${stats.plan.toUpperCase()}` : `${stats.plan} Tier`}</span>
             </div>
           </div>
           <button
             onClick={() => setShowMobileStats(!showMobileStats)}
             className="text-xs font-bold text-accent flex items-center gap-1 hover:underline cursor-pointer py-1.5 px-3 rounded-lg hover:bg-accent/5 transition-colors focus:outline-hidden"
           >
-            {showMobileStats ? 'Hide Limits' : 'Plan Usage'}
+            {showMobileStats ? (isRtl ? 'إخفاء الحدود' : 'Hide Limits') : (isRtl ? 'استخدام الباقة' : 'Plan Usage')}
             <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showMobileStats ? 'rotate-180' : ''}`} />
           </button>
         </div>

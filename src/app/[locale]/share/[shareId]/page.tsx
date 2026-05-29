@@ -53,7 +53,8 @@ export async function generateMetadata({
 }: {
   params: Promise<{ locale: string; shareId: string }>;
 }): Promise<Metadata> {
-  const { shareId } = await params;
+  const { locale, shareId } = await params;
+  const isAr = locale === 'ar';
   const supabase = await createClient();
 
   const { data: share } = await (supabase
@@ -62,7 +63,7 @@ export async function generateMetadata({
     .eq('share_token', shareId)
     .maybeSingle() as unknown as Promise<{ data: { workflow_id: string } | null }>);
 
-  if (!share) return { title: 'Shared Workflow' };
+  if (!share) return { title: isAr ? 'سير عمل مشترك' : 'Shared Workflow' };
 
   const { data: workflow } = await (supabase
     .from('workflows')
@@ -71,8 +72,10 @@ export async function generateMetadata({
     .maybeSingle() as unknown as Promise<{ data: { name: string; description: string | null } | null }>);
 
   return {
-    title: workflow ? `${workflow.name} — Visual Workflow` : 'Shared Workflow',
-    description: workflow?.description || 'View this shared workflow on Visual Workflow.',
+    title: workflow
+      ? (isAr ? `${workflow.name} — مخطط سير عمل مشترك` : `${workflow.name} — Shared Workflow`)
+      : (isAr ? 'سير عمل مشترك' : 'Shared Workflow'),
+    description: workflow?.description || (isAr ? 'شاهد مخطط سير العمل المشترك هذا على Visual Workflow.' : 'View this shared workflow on Visual Workflow.'),
   };
 }
 
@@ -97,22 +100,27 @@ export default async function SharedWorkflowPage({
 
   // 2. Check expiry
   if (share.expires_at && new Date(share.expires_at) < new Date()) {
+    const isAr = locale === 'ar';
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-zinc-950 text-center px-4">
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-zinc-950 text-center px-4 font-sans">
         <div className="w-16 h-16 rounded-2xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-6">
           <svg className="w-8 h-8 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-zinc-100 mb-2">Link Expired</h1>
-        <p className="text-zinc-500 text-sm mb-8 max-w-sm">
-          This share link has expired. Please contact the workflow owner to get a new link.
+        <h1 className="text-2xl font-bold text-zinc-100 mb-2">
+          {isAr ? 'انتهت صلاحية الرابط' : 'Link Expired'}
+        </h1>
+        <p className="text-zinc-500 text-sm mb-8 max-w-sm font-light">
+          {isAr
+            ? 'انتهت صلاحية رابط المشاركة هذا. يرجى التواصل مع مالك سير العمل للحصول على رابط جديد.'
+            : 'This share link has expired. Please contact the workflow owner to get a new link.'}
         </p>
         <a
           href={`/${locale}/auth/sign-in`}
           className="px-6 py-2.5 bg-accent hover:bg-accent/90 text-accent-foreground rounded-xl text-sm font-bold transition-all"
         >
-          Sign in to your account
+          {isAr ? 'تسجيل الدخول إلى حسابك' : 'Sign in to your account'}
         </a>
       </div>
     );

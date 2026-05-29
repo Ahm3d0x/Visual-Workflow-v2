@@ -15,6 +15,7 @@ export default async function LandingPage({
   const { locale } = await params;
   const tAuth = await getTranslations('auth');
   const tDash = await getTranslations('dashboard');
+  const isAr = locale === 'ar';
 
   return (
     <div className="min-h-screen bg-canvas text-foreground selection:bg-accent/20 transition-colors duration-300">
@@ -26,7 +27,7 @@ export default async function LandingPage({
               <Workflow className="w-6 h-6 animate-pulse" />
             </div>
             <span className="font-sans font-bold text-xl tracking-tight bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
-              Visual Workflow SaaS
+              {isAr ? 'منصة سير العمل المرئي' : 'Visual Workflow SaaS'}
             </span>
           </div>
 
@@ -50,25 +51,40 @@ export default async function LandingPage({
       {/* Hero Section */}
       <main className="max-w-7xl mx-auto px-6 py-20 flex flex-col items-center text-center">
         <Badge className="bg-accent/10 text-accent hover:bg-accent/15 border-accent/20 px-4 py-1.5 mb-6 text-sm font-medium rounded-full flex items-center gap-2 animate-bounce">
-          <Sparkles className="w-4 h-4" /> Next-generation Workflow Automation
+          <Sparkles className="w-4 h-4" />
+          {isAr ? 'الجيل القادم من أتمتة مسارات العمل' : 'Next-generation Workflow Automation'}
         </Badge>
         
         <h1 className="text-5xl md:text-7xl font-sans font-extrabold tracking-tight max-w-4xl leading-[1.15] mb-8">
-          Build & Automate{" "}
-          <span className="bg-linear-to-r from-accent to-node-ai bg-clip-text text-transparent">
-            Agentic Workflows
-          </span>{" "}
-          Visually
+          {isAr ? (
+            <>
+              ابنِ وأتمتْ{' '}
+              <span className="bg-linear-to-r from-accent to-node-ai bg-clip-text text-transparent">
+                مسارات العمل الذكية
+              </span>{' '}
+              بصرياً
+            </>
+          ) : (
+            <>
+              Build & Automate{" "}
+              <span className="bg-linear-to-r from-accent to-node-ai bg-clip-text text-transparent">
+                Agentic Workflows
+              </span>{" "}
+              Visually
+            </>
+          )}
         </h1>
 
         <p className="text-muted-foreground text-lg md:text-xl max-w-2xl mb-12 font-light leading-relaxed">
-          Design, collaborate, and execute complex logic workflows with Gemini-powered AI assistance, Supabase security, and fully real-time multiplayer boards.
+          {isAr
+            ? 'صمم وتعاون ونفذ مخططات سير عمل معقدة بمساعدة الذكاء الاصطناعي من Gemini، وحماية Supabase الفائقة، مع لوحات عمل تعاونية فورية متعددة اللاعبين.'
+            : 'Design, collaborate, and execute complex logic workflows with Gemini-powered AI assistance, Supabase security, and fully real-time multiplayer boards.'}
         </p>
 
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-20">
           <Link href={`/${locale}/auth/sign-up`} passHref>
             <Button size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground font-semibold px-8 py-6 text-lg rounded-xl shadow-lg shadow-accent/25 transition-all duration-300 hover:scale-[1.03] group cursor-pointer">
-              Start Free Trial{" "}
+              {isAr ? 'ابدأ التجربة المجانية' : 'Start Free Trial'}{' '}
               <ArrowRight className="w-5 h-5 ms-2 group-hover:translate-x-1 rtl:group-hover:-translate-x-1 transition-transform" />
             </Button>
           </Link>
@@ -86,9 +102,13 @@ export default async function LandingPage({
               <div className="w-12 h-12 rounded-xl bg-node-data/10 text-node-data flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
                 <Workflow className="w-6 h-6" />
               </div>
-              <CardTitle className="text-xl font-bold font-sans">Visual Canvas Editor</CardTitle>
-              <CardDescription className="text-muted-foreground">
-                High-performance XYFlow/React Flow canvas editor. Complete library of 40+ nodes, validation layers, auto-layouts, and export capabilities.
+              <CardTitle className="text-xl font-bold font-sans">
+                {isAr ? 'محرر اللوحة المرئي' : 'Visual Canvas Editor'}
+              </CardTitle>
+              <CardDescription className="text-muted-foreground font-light">
+                {isAr
+                  ? 'محرر لوحة عالي الأداء معتمد على XYFlow/React Flow. مكتبة كاملة تضم أكثر من 40 عقدة، وطبقات تحقق قوية، وتنسيق تلقائي مع إمكانيات تصدير متميزة.'
+                  : 'High-performance XYFlow/React Flow canvas editor. Complete library of 40+ nodes, validation layers, auto-layouts, and export capabilities.'}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -98,9 +118,13 @@ export default async function LandingPage({
               <div className="w-12 h-12 rounded-xl bg-node-ai/10 text-node-ai flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
                 <Sparkles className="w-6 h-6" />
               </div>
-              <CardTitle className="text-xl font-bold font-sans">AI Agent Assistance</CardTitle>
-              <CardDescription className="text-muted-foreground">
-                Synthesize processes automatically from raw text prompts. Query the AI Agent for layout optimizations, bottleneck analysis, and error resolution.
+              <CardTitle className="text-xl font-bold font-sans">
+                {isAr ? 'مساعد الذكاء الاصطناعي الذكي' : 'AI Agent Assistance'}
+              </CardTitle>
+              <CardDescription className="text-muted-foreground font-light">
+                {isAr
+                  ? 'صمم العمليات تلقائياً من توجيهات النصوص البسيطة. استعلم من عميل الذكاء الاصطناعي لتحسين التخطيط، وتحليل الاختناقات، وحل الأخطاء التشغيلية.'
+                  : 'Synthesize processes automatically from raw text prompts. Query the AI Agent for layout optimizations, bottleneck analysis, and error resolution.'}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -110,9 +134,13 @@ export default async function LandingPage({
               <div className="w-12 h-12 rounded-xl bg-node-integration/10 text-node-integration flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
                 <Database className="w-6 h-6" />
               </div>
-              <CardTitle className="text-xl font-bold font-sans">Supabase Backend</CardTitle>
-              <CardDescription className="text-muted-foreground">
-                Secured via granular Row Level Security (RLS) policies. Instant multiplayer syncing via real-time WebSocket tables.
+              <CardTitle className="text-xl font-bold font-sans">
+                {isAr ? 'خلفية سحابية متكاملة' : 'Supabase Backend'}
+              </CardTitle>
+              <CardDescription className="text-muted-foreground font-light">
+                {isAr
+                  ? 'مؤمنة بالكامل عبر سياسات أمان مستوى الصف (RLS) الدقيقة. مزامنة فورية متعددة اللاعبين ومستقرة عبر جداول WebSocket في الوقت الفعلي.'
+                  : 'Secured via granular Row Level Security (RLS) policies. Instant multiplayer syncing via real-time WebSocket tables.'}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -120,13 +148,17 @@ export default async function LandingPage({
 
         {/* Foundations Verification Section */}
         <section className="w-full max-w-4xl mt-32 border-t border-border pt-16">
-          <h2 className="text-3xl font-bold mb-6 font-sans">Foundation Check</h2>
+          <h2 className="text-3xl font-bold mb-6 font-sans">
+            {isAr ? 'فحص البنية الأساسية للمنصة' : 'Foundation Check'}
+          </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-background border border-border p-4 rounded-xl flex items-center gap-3">
               <Languages className="text-node-ai w-5 h-5" />
               <div className="text-start">
-                <p className="text-xs text-muted-foreground">Localization</p>
-                <p className="text-sm font-bold capitalize">{locale === 'en' ? 'English (LTR)' : 'العربية (RTL)'}</p>
+                <p className="text-xs text-muted-foreground">{isAr ? 'الترجمة واللغة' : 'Localization'}</p>
+                <p className="text-sm font-bold capitalize">
+                  {isAr ? 'العربية (RTL)' : 'English (LTR)'}
+                </p>
               </div>
             </div>
 
@@ -134,23 +166,23 @@ export default async function LandingPage({
               <Zap className="text-node-logic w-5 h-5" />
               <div className="text-start">
                 <p className="text-xs text-muted-foreground">Tailwind CSS</p>
-                <p className="text-sm font-bold">V4 Installed</p>
+                <p className="text-sm font-bold">{isAr ? 'V4 مثبت بنجاح' : 'V4 Installed'}</p>
               </div>
             </div>
 
             <div className="bg-background border border-border p-4 rounded-xl flex items-center gap-3">
               <Shield className="text-node-integration w-5 h-5" />
               <div className="text-start">
-                <p className="text-xs text-muted-foreground">Auth Security</p>
-                <p className="text-sm font-bold">Supabase RLS</p>
+                <p className="text-xs text-muted-foreground">{isAr ? 'أمان الهوية' : 'Auth Security'}</p>
+                <p className="text-sm font-bold">{isAr ? 'سياسات Supabase RLS' : 'Supabase RLS'}</p>
               </div>
             </div>
 
             <div className="bg-background border border-border p-4 rounded-xl flex items-center gap-3">
               <CreditCard className="text-node-human w-5 h-5" />
               <div className="text-start">
-                <p className="text-xs text-muted-foreground">Payments</p>
-                <p className="text-sm font-bold">Stripe Subscriptions</p>
+                <p className="text-xs text-muted-foreground">{isAr ? 'الاشتراكات والمدفوعات' : 'Payments'}</p>
+                <p className="text-sm font-bold">{isAr ? 'بوابات دفع Stripe' : 'Stripe Subscriptions'}</p>
               </div>
             </div>
           </div>
@@ -159,7 +191,11 @@ export default async function LandingPage({
 
       {/* Footer */}
       <footer className="border-t border-border bg-background py-8 text-center text-sm text-muted-foreground transition-colors duration-300">
-        <p>© 2026 Visual Workflow SaaS. All rights reserved.</p>
+        <p>
+          {isAr
+            ? '© 2026 جميع الحقوق محفوظة لمنصة سير العمل المرئي SaaS.'
+            : '© 2026 Visual Workflow SaaS. All rights reserved.'}
+        </p>
       </footer>
     </div>
   );

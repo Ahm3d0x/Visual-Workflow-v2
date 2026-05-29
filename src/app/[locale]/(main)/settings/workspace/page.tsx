@@ -56,7 +56,9 @@ export default async function WorkspaceSettingsPage({
   if (!memberRecords || memberRecords.length === 0) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-bold font-sans">No workspaces found</h2>
+        <h2 className="text-xl font-bold font-sans">
+          {locale === 'ar' ? 'لم يتم العثور على مساحات عمل' : 'No workspaces found'}
+        </h2>
       </div>
     );
   }
@@ -73,7 +75,9 @@ export default async function WorkspaceSettingsPage({
   if (!activeRecord || !activeRecord.workspaces) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-bold font-sans">No active workspace found</h2>
+        <h2 className="text-xl font-bold font-sans">
+          {locale === 'ar' ? 'لم يتم العثور على مساحة عمل نشطة' : 'No active workspace found'}
+        </h2>
       </div>
     );
   }
@@ -113,7 +117,17 @@ export default async function WorkspaceSettingsPage({
   );
 }
 
-export const metadata = {
-  title: "Workspace Settings — Visual Workflow SaaS",
-  description: "Configure workspace profiles and manage active member roles.",
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  const isAr = locale === 'ar';
+  return {
+    title: isAr ? 'إعدادات مساحة العمل — Visual Workflow SaaS' : 'Workspace Settings — Visual Workflow SaaS',
+    description: isAr
+      ? 'تهيئة ملفات تعريف مساحة العمل وإدارة أدوار الأعضاء النشطين.'
+      : 'Configure workspace profiles and manage active member roles.',
+  };
+}

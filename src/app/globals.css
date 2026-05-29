@@ -157,4 +157,7 @@
   html {
     @apply font-sans;
   }
+  html[lang="ar"] {
+    font-family: var(--font-tajawal), sans-serif !important;
+  }
 }

@@ -68,6 +68,28 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
   const t = useTranslations('dashboard');
   const supabase = createClient();
 
+  const isRtl = locale === 'ar';
+
+  const getStatusLabel = (st: string) => {
+    if (isRtl) {
+      if (st === 'all') return 'الكل';
+      if (st === 'draft') return 'مسودة';
+      if (st === 'active') return 'نشط';
+      if (st === 'archived') return 'مؤرشف';
+      if (st === 'published') return 'منشور';
+    }
+    return st;
+  };
+
+  const getSortLabel = (sortVal: string) => {
+    if (isRtl) {
+      if (sortVal === 'modified') return 'آخر تعديل';
+      if (sortVal === 'name') return 'الاسم أ-ي';
+      if (sortVal === 'nodes') return 'عدد العقد';
+    }
+    return sortVal === 'modified' ? 'Modified' : sortVal === 'name' ? 'Name A-Z' : 'Node Count';
+  };
+
   const [workflows, setWorkflows] = useState<WorkflowItem[]>(initialWorkflows);
   const [activeTab, setActiveTab] = useState<'my-workflows' | 'shared'>('my-workflows');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -105,7 +127,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
       .from('workflows') as any)
       .insert({
         workspace_id: workspaceId,
-        name: `Copy of ${workflow.name}`,
+        name: isRtl ? `نسخة من ${workflow.name}` : `Copy of ${workflow.name}`,
         description: workflow.description,
         status: 'draft',
         node_count: workflow.node_count,
@@ -134,19 +156,19 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setWorkflows((prev) => [data as any, ...prev]);
-      alert('Workflow successfully duplicated!');
+      alert(isRtl ? 'تم تكرار سير العمل بنجاح!' : 'Workflow successfully duplicated!');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to permanently delete this workflow? This action is irreversible.')) return;
+    if (!confirm(isRtl ? 'هل أنت متأكد أنك تريد حذف مخطط سير العمل هذا نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.' : 'Are you sure you want to permanently delete this workflow? This action is irreversible.')) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase.from('workflows') as any).delete().eq('id', id);
 
     if (!error) {
       setWorkflows((prev) => prev.filter((w) => w.id !== id));
-      alert('Workflow deleted.');
+      alert(isRtl ? 'تم حذف مخطط سير العمل.' : 'Workflow deleted.');
     }
   };
 
@@ -163,7 +185,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
         .from('workflows') as any)
         .insert({
           workspace_id: targetWsId,
-          name: `Copy of ${selectedWf.name}`,
+          name: isRtl ? `نسخة من ${selectedWf.name}` : `Copy of ${selectedWf.name}`,
           description: selectedWf.description,
           status: 'draft',
           node_count: selectedWf.node_count,
@@ -173,7 +195,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
         .single();
 
       if (wfError || !newWf) {
-        alert('Failed to duplicate workflow structure: ' + wfError?.message);
+        alert((isRtl ? 'فشل تكرار هيكل سير العمل: ' : 'Failed to duplicate workflow structure: ') + wfError?.message);
         setPortingLoading(false);
         return;
       }
@@ -236,7 +258,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
         setWorkflows((prev) => [newWf as any, ...prev]);
       }
 
-      alert('Workflow successfully copied to target workspace!');
+      alert(isRtl ? 'تم نسخ سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully copied to target workspace!');
     } else {
       // Move workflow: Update workspace_id
       const { error: moveError } = await (supabase
@@ -245,11 +267,11 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
         .eq('id', selectedWf.id);
 
       if (moveError) {
-        alert('Failed to transfer workflow: ' + moveError.message);
+        alert((isRtl ? 'فشل نقل سير العمل: ' : 'Failed to transfer workflow: ') + moveError.message);
       } else {
         // Remove from current local state list
         setWorkflows((prev) => prev.filter((w) => w.id !== selectedWf.id));
-        alert('Workflow successfully transferred to target workspace!');
+        alert(isRtl ? 'تم نقل سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully transferred to target workspace!');
       }
     }
 
@@ -320,7 +342,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
   };
 
   return (
-    <div className="space-y-6 mt-8">
+    <div className="space-y-6 mt-8 font-sans">
       {/* Tab Switcher */}
       <div className="flex border-b border-border gap-6">
         <button
@@ -331,7 +353,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
-          My Workflows
+          {isRtl ? 'مخططاتي' : 'My Workflows'}
         </button>
         <button
           onClick={() => setActiveTab('shared')}
@@ -341,7 +363,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
-          <span>Shared with me</span>
+          <span>{isRtl ? 'المشاركة معي' : 'Shared with me'}</span>
           {sharedWorkflows.length > 0 && (
             <Badge variant="secondary" className="px-1.5 py-0 rounded-full text-[10px] bg-accent/10 text-accent font-semibold border border-accent/20">
               {sharedWorkflows.length}
@@ -368,18 +390,18 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
           {/* Status Filter */}
           <DropdownMenu>
             <DropdownMenuTrigger className="inline-flex items-center gap-2 px-4 py-2 border border-border bg-background rounded-xl text-sm font-semibold hover:bg-muted cursor-pointer transition-all focus:outline-hidden select-none">
-              <span>Status: {statusFilter.toUpperCase()}</span>
+              <span>{isRtl ? `الحالة: ${getStatusLabel(statusFilter)}` : `Status: ${statusFilter.toUpperCase()}`}</span>
               <ChevronDown className="w-4 h-4" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-md w-40">
+            <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-md w-40 font-sans">
               {['all', 'draft', 'active', 'archived', 'published'].map((st) => (
                 <DropdownMenuItem
                   key={st}
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   onClick={() => setStatusFilter(st as any)}
-                  className="cursor-pointer capitalize rounded-lg m-1 font-medium"
+                  className="cursor-pointer capitalize rounded-lg m-1 font-medium text-xs"
                 >
-                  {st}
+                  {getStatusLabel(st)}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -388,18 +410,18 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
           {/* Sort dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger className="inline-flex items-center gap-2 px-4 py-2 border border-border bg-background rounded-xl text-sm font-semibold hover:bg-muted cursor-pointer transition-all focus:outline-hidden select-none">
-              <span>Sort by: {sortBy === 'modified' ? 'Modified' : sortBy === 'name' ? 'Name A-Z' : 'Node Count'}</span>
+              <span>{isRtl ? `ترتيب حسب: ${getSortLabel(sortBy)}` : `Sort by: ${sortBy === 'modified' ? 'Modified' : sortBy === 'name' ? 'Name A-Z' : 'Node Count'}`}</span>
               <ChevronDown className="w-4 h-4" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-md w-44">
-              <DropdownMenuItem onClick={() => setSortBy('modified')} className="cursor-pointer rounded-lg m-1 font-medium">
-                Last Modified
+            <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-md w-44 font-sans">
+              <DropdownMenuItem onClick={() => setSortBy('modified')} className="cursor-pointer rounded-lg m-1 font-medium text-xs">
+                {isRtl ? 'آخر تعديل' : 'Last Modified'}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortBy('name')} className="cursor-pointer rounded-lg m-1 font-medium">
-                Name A-Z
+              <DropdownMenuItem onClick={() => setSortBy('name')} className="cursor-pointer rounded-lg m-1 font-medium text-xs">
+                {isRtl ? 'الاسم أ-ي' : 'Name A-Z'}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSortBy('nodes')} className="cursor-pointer rounded-lg m-1 font-medium">
-                Node Count
+              <DropdownMenuItem onClick={() => setSortBy('nodes')} className="cursor-pointer rounded-lg m-1 font-medium text-xs">
+                {isRtl ? 'عدد العقد' : 'Node Count'}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -428,14 +450,14 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
 
       {/* Workflows Grid / List */}
       {filteredWorkflows.length === 0 ? (
-        <Card className="border border-dashed border-border py-16 text-center rounded-2xl bg-background/20">
+        <Card className="border border-dashed border-border py-16 text-center rounded-2xl bg-background/20 font-sans">
           <CardContent className="space-y-4">
             <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center text-muted-foreground">
               <Layers className="w-6 h-6" />
             </div>
             <h3 className="font-bold text-lg">{t('no_workflows')}</h3>
             <p className="text-sm text-muted-foreground max-w-sm mx-auto font-light">
-              Press the &quot;+ New Workflow&quot; button at the top to draft your first automation canvas pipeline.
+              {isRtl ? 'اضغط على زر "+ سير عمل جديد" في الأعلى للبدء بصياغة مخطط الأتمتة الخاص بك.' : 'Press the "+ New Workflow" button at the top to draft your first automation canvas pipeline.'}
             </p>
           </CardContent>
         </Card>
@@ -466,33 +488,33 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                     <DropdownMenuTrigger className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-muted shrink-0 cursor-pointer focus:outline-hidden">
                       <MoreVertical className="w-4 h-4 text-muted-foreground" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-40">
+                    <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-44 font-sans">
                       {activeTab === 'shared' ? (
-                        <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                        <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
                           <Edit2 className="w-4 h-4 text-muted-foreground" />
-                          <span>{(wf as SharedWorkflowItem).role === 'editor' ? 'Edit Canvas' : 'Open Canvas'}</span>
+                          <span>{isRtl ? (((wf as SharedWorkflowItem).role === 'editor' ? 'تعديل اللوحة' : 'فتح اللوحة')) : (((wf as SharedWorkflowItem).role === 'editor' ? 'Edit Canvas' : 'Open Canvas'))}</span>
                         </DropdownMenuItem>
                       ) : (
                         <>
-                          <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Edit2 className="w-4 h-4 text-muted-foreground" /> Edit Canvas
+                          <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                            <Edit2 className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'تعديل اللوحة' : 'Edit Canvas'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('copy'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Copy className="w-4 h-4 text-muted-foreground" /> Copy to Workspace
+                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('copy'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                            <Copy className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'نسخ إلى مساحة عمل' : 'Copy to Workspace'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('move'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Layers className="w-4 h-4 text-muted-foreground" /> Move to Workspace
+                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('move'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                            <Layers className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'نقل إلى مساحة عمل' : 'Move to Workspace'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate Local
+                          <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                            <Copy className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'تكرار محلي' : 'Duplicate Local'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                          <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
                             <Archive className="w-4 h-4 text-muted-foreground" />
-                            <span>{wf.status === 'archived' ? 'Restore Draft' : 'Archive'}</span>
+                            <span>{isRtl ? (wf.status === 'archived' ? 'استعادة المسودة' : 'أرشفة') : (wf.status === 'archived' ? 'Restore Draft' : 'Archive')}</span>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleDelete(wf.id)} className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive">
-                            <Trash2 className="w-4 h-4" /> Delete
+                          <DropdownMenuItem onClick={() => handleDelete(wf.id)} className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-xs text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive">
+                            <Trash2 className="w-4 h-4" /> {isRtl ? 'حذف' : 'Delete'}
                           </DropdownMenuItem>
                         </>
                       )}
@@ -500,14 +522,14 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                   </DropdownMenu>
                 </div>
                 <CardDescription className="text-sm font-light text-muted-foreground line-clamp-2 h-10">
-                  {wf.description || 'No description provided.'}
+                  {wf.description || (isRtl ? 'لا يوجد وصف.' : 'No description provided.')}
                 </CardDescription>
               </CardHeader>
 
               <CardContent className="p-5 pt-0 border-t border-border flex items-center justify-between text-xs text-muted-foreground font-medium">
                 <span className="flex items-center gap-1.5">
                   <Play className="w-3.5 h-3.5 text-accent" />
-                  {wf.node_count} nodes
+                  {isRtl ? `${wf.node_count} عقد` : `${wf.node_count} nodes`}
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5" />
@@ -518,7 +540,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
           ))}
         </div>
       ) : (
-        <div className="border border-border rounded-2xl overflow-hidden shadow-sm bg-background/50 backdrop-blur-md">
+        <div className="border border-border rounded-2xl overflow-hidden shadow-sm bg-background/50 backdrop-blur-md font-sans">
           <div className="divide-y divide-border">
             {filteredWorkflows.map((wf) => (
               <div key={wf.id} className="p-4 flex items-center justify-between gap-4 hover:bg-muted/50 transition-colors">
@@ -534,19 +556,19 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                       {activeTab === 'shared' && getShareRoleBadge((wf as SharedWorkflowItem).role)}
                     </div>
                     <p className="text-xs font-light text-muted-foreground truncate max-w-md">
-                      {wf.description || 'No description provided.'}
+                      {wf.description || (isRtl ? 'لا يوجد وصف.' : 'No description provided.')}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-6 shrink-0 text-sm">
+                <div className="flex items-center pe-2 gap-6 shrink-0 text-sm">
                   {getStatusBadge(wf.status)}
                   <span className="text-muted-foreground flex items-center gap-1 text-xs">
                     <Play className="w-3.5 h-3.5 text-accent" />
-                    {wf.node_count} nodes
+                    {isRtl ? `${wf.node_count} عقد` : `${wf.node_count} nodes`}
                   </span>
                   <span className="text-muted-foreground text-xs hidden sm:inline">
-                    Updated {new Date(wf.updated_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' })}
+                    {isRtl ? 'تحديث' : 'Updated'} {new Date(wf.updated_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' })}
                   </span>
 
                   {/* Options Menu */}
@@ -554,33 +576,33 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                     <DropdownMenuTrigger className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-muted shrink-0 cursor-pointer focus:outline-hidden">
                       <MoreVertical className="w-4 h-4 text-muted-foreground" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-40">
+                    <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-44 font-sans">
                       {activeTab === 'shared' ? (
-                        <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                        <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
                           <Edit2 className="w-4 h-4 text-muted-foreground" />
-                          <span>{(wf as SharedWorkflowItem).role === 'editor' ? 'Edit Canvas' : 'Open Canvas'}</span>
+                          <span>{isRtl ? (((wf as SharedWorkflowItem).role === 'editor' ? 'تعديل اللوحة' : 'فتح اللوحة')) : (((wf as SharedWorkflowItem).role === 'editor' ? 'Edit Canvas' : 'Open Canvas'))}</span>
                         </DropdownMenuItem>
                       ) : (
                         <>
-                          <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Edit2 className="w-4 h-4 text-muted-foreground" /> Edit Canvas
+                          <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                            <Edit2 className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'تعديل اللوحة' : 'Edit Canvas'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('copy'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Copy className="w-4 h-4 text-muted-foreground" /> Copy to Workspace
+                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('copy'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                            <Copy className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'نسخ إلى مساحة عمل' : 'Copy to Workspace'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('move'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Layers className="w-4 h-4 text-muted-foreground" /> Move to Workspace
+                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('move'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                            <Layers className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'نقل إلى مساحة عمل' : 'Move to Workspace'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate Local
+                          <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                            <Copy className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'تكرار محلي' : 'Duplicate Local'}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                          <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
                             <Archive className="w-4 h-4 text-muted-foreground" />
-                            <span>{wf.status === 'archived' ? 'Restore Draft' : 'Archive'}</span>
+                            <span>{isRtl ? (wf.status === 'archived' ? 'استعادة المسودة' : 'أرشفة') : (wf.status === 'archived' ? 'Restore Draft' : 'Archive')}</span>
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleDelete(wf.id)} className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive">
-                            <Trash2 className="w-4 h-4" /> Delete
+                          <DropdownMenuItem onClick={() => handleDelete(wf.id)} className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-xs text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive">
+                            <Trash2 className="w-4 h-4" /> {isRtl ? 'حذف' : 'Delete'}
                           </DropdownMenuItem>
                         </>
                       )}
@@ -594,20 +616,24 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
       )}
       {/* Copy / Move Workspace Selector Dialog */}
       <Dialog open={copyMoveOpen} onOpenChange={setCopyMoveOpen}>
-        <DialogContent className="bg-background border border-border rounded-2xl shadow-xl max-w-md p-6">
+        <DialogContent className="bg-background border border-border rounded-2xl shadow-xl max-w-md p-6 font-sans">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold font-sans capitalize">{copyMoveMode} Workflow</DialogTitle>
+            <DialogTitle className="text-xl font-bold">
+              {isRtl
+                ? (copyMoveMode === 'copy' ? 'نسخ مخطط سير العمل' : 'نقل مخطط سير العمل')
+                : (copyMoveMode.charAt(0).toUpperCase() + copyMoveMode.slice(1) + ' Workflow')}
+            </DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCopyMoveWorkflowSubmit} className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label className="font-semibold text-sm">Select Target Workspace</Label>
+              <Label className="font-semibold text-sm">{isRtl ? 'اختر مساحة العمل المستهدفة' : 'Select Target Workspace'}</Label>
               <div className="flex flex-col gap-2 bg-background/55 border border-border p-2 rounded-2xl max-h-56 overflow-y-auto shadow-xs">
                 {workspaces.map((ws) => (
                   <button
                     key={ws.id}
                     type="button"
                     onClick={() => setTargetWsId(ws.id)}
-                    className={`flex items-center justify-between p-3 rounded-xl text-left text-xs font-semibold cursor-pointer select-none transition-all ${
+                    className={`flex items-center justify-between p-3 rounded-xl text-left rtl:text-right text-xs font-semibold cursor-pointer select-none transition-all ${
                       targetWsId === ws.id
                         ? 'bg-accent/15 border border-accent text-foreground'
                         : 'border border-transparent text-muted-foreground hover:bg-white/5'
@@ -623,10 +649,10 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
             </div>
             <DialogFooter className="pt-4 gap-2">
               <Button type="button" variant="outline" onClick={() => setCopyMoveOpen(false)} className="rounded-xl border-border cursor-pointer">
-                Cancel
+                {isRtl ? 'إلغاء' : 'Cancel'}
               </Button>
               <Button type="submit" disabled={portingLoading || !targetWsId} className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-xl px-5 cursor-pointer capitalize flex items-center gap-1.5">
-                {portingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : copyMoveMode}
+                {portingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (isRtl ? (copyMoveMode === 'copy' ? 'نسخ' : 'نقل') : copyMoveMode)}
               </Button>
             </DialogFooter>
           </form>

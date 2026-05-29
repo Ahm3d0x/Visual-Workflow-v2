@@ -80,6 +80,42 @@ export function WorkspaceSettings({
   currentUserId,
   locale,
 }: WorkspaceSettingsProps) {
+  const isRtl = locale === 'ar';
+
+  const getPresetName = (name: string) => {
+    if (isRtl) {
+      if (name === 'Sky Cyan') return 'سماوي';
+      if (name === 'Emerald') return 'زمردي';
+      if (name === 'Sunset Orange') return 'برتقالي غروب الشمس';
+      if (name === 'Indigo Dream') return 'أزرق نيلي';
+      if (name === 'Rose Red') return 'أحمر وردي';
+      if (name === 'Royal Gold') return 'ذهبي ملكي';
+    }
+    return name;
+  };
+
+  const getBannerName = (name: string) => {
+    if (isRtl) {
+      if (name === 'Midnight Space') return 'فضاء منتصف الليل';
+      if (name === 'Emerald Aurora') return 'شفق زمردي';
+      if (name === 'Crimson Solar') return 'شمس قرمزي';
+      if (name === 'Deep Sea Blue') return 'أزرق أعماق البحار';
+      if (name === 'Cyberpunk Neon') return 'نيون سايبربانك';
+    }
+    return name;
+  };
+
+  const getRoleLabel = (role: string) => {
+    if (isRtl) {
+      if (role === 'owner') return 'مالك';
+      if (role === 'admin') return 'مدير';
+      if (role === 'editor') return 'محرر';
+      if (role === 'commenter') return 'معلق';
+      if (role === 'viewer') return 'مشاهد';
+    }
+    return role;
+  };
+
   const router = useRouter();
   const supabase = createClient();
 
@@ -125,9 +161,9 @@ export function WorkspaceSettings({
     setCustomizationLoading(false);
 
     if (res.error) {
-      alert('Failed to update customization: ' + res.error);
+      alert((isRtl ? 'فشل تحديث التخصيص: ' : 'Failed to update customization: ') + res.error);
     } else {
-      alert('Workspace customization successfully updated!');
+      alert(isRtl ? 'تم تحديث تخصيص مساحة العمل بنجاح!' : 'Workspace customization successfully updated!');
       router.refresh();
     }
   };
@@ -146,12 +182,12 @@ export function WorkspaceSettings({
 
     if (res.error) {
       if (res.error === 'PLAN_LIMIT_REACHED') {
-        alert('Plan Limit Reached! Upgrade your plan to activate more invite links.');
+        alert(isRtl ? 'تم الوصول للحد الأقصى للباقة! قم بترقية باقتك لتفعيل المزيد من روابط الدعوة.' : 'Plan Limit Reached! Upgrade your plan to activate more invite links.');
       } else {
-        alert('Failed to create invitation link: ' + res.error);
+        alert((isRtl ? 'فشل إنشاء رابط الدعوة: ' : 'Failed to create invitation link: ') + res.error);
       }
     } else {
-      alert('Workspace invitation link generated successfully!');
+      alert(isRtl ? 'تم إنشاء رابط دعوة مساحة العمل بنجاح!' : 'Workspace invitation link generated successfully!');
       setLinkTitle('');
       // Refetch links
       router.refresh();
@@ -161,14 +197,14 @@ export function WorkspaceSettings({
   };
 
   const handleRevokeLink = async (linkId: string) => {
-    if (!confirm('Revoke this link? Anyone who tries to join using this token will be blocked.')) return;
+    if (!confirm(isRtl ? 'هل تريد إلغاء هذا الرابط؟ سيتم حظر أي شخص يحاول الانضمام باستخدامه.' : 'Revoke this link? Anyone who tries to join using this token will be blocked.')) return;
 
     const res = await revokeWorkspaceShareLink(linkId, initialWorkspace.id);
     if (res.error) {
-      alert('Failed to revoke: ' + res.error);
+      alert((isRtl ? 'فشل الإلغاء: ' : 'Failed to revoke: ') + res.error);
     } else {
       setLinks((prev) => prev.filter((l) => l.id !== linkId));
-      alert('Invitation link revoked.');
+      alert(isRtl ? 'تم إلغاء رابط الدعوة.' : 'Invitation link revoked.');
     }
   };
 
@@ -188,7 +224,7 @@ export function WorkspaceSettings({
       .eq('user_id', targetUserId);
 
     if (error) {
-      alert('Failed to update role: ' + error.message);
+      alert((isRtl ? 'فشل تحديث الدور: ' : 'Failed to update role: ') + error.message);
     } else {
       setMembers((prev) =>
         prev.map((m) => (m.profiles?.id === targetUserId ? { ...m, role: nextRole } : m))
@@ -198,7 +234,7 @@ export function WorkspaceSettings({
   };
 
   const handleRemoveMember = async (targetUserId: string) => {
-    if (!confirm('Are you sure you want to remove this member from the workspace?')) return;
+    if (!confirm(isRtl ? 'هل أنت متأكد أنك تريد إزالة هذا العضو من مساحة العمل؟' : 'Are you sure you want to remove this member from the workspace?')) return;
 
     setMemberLoading(targetUserId);
     const { error } = await (supabase
@@ -208,10 +244,10 @@ export function WorkspaceSettings({
       .eq('user_id', targetUserId);
 
     if (error) {
-      alert('Failed to remove member: ' + error.message);
+      alert((isRtl ? 'فشل إزالة العضو: ' : 'Failed to remove member: ') + error.message);
     } else {
       setMembers((prev) => prev.filter((m) => m.profiles?.id !== targetUserId));
-      alert('Member removed successfully.');
+      alert(isRtl ? 'تمت إزالة العضو بنجاح.' : 'Member removed successfully.');
     }
     setMemberLoading(null);
   };
@@ -226,21 +262,21 @@ export function WorkspaceSettings({
     };
     return (
       <Badge variant="outline" className={`capitalize font-semibold text-xs rounded-md ${colors[role] || colors.viewer}`}>
-        {role}
+        {getRoleLabel(role)}
       </Badge>
     );
   };
 
   return (
-    <div className="space-y-8 animate-fadeIn max-w-5xl">
+    <div className="space-y-8 animate-fadeIn max-w-5xl font-sans">
       {/* ─── Premium Header ─── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border/60 pb-6">
         <div>
-          <h1 className="text-3xl font-extrabold font-sans tracking-tight bg-clip-text bg-linear-to-r from-foreground to-foreground/80">
-            Workspace Customization & Settings
+          <h1 className="text-3xl font-extrabold tracking-tight bg-clip-text bg-linear-to-r from-foreground to-foreground/80">
+            {isRtl ? 'تخصيص وإعدادات مساحة العمل' : 'Workspace Customization & Settings'}
           </h1>
           <p className="text-sm text-muted-foreground font-light mt-1">
-            Configure visual descriptors, generate invite codes, and manage collaborator roles.
+            {isRtl ? 'قم بتهيئة الواصفات المرئية، وتوليد رموز الدعوة، وإدارة أدوار المتعاونين.' : 'Configure visual descriptors, generate invite codes, and manage collaborator roles.'}
           </p>
         </div>
 
@@ -255,7 +291,7 @@ export function WorkspaceSettings({
             }`}
           >
             <Palette className="w-3.5 h-3.5" />
-            <span>Visual Branding</span>
+            <span>{isRtl ? 'الهوية المرئية' : 'Visual Branding'}</span>
           </button>
           <button
             onClick={() => setActiveTab('people')}
@@ -266,7 +302,7 @@ export function WorkspaceSettings({
             }`}
           >
             <UserPlus className="w-3.5 h-3.5" />
-            <span>Members & Sharing</span>
+            <span>{isRtl ? 'الأعضاء والمشاركة' : 'Members & Sharing'}</span>
           </button>
         </div>
       </div>
@@ -291,12 +327,12 @@ export function WorkspaceSettings({
             </div>
             
             {/* Workspace Label */}
-            <div className="min-w-0">
+            <div className="min-w-0 text-left rtl:text-right">
               <span className="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-md bg-accent/20 text-accent-foreground font-sans inline-block mb-1 border border-accent/15">
-                Active Workspace
+                {isRtl ? 'مساحة العمل النشطة' : 'Active Workspace'}
               </span>
               <h2 className="text-2xl font-black truncate text-foreground leading-none">
-                {wsName || 'Unnamed Workspace'}
+                {wsName || (isRtl ? 'مساحة عمل غير مسماة' : 'Unnamed Workspace')}
               </h2>
             </div>
           </div>
@@ -305,7 +341,7 @@ export function WorkspaceSettings({
           <div className="shrink-0 flex items-center gap-2">
             <span className="text-xs text-muted-foreground flex items-center gap-1 bg-background/55 px-3 py-1.5 rounded-full border border-border backdrop-blur-md">
               <Shield className="w-3.5 h-3.5" style={{ color: selectedColor }} />
-              Role: <span className="font-semibold text-foreground capitalize">{currentUserRole}</span>
+              {isRtl ? 'الدور:' : 'Role:'} <span className="font-semibold text-foreground capitalize">{getRoleLabel(currentUserRole)}</span>
             </span>
           </div>
         </div>
@@ -313,14 +349,14 @@ export function WorkspaceSettings({
 
       {/* ─── TAB 1: Customization Settings ─── */}
       {activeTab === 'customization' && (
-        <Card className="bg-background/40 border border-border backdrop-blur-md shadow-sm rounded-3xl">
+        <Card className="bg-background/40 border border-border backdrop-blur-md shadow-sm rounded-3xl font-sans">
           <CardHeader>
-            <CardTitle className="text-xl font-bold font-sans flex items-center gap-2">
+            <CardTitle className="text-xl font-bold flex items-center gap-2">
               <Palette className="w-5 h-5 text-accent" />
-              <span>Workspace Profile Customization</span>
+              <span>{isRtl ? 'تخصيص الملف التعريفي لمساحة العمل' : 'Workspace Profile Customization'}</span>
             </CardTitle>
             <CardDescription className="font-light">
-              Fine-tune the profile settings and theme of this visual environment.
+              {isRtl ? 'قم بضبط إعدادات الملف التعريفي والمظهر الخاص بهذه البيئة المرئية.' : 'Fine-tune the profile settings and theme of this visual environment.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -328,21 +364,21 @@ export function WorkspaceSettings({
               {/* Workspace name */}
               <div className="space-y-2 max-w-lg">
                 <Label htmlFor="wsName" className="font-semibold text-sm">
-                  Workspace Name
+                  {isRtl ? 'اسم مساحة العمل' : 'Workspace Name'}
                 </Label>
                 <Input
                   id="wsName"
                   value={wsName}
                   onChange={(e) => setWsName(e.target.value)}
                   disabled={!canManage}
-                  placeholder="My Creative Space"
+                  placeholder={isRtl ? 'مساحتي الإبداعية' : 'My Creative Space'}
                   className="rounded-xl border-border focus:ring-accent py-5"
                 />
               </div>
 
               {/* Accent Color presets */}
               <div className="space-y-3">
-                <Label className="font-semibold text-sm">Accent Brand Color</Label>
+                <Label className="font-semibold text-sm">{isRtl ? 'لون العلامة التجارية المميز' : 'Accent Brand Color'}</Label>
                 <div className="flex flex-wrap gap-3">
                   {COLOR_PRESETS.map((preset) => (
                     <button
@@ -357,7 +393,7 @@ export function WorkspaceSettings({
                       }`}
                     >
                       <span className={`w-3.5 h-3.5 rounded-full shrink-0 ${preset.bg}`} />
-                      <span>{preset.name}</span>
+                      <span>{getPresetName(preset.name)}</span>
                       {selectedColor === preset.hex && <Check className="w-3.5 h-3.5 ml-1" />}
                     </button>
                   ))}
@@ -366,7 +402,7 @@ export function WorkspaceSettings({
 
               {/* Emoji Icon picker */}
               <div className="space-y-3">
-                <Label className="font-semibold text-sm">Workspace Icon Emoji</Label>
+                <Label className="font-semibold text-sm">{isRtl ? 'رمز مساحة العمل التعبيري' : 'Workspace Icon Emoji'}</Label>
                 <div className="flex flex-wrap items-center gap-2">
                   {EMOJI_PRESETS.map((emoji) => (
                     <button
@@ -387,7 +423,7 @@ export function WorkspaceSettings({
                     <Input
                       value={selectedIcon}
                       onChange={(e) => setSelectedIcon(e.target.value.slice(0, 4))}
-                      placeholder="Or paste custom emoji..."
+                      placeholder={isRtl ? 'أو الصق رمزاً تعبيرياً مخصصاً...' : 'Or paste custom emoji...'}
                       className="w-48 h-12 rounded-xl border-border focus:ring-accent ml-2 text-center"
                     />
                   )}
@@ -396,7 +432,7 @@ export function WorkspaceSettings({
 
               {/* Banner presets */}
               <div className="space-y-3">
-                <Label className="font-semibold text-sm">Banner Gradient Style</Label>
+                <Label className="font-semibold text-sm">{isRtl ? 'نمط تدرج الخلفية' : 'Banner Gradient Style'}</Label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {BANNER_PRESETS.map((preset) => (
                     <button
@@ -413,7 +449,7 @@ export function WorkspaceSettings({
                       <div className={`absolute inset-0 ${preset.class} transition-all duration-300`} />
                       <div className="absolute inset-0 bg-black/40" />
                       <span className="relative font-bold text-[10px] text-white tracking-wide uppercase select-none flex items-center justify-between w-full">
-                        <span>{preset.name}</span>
+                        <span>{getBannerName(preset.name)}</span>
                         {selectedBanner === preset.class && <Check className="w-3.5 h-3.5" />}
                       </span>
                     </button>
@@ -423,7 +459,7 @@ export function WorkspaceSettings({
 
               {/* Submit actions */}
               {canManage && (
-                <div className="pt-4 border-t border-border flex items-center justify-end gap-3">
+                <div className="pt-4 border-t border-border flex items-center justify-end gap-3 animate-fadeIn">
                   <Button
                     type="submit"
                     disabled={customizationLoading}
@@ -432,7 +468,7 @@ export function WorkspaceSettings({
                     {customizationLoading ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      'Save Branding Settings'
+                      isRtl ? 'حفظ إعدادات الهوية' : 'Save Branding Settings'
                     )}
                   </Button>
                 </div>
@@ -446,14 +482,14 @@ export function WorkspaceSettings({
       {activeTab === 'people' && (
         <div className="space-y-8 animate-fadeIn">
           {/* Section A: Workspace Share Links Generator */}
-          <Card className="bg-background/40 border border-border backdrop-blur-md shadow-sm rounded-3xl">
+          <Card className="bg-background/40 border border-border backdrop-blur-md shadow-sm rounded-3xl font-sans">
             <CardHeader>
-              <CardTitle className="text-xl font-bold font-sans flex items-center gap-2">
+              <CardTitle className="text-xl font-bold flex items-center gap-2">
                 <Link2 className="w-5 h-5 text-accent" />
-                <span>Multi-Link Workspace Invitations</span>
+                <span>{isRtl ? 'دعوات مساحة عمل متعددة الروابط' : 'Multi-Link Workspace Invitations'}</span>
               </CardTitle>
               <CardDescription className="font-light">
-                Generate multiple dynamic workspace invitation links. Each link can assign specific roles automatically.
+                {isRtl ? 'قم بتوليد روابط دعوة ديناميكية متعددة لمساحة العمل. يمكن لكل رابط تعيين أدوار محددة تلقائياً.' : 'Generate multiple dynamic workspace invitation links. Each link can assign specific roles automatically.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -461,32 +497,32 @@ export function WorkspaceSettings({
               {canManage && (
                 <form onSubmit={handleCreateInviteLink} className="grid grid-cols-1 md:grid-cols-3 items-end gap-4 border border-border/60 bg-background/30 rounded-2xl p-4.5">
                   <div className="space-y-2">
-                    <Label htmlFor="linkTitle" className="font-semibold text-xs">Invite Link Label</Label>
+                    <Label htmlFor="linkTitle" className="font-semibold text-xs">{isRtl ? 'عنوان رابط الدعوة' : 'Invite Link Label'}</Label>
                     <Input
                       id="linkTitle"
                       value={linkTitle}
                       onChange={(e) => setLinkTitle(e.target.value)}
-                      placeholder="e.g. Creator Join Link, Designer Code"
+                      placeholder={isRtl ? 'مثال: رابط انضمام منشئ، رمز المصمم' : 'e.g. Creator Join Link, Designer Code'}
                       className="rounded-xl border-border focus:ring-accent"
                       required
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="font-semibold text-xs">Auto-Assigned Joining Role</Label>
+                    <Label className="font-semibold text-xs">{isRtl ? 'الدور المعين تلقائياً عند الانضمام' : 'Auto-Assigned Joining Role'}</Label>
                     <DropdownMenu>
                       <DropdownMenuTrigger className="w-full inline-flex items-center justify-between gap-1.5 rounded-xl border border-border bg-background hover:bg-muted px-4 py-2.5 text-xs text-foreground transition-colors focus:outline-hidden font-semibold">
-                        <span className="capitalize">{linkRole}</span>
+                        <span className="capitalize">{getRoleLabel(linkRole)}</span>
                         <ChevronDown className="w-4 h-4 text-muted-foreground" />
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-44 p-1">
+                      <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-44 p-1 font-sans">
                         {(['admin', 'editor', 'commenter', 'viewer'] as const).map((r) => (
                           <DropdownMenuItem
                             key={r}
                             onClick={() => setLinkRole(r)}
                             className="rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer capitalize flex items-center justify-between"
                           >
-                            <span>{r}</span>
+                            <span>{getRoleLabel(r)}</span>
                             {linkRole === r && <Check className="w-4 h-4 text-accent" />}
                           </DropdownMenuItem>
                         ))}
@@ -500,17 +536,17 @@ export function WorkspaceSettings({
                     className="bg-primary hover:bg-primary/95 text-primary-foreground font-bold rounded-xl h-10 px-5 cursor-pointer flex items-center justify-center gap-1.5 w-full"
                   >
                     {linkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                    <span>Generate Share Link</span>
+                    <span>{isRtl ? 'توليد رابط مشاركة' : 'Generate Share Link'}</span>
                   </Button>
                 </form>
               )}
 
               {/* Links list */}
               <div className="space-y-3">
-                <Label className="font-bold text-xs uppercase tracking-wider text-muted-foreground/80">Active Invite Links</Label>
+                <Label className="font-bold text-xs uppercase tracking-wider text-muted-foreground/80">{isRtl ? 'روابط الدعوة النشطة' : 'Active Invite Links'}</Label>
                 {links.length === 0 ? (
                   <div className="text-center py-6 border border-dashed border-border/80 rounded-2xl bg-background/25">
-                    <p className="text-xs text-muted-foreground font-light">No workspace invite links created yet.</p>
+                    <p className="text-xs text-muted-foreground font-light">{isRtl ? 'لم يتم إنشاء أي روابط دعوة لمساحة العمل بعد.' : 'No workspace invite links created yet.'}</p>
                   </div>
                 ) : (
                   <div className="divide-y divide-border border border-border rounded-2xl overflow-hidden bg-background/30 shadow-xs">
@@ -524,7 +560,7 @@ export function WorkspaceSettings({
                             <div className="flex items-center gap-2 flex-wrap">
                               <h4 className="font-bold text-sm text-foreground truncate">{link.label}</h4>
                               <Badge variant="secondary" className="capitalize text-[10px] bg-accent/15 text-accent border border-accent/20">
-                                {link.role}
+                                {getRoleLabel(link.role)}
                               </Badge>
                             </div>
                             <div className="flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-1.5 max-w-lg min-w-0 shadow-xs">
@@ -543,7 +579,7 @@ export function WorkspaceSettings({
                               }`}
                             >
                               {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5 text-accent" />}
-                              <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                              <span>{isCopied ? (isRtl ? 'تم النسخ' : 'Copied') : (isRtl ? 'نسخ' : 'Copy')}</span>
                             </Button>
 
                             {/* Revoke button */}
@@ -568,14 +604,14 @@ export function WorkspaceSettings({
           </Card>
 
           {/* Section B: Workspace Members List */}
-          <Card className="bg-background/40 border border-border backdrop-blur-md shadow-sm rounded-3xl">
+          <Card className="bg-background/40 border border-border backdrop-blur-md shadow-sm rounded-3xl font-sans">
             <CardHeader>
-              <CardTitle className="text-xl font-bold font-sans flex items-center gap-2">
+              <CardTitle className="text-xl font-bold flex items-center gap-2">
                 <Shield className="w-5 h-5 text-accent" />
-                <span>Workspace Members & Roles</span>
+                <span>{isRtl ? 'أعضاء مساحة العمل وأدوارهم' : 'Workspace Members & Roles'}</span>
               </CardTitle>
               <CardDescription className="font-light">
-                Monitor and adjust roles or access rights for collaborators inside this workspace.
+                {isRtl ? 'راقب واضبط الأدوار أو حقوق الوصول للمتعاونين داخل مساحة العمل هذه.' : 'Monitor and adjust roles or access rights for collaborators inside this workspace.'}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -592,12 +628,12 @@ export function WorkspaceSettings({
                           <div className="w-10 h-10 rounded-full bg-accent text-accent-foreground font-bold flex items-center justify-center uppercase text-sm shrink-0 border-2 border-primary/20">
                             {member.profiles.full_name?.charAt(0) || member.profiles.email.charAt(0)}
                           </div>
-                          <div className="min-w-0">
-                            <h4 className="font-bold font-sans text-sm truncate flex items-center gap-1.5">
-                              <span>{member.profiles.full_name || 'User'}</span>
+                          <div className="min-w-0 text-left rtl:text-right">
+                            <h4 className="font-bold text-sm truncate flex items-center gap-1.5">
+                              <span>{member.profiles.full_name || (isRtl ? 'مستخدم' : 'User')}</span>
                               {isCurrentUser && (
                                 <span className="text-[10px] bg-accent/20 text-accent font-semibold px-2 py-0.5 rounded-full">
-                                  You
+                                  {isRtl ? 'أنت' : 'You'}
                                 </span>
                               )}
                             </h4>
@@ -617,17 +653,17 @@ export function WorkspaceSettings({
                                   disabled={memberLoading === member.profiles.id}
                                   className="inline-flex items-center justify-center rounded-xl border border-border bg-background hover:bg-muted px-3 h-9 gap-1 cursor-pointer font-bold text-xs transition-colors focus:outline-hidden disabled:opacity-50 disabled:pointer-events-none shadow-xs"
                                 >
-                                  <span>Change Role</span>
+                                  <span>{isRtl ? 'تغيير الدور' : 'Change Role'}</span>
                                   <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-md w-40 p-1">
+                                <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-md w-40 p-1 font-sans">
                                   {['admin', 'editor', 'commenter', 'viewer'].map((roleOption) => (
                                     <DropdownMenuItem
                                       key={roleOption}
                                       onClick={() => handleChangeRole(member.profiles!.id, roleOption)}
                                       className="cursor-pointer capitalize rounded-lg m-1 font-semibold text-xs flex items-center justify-between"
                                     >
-                                      <span>{roleOption}</span>
+                                      <span>{getRoleLabel(roleOption)}</span>
                                       {member.role === roleOption && <Check className="w-4 h-4 text-accent" />}
                                     </DropdownMenuItem>
                                   ))}

@@ -59,6 +59,7 @@ interface DashboardShellProps {
 }
 
 export function DashboardShell({ children, locale, profile, workspaces }: DashboardShellProps) {
+  const isRtl = locale === 'ar';
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -79,7 +80,6 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [newWsName, setNewWsName] = useState('');
   const [wsLoading, setWsLoading] = useState(false);
-  const t = useTranslations('dashboard');
   const tAuth = useTranslations('auth');
 
   const handleSignOut = async () => {
@@ -121,10 +121,10 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
   };
 
   const navItems = [
-    { name: t('title'), href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Home },
-    { name: 'Workflows', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: GitBranch },
-    { name: 'Workspace settings', href: `/${locale}/settings/workspace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Settings },
-    { name: 'Billing & Plans', href: `/${locale}/billing${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: CreditCard },
+    { name: isRtl ? 'لوحة التحكم' : 'Dashboard', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Home },
+    { name: isRtl ? 'مخططات العمل' : 'Workflows', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: GitBranch },
+    { name: isRtl ? 'إعدادات مساحة العمل' : 'Workspace settings', href: `/${locale}/settings/workspace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Settings },
+    { name: isRtl ? 'الخطط والاشتراكات' : 'Billing & Plans', href: `/${locale}/billing${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: CreditCard },
   ];
 
   return (
@@ -233,10 +233,10 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                     {activeWorkspace.plan}
                   </span>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="bg-background border border-border rounded-xl shadow-lg w-56">
+                <DropdownMenuContent align="start" className="bg-background border border-border rounded-xl shadow-lg w-56 font-sans">
                   <DropdownMenuGroup>
                     <DropdownMenuLabel className="text-xs text-muted-foreground font-light px-2 py-1.5">
-                      Select Workspace
+                      {isRtl ? 'اختر مساحة عمل' : 'Select Workspace'}
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator className="bg-border" />
                     {workspaces.map((ws) => (
@@ -255,7 +255,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                       className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-accent hover:text-accent-foreground"
                     >
                       <Plus className="w-4 h-4" />
-                      <span>Create Workspace</span>
+                      <span>{isRtl ? 'إنشاء مساحة عمل' : 'Create Workspace'}</span>
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
@@ -275,25 +275,25 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                     {profile.full_name?.charAt(0) || profile.email.charAt(0)}
                   </div>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-56">
+                <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-56 font-sans">
                   <DropdownMenuGroup>
                     <DropdownMenuLabel className="px-3 py-2">
-                      <p className="font-bold text-sm truncate">{profile.full_name || 'User'}</p>
+                      <p className="font-bold text-sm truncate">{profile.full_name || (isRtl ? 'مستخدم' : 'User')}</p>
                       <p className="font-light text-xs text-muted-foreground truncate">{profile.email}</p>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator className="bg-border" />
                     <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                      <User className="w-4 h-4 text-muted-foreground" /> Profile
+                      <User className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الملف الشخصي' : 'Profile'}
                     </DropdownMenuItem>
                     <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                      <Settings className="w-4 h-4 text-muted-foreground" /> Settings
+                      <Settings className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الإعدادات' : 'Settings'}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator className="bg-border" />
                     <DropdownMenuItem
                       onClick={handleSignOut}
                       className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive"
                     >
-                      <LogOut className="w-4 h-4" /> Sign Out
+                      <LogOut className="w-4 h-4" /> {isRtl ? 'تسجيل الخروج' : 'Sign Out'}
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
@@ -308,30 +308,30 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
 
       {/* Create Workspace Dialog */}
       <Dialog open={createWsOpen} onOpenChange={setCreateWsOpen}>
-        <DialogContent className="bg-background border border-border rounded-2xl shadow-xl max-w-md p-6">
+        <DialogContent className="bg-background border border-border rounded-2xl shadow-xl max-w-md p-6 font-sans">
           <DialogHeader>
-            <DialogTitle className="text-xl font-bold font-sans">Create Workspace</DialogTitle>
+            <DialogTitle className="text-xl font-bold">{isRtl ? 'إنشاء مساحة عمل جديدة' : 'Create Workspace'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateWorkspaceSubmit} className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="newWsName" className="font-semibold text-sm">
-                Workspace Name
+                {isRtl ? 'اسم مساحة العمل' : 'Workspace Name'}
               </Label>
               <Input
                 id="newWsName"
                 value={newWsName}
                 onChange={(e) => setNewWsName(e.target.value)}
-                placeholder="My Awesome Team"
+                placeholder={isRtl ? 'فريقي الرائع' : 'My Awesome Team'}
                 required
                 className="rounded-xl border-border focus:ring-accent"
               />
             </div>
             <DialogFooter className="pt-4 gap-2">
               <Button type="button" variant="outline" onClick={() => setCreateWsOpen(false)} className="rounded-xl border-border cursor-pointer">
-                Cancel
+                {isRtl ? 'إلغاء' : 'Cancel'}
               </Button>
               <Button type="submit" disabled={wsLoading || !newWsName.trim()} className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-xl px-5 cursor-pointer">
-                {wsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
+                {wsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (isRtl ? 'إنشاء' : 'Create')}
               </Button>
             </DialogFooter>
           </form>

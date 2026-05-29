@@ -72,9 +72,13 @@ export default async function BillingPage({
   if (!activeWorkspace) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-8 space-y-4">
-        <h2 className="text-2xl font-bold font-sans">Setting up your Workspace...</h2>
+        <h2 className="text-2xl font-bold font-sans">
+          {locale === 'ar' ? 'جاري إعداد مساحة العمل الخاصة بك...' : 'Setting up your Workspace...'}
+        </h2>
         <p className="text-sm text-muted-foreground font-light max-w-sm">
-          Please wait a moment while we provision your custom workflows canvas and Legend trial dashboard.
+          {locale === 'ar'
+            ? 'يرجى الانتظار للحظات بينما نقوم بتهيئة لوحة سير العمل المخصصة ولوحة تحكم Legend التجريبية.'
+            : 'Please wait a moment while we provision your custom workflows canvas and Legend trial dashboard.'}
         </p>
       </div>
     );
@@ -117,7 +121,17 @@ export default async function BillingPage({
   );
 }
 
-export const metadata = {
-  title: 'Billing & Subscriptions — Visual Workflow SaaS',
-  description: 'Manage subscription plans, check active usage capacities, and upgrade visual canvas tiers.',
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  const isAr = locale === 'ar';
+  return {
+    title: isAr ? 'الفواتير والاشتراكات — Visual Workflow SaaS' : 'Billing & Subscriptions — Visual Workflow SaaS',
+    description: isAr
+      ? 'إدارة خطط الاشتراك، والتحقق من طاقة الاستخدام النشطة، وترقية مستويات اللوحة المرئية.'
+      : 'Manage subscription plans, check active usage capacities, and upgrade visual canvas tiers.',
+  };
+}

@@ -112,9 +112,13 @@ export default async function DashboardPage({
     // Return early if workspace triggers are still executing (graceful fallback)
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-8 space-y-4">
-        <h2 className="text-2xl font-bold font-sans">Setting up your Workspace...</h2>
+        <h2 className="text-2xl font-bold font-sans">
+          {locale === 'ar' ? 'جاري إعداد مساحة العمل الخاصة بك...' : 'Setting up your Workspace...'}
+        </h2>
         <p className="text-sm text-muted-foreground font-light max-w-sm">
-          Please wait a moment while we provision your custom workflows canvas and Legend trial dashboard.
+          {locale === 'ar'
+            ? 'يرجى الانتظار لحظة بينما نقوم بتهيئة لوحة سير العمل المخصصة ولوحة تحكم الفترة التجريبية لباقة Legend.'
+            : 'Please wait a moment while we provision your custom workflows canvas and Legend trial dashboard.'}
         </p>
       </div>
     );
@@ -205,10 +209,14 @@ export default async function DashboardPage({
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Page Header */}
-      <div className="flex flex-col gap-1.5">
-        <h1 className="text-3xl font-extrabold font-sans tracking-tight">Dashboard</h1>
+      <div className="flex flex-col gap-1.5 font-sans">
+        <h1 className="text-3xl font-extrabold tracking-tight">
+          {locale === 'ar' ? 'لوحة التحكم' : 'Dashboard'}
+        </h1>
         <p className="text-sm text-muted-foreground font-light">
-          Monitor your active visual canvas runs, provision node structures, and invite collaborators.
+          {locale === 'ar'
+            ? 'راقب عمليات لوحة العمل النشطة، وقم بتهيئة هياكل العقد، ودعوة المتعاونين.'
+            : 'Monitor your active visual canvas runs, provision node structures, and invite collaborators.'}
         </p>
       </div>
 
@@ -220,6 +228,7 @@ export default async function DashboardPage({
 
       {/* Localized Workflows list */}
       <WorkflowsList
+        key={activeWorkspace.id}
         initialWorkflows={workflows}
         sharedWorkflows={sharedWorkflows}
         workspaceId={activeWorkspace.id}
@@ -229,7 +238,17 @@ export default async function DashboardPage({
     </div>
   );
 }
-export const metadata = {
-  title: "Dashboard — Visual Workflow SaaS",
-  description: "Manage your workflows, check your active limits, and run integrations.",
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  const isAr = locale === 'ar';
+  return {
+    title: isAr ? 'لوحة التحكم — Visual Workflow SaaS' : 'Dashboard — Visual Workflow SaaS',
+    description: isAr
+      ? 'إدارة سير العمل الخاص بك، والتحقق من حدودك النشطة، وتشغيل عمليات التكامل.'
+      : 'Manage your workflows, check your active limits, and run integrations.',
+  };
+}
