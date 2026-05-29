@@ -80,15 +80,15 @@ export default async function WorkspaceJoinPage({ params }: JoinPageProps) {
   }
 
   const workspace = activeLink.workspaces;
-  const workspaceColor = workspace.color || '#0284c7';
-  const workspaceIcon = workspace.icon || '💼';
-  const workspaceBanner = workspace.banner || 'bg-gradient-to-r from-indigo-950 via-purple-950 to-zinc-950';
+  const workspaceColor = workspace?.color || '#0284c7';
+  const workspaceIcon = workspace?.icon || '💼';
+  const workspaceBanner = workspace?.banner || 'bg-gradient-to-r from-indigo-950 via-purple-950 to-zinc-950';
 
   // 5. Check if user is already a member
   const { data: existingMember } = await (supabase
     .from('workspace_members') as any)
     .select('role')
-    .eq('workspace_id', workspace.id)
+    .eq('workspace_id', activeLink.workspace_id)
     .eq('user_id', user.id)
     .maybeSingle();
 
@@ -127,7 +127,7 @@ export default async function WorkspaceJoinPage({ params }: JoinPageProps) {
               Workspace Invitation
             </span>
             <h2 className="text-2xl font-black text-foreground font-sans">
-              You&apos;ve been invited to join {workspace.name}
+              You&apos;ve been invited to join {workspace?.name || 'the workspace'}
             </h2>
             <p className="text-sm font-light text-muted-foreground max-w-sm mx-auto">
               Accepting this invitation will add you as a team member with the <span className="font-semibold text-foreground capitalize">{activeLink.role}</span> role.
@@ -140,7 +140,7 @@ export default async function WorkspaceJoinPage({ params }: JoinPageProps) {
                 <Check className="w-4 h-4 shrink-0" />
                 <span>You are already a member of this workspace!</span>
               </div>
-              <Link href={`/${locale}/dashboard?w=${workspace.id}`} passHref className="w-full block">
+              <Link href={`/${locale}/dashboard?w=${activeLink.workspace_id}`} passHref className="w-full block">
                 <Button className="w-full bg-primary hover:bg-primary/95 text-primary-foreground font-bold rounded-xl py-5 cursor-pointer flex items-center justify-center gap-1">
                   <span>Enter Workspace</span>
                   <ChevronRight className="w-4 h-4" />

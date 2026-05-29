@@ -153,14 +153,21 @@ export default async function SharedWorkflowPage({
       .maybeSingle();
 
     if (!member) {
-      // Direct database linkage so it appears in Shared with me dashboard
-      // @ts-expect-error - Custom RPC type not in auto-generated types
-      await supabase.rpc('join_shared_workflow', {
-        p_workflow_id: share.workflow_id,
-        p_user_id: user.id,
-        p_role: share.role,
-        p_created_by: share.created_by,
-      });
+      try {
+        // Direct database linkage so it appears in Shared with me dashboard
+        // @ts-expect-error - Custom RPC type not in auto-generated types
+        const { error: rpcError } = await supabase.rpc('join_shared_workflow', {
+          p_workflow_id: share.workflow_id,
+          p_user_id: user.id,
+          p_role: share.role,
+          p_created_by: share.created_by,
+        });
+        if (rpcError) {
+          console.error('Error auto-joining shared workflow:', rpcError);
+        }
+      } catch (err) {
+        console.error('Exception when joining shared workflow:', err);
+      }
     }
 
     if (share.role === 'editor') {

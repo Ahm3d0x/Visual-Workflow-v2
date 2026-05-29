@@ -46,6 +46,14 @@ export interface EditorComment {
   };
 }
 
+export interface PolarHandle {
+  id: string;
+  label: string;
+  type: 'target' | 'source';
+  angle: number;
+  color: string;
+}
+
 export interface EditorState {
   nodes: Node[];
   edges: Edge[];
@@ -180,12 +188,74 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   updateNode: (id, nodeData) => {
     get().pushToUndo();
-    set((state) => ({
-      nodes: state.nodes.map((n) =>
+    set((state) => {
+      // 1. Update the node details
+      const nextNodes = state.nodes.map((n) =>
         n.id === id ? { ...n, data: { ...n.data, ...nodeData } } : n
-      ),
-      hasUnsavedChanges: true,
-    }));
+      );
+
+      // 2. Automatically migrate edges when polar handles are configured or updated
+      let nextEdges = state.edges;
+      if ('polarHandles' in nodeData) {
+        const polarHandles = nodeData.polarHandles as PolarHandle[] | undefined;
+        
+        if (polarHandles && polarHandles.length > 0) {
+          // Polar mode enabled or custom handles list updated!
+          const firstTarget = polarHandles.find((h) => h.type === 'target');
+          const firstSource = polarHandles.find((h) => h.type === 'source');
+
+          nextEdges = state.edges.map((e) => {
+            let updated = false;
+            const newEdge = { ...e };
+
+            // Migrate incoming edge targetHandle
+            if (e.target === id) {
+              const targetExists = polarHandles.some((h) => h.id === e.targetHandle);
+              if (!targetExists && firstTarget) {
+                newEdge.targetHandle = firstTarget.id;
+                updated = true;
+              }
+            }
+
+            // Migrate outgoing edge sourceHandle
+            if (e.source === id) {
+              const sourceExists = polarHandles.some((h) => h.id === e.sourceHandle);
+              if (!sourceExists && firstSource) {
+                newEdge.sourceHandle = firstSource.id;
+                updated = true;
+              }
+            }
+
+            return updated ? newEdge : e;
+          });
+        } else {
+          // Polar mode disabled (Reset to Standard)!
+          // Restore standard 'in' and 'out' handles.
+          nextEdges = state.edges.map((e) => {
+            let updated = false;
+            const newEdge = { ...e };
+
+            if (e.target === id && e.targetHandle && e.targetHandle.startsWith('in_')) {
+              newEdge.targetHandle = 'in';
+              updated = true;
+            }
+
+            if (e.source === id && e.sourceHandle && e.sourceHandle.startsWith('out_')) {
+              newEdge.sourceHandle = 'out';
+              updated = true;
+            }
+
+            return updated ? newEdge : e;
+          });
+        }
+      }
+
+      return {
+        nodes: nextNodes,
+        edges: nextEdges,
+        hasUnsavedChanges: true,
+      };
+    });
   },
 
   deleteNode: (id) => {
