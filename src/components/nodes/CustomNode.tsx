@@ -164,7 +164,10 @@ export function CustomNode({ id, type, data, selected }: CustomNodeProps) {
   let inputs = schema ? schema.inputs : [{ id: 'in', label: 'In' }];
   let outputs = schema ? schema.outputs : [{ id: 'out', label: 'Out' }];
 
-  if (data.handleConfig || type === 'custom_template' || data.customNode) {
+  if (data.polarHandles) {
+    inputs = [];
+    outputs = [];
+  } else if (data.handleConfig || type === 'custom_template' || data.customNode) {
     const handleConfig = data.handleConfig || {};
     const inputCount = typeof handleConfig.inputCount === 'number' ? handleConfig.inputCount : 1;
     const inputPosition = handleConfig.inputPosition || 'top';

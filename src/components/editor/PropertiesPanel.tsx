@@ -5,7 +5,7 @@ import { useEditorStore } from '@/stores/editorStore';
 import { 
   X, Info, Trash2, Settings, Type, AlignLeft, 
   ChevronLeft, ChevronRight, Sparkles, Sliders, User, 
-  Zap, RefreshCw, Trash, Image as ImageIcon, Copy
+  Zap, RefreshCw, Trash, Image as ImageIcon, Copy, Plus
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -988,6 +988,168 @@ export function PropertiesPanel({
                   />
                 </div>
               </div>
+            </div>
+
+            {/* Polar Handles (360-degree Custom Points) Configuration */}
+            <div className="space-y-4 border-t border-border/40 pt-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold font-sans flex items-center gap-1.5 text-accent uppercase tracking-wider">
+                  <Sparkles className="w-4 h-4 text-accent animate-pulse" />
+                  <span>{isRtl ? 'نقاط الاتصال الدائرية (360°)' : '360° Custom Handles'}</span>
+                </h4>
+                {nodeData.polarHandles ? (
+                  <button
+                    onClick={() => {
+                      if (!canEdit) return;
+                      updateNode(selectedNodeId!, { polarHandles: undefined });
+                    }}
+                    className="text-[9px] font-bold text-rose-500 hover:underline cursor-pointer"
+                  >
+                    {isRtl ? 'إعادة للقياسي' : 'Reset to Standard'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (!canEdit) return;
+                      updateNode(selectedNodeId!, {
+                        polarHandles: [
+                          { id: `in_${crypto.randomUUID().slice(0, 4)}`, label: isRtl ? 'مدخل' : 'In', type: 'target', angle: 270, color: '#10b981' },
+                          { id: `out_${crypto.randomUUID().slice(0, 4)}`, label: isRtl ? 'مخرج' : 'Out', type: 'source', angle: 90, color: '#ef4444' }
+                        ]
+                      });
+                    }}
+                    className="text-[9px] font-bold text-accent hover:underline cursor-pointer"
+                  >
+                    {isRtl ? 'تفعيل وضع 360°' : 'Enable 360° mode'}
+                  </button>
+                )}
+              </div>
+
+              {nodeData.polarHandles ? (
+                <div className="space-y-3.5">
+                  <p className="text-[10px] text-muted-foreground/60 leading-normal font-light">
+                    {isRtl 
+                      ? 'حدد موضع نقاط التوصيل بدقة في أي زاوية من 0 إلى 360 درجة حول حدود العقدة بشكل مستقل.' 
+                      : 'Place connection points at any arbitrary angle from 0 to 360 degrees around the boundary with full coordinate control.'}
+                  </p>
+
+                  <div className="space-y-3">
+                    {((nodeData.polarHandles as any[]) || []).map((h, index) => {
+                      const updateHandleField = (field: string, val: any) => {
+                        const nextHandles = [...(nodeData.polarHandles as any[])];
+                        nextHandles[index] = { ...nextHandles[index], [field]: val };
+                        updateNode(selectedNodeId!, { polarHandles: nextHandles });
+                      };
+
+                      const deleteHandle = () => {
+                        const nextHandles = (nodeData.polarHandles as any[]).filter((_, idx) => idx !== index);
+                        updateNode(selectedNodeId!, { polarHandles: nextHandles.length > 0 ? nextHandles : undefined });
+                      };
+
+                      return (
+                        <div key={h.id} className="p-3 bg-muted/20 border border-border/10 rounded-2xl space-y-2.5 relative">
+                          <button
+                            onClick={deleteHandle}
+                            className="absolute top-2.5 right-2.5 w-5 h-5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive flex items-center justify-center cursor-pointer transition-colors"
+                            title={isRtl ? 'إزالة النقطة' : 'Remove Point'}
+                          >
+                            <Trash className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Label / ID */}
+                          <div className="flex gap-2 items-center">
+                            <span className="text-[9px] font-mono text-muted-foreground shrink-0 select-none">
+                              #{h.id.slice(0, 4)}
+                            </span>
+                            <input
+                              type="text"
+                              value={h.label}
+                              onChange={(e) => updateHandleField('label', e.target.value)}
+                              disabled={!canEdit}
+                              placeholder={isRtl ? 'اسم المنفذ...' : 'Label...'}
+                              className="bg-transparent border-b border-transparent hover:border-border/30 focus:border-accent text-xs font-semibold py-0.5 px-1 focus:outline-hidden flex-1 text-foreground"
+                            />
+                          </div>
+
+                          {/* Role and Color Pickers */}
+                          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/10">
+                            <div>
+                              <span className="text-[9px] text-muted-foreground block mb-0.5">{isRtl ? 'النوع' : 'Role'}</span>
+                              <Select
+                                value={h.type}
+                                onValueChange={(val) => updateHandleField('type', val)}
+                                disabled={!canEdit}
+                              >
+                                <SelectTrigger className="h-6.5 text-[10px] rounded-lg border-border py-0">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="bg-background border border-border rounded-xl">
+                                  <SelectItem value="target" className="text-[10px] cursor-pointer">{isRtl ? 'مدخل' : 'Input'}</SelectItem>
+                                  <SelectItem value="source" className="text-[10px] cursor-pointer">{isRtl ? 'مخرج' : 'Output'}</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <span className="text-[9px] text-muted-foreground block mb-0.5">{isRtl ? 'اللون' : 'Color'}</span>
+                              <input
+                                type="color"
+                                value={h.color || '#ffffff'}
+                                onChange={(e) => updateHandleField('color', e.target.value)}
+                                disabled={!canEdit}
+                                className="w-7 h-6 rounded cursor-pointer border border-border/30 bg-transparent shrink-0"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Angle Slider */}
+                          <div className="space-y-1 pt-1.5 border-t border-border/10">
+                            <div className="flex justify-between text-[10px] text-muted-foreground font-semibold">
+                              <span>{isRtl ? 'زاوية الموضع' : 'Placement Angle'} ({h.angle}°)</span>
+                              <span>0° - 360°</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={360}
+                              value={h.angle}
+                              onChange={(e) => updateHandleField('angle', parseInt(e.target.value) || 0)}
+                              disabled={!canEdit}
+                              className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-accent"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {canEdit && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        const newId = `pt_${crypto.randomUUID().slice(0, 4)}`;
+                        const nextHandles = [...((nodeData.polarHandles as any[]) || [])];
+                        nextHandles.push({
+                          id: newId,
+                          label: isRtl ? `نقطة ${nextHandles.length + 1}` : `Point ${nextHandles.length + 1}`,
+                          type: 'target',
+                          angle: 0,
+                          color: '#ffffff'
+                        });
+                        updateNode(selectedNodeId!, { polarHandles: nextHandles });
+                      }}
+                      className="w-full justify-center bg-accent/10 border-accent/20 hover:bg-accent hover:text-accent-foreground text-accent rounded-xl font-semibold gap-1.5 h-8.5 cursor-pointer mt-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>{isRtl ? 'إضافة نقطة اتصال مخصصة' : 'Add Connection Point'}</span>
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[10px] font-light text-muted-foreground/60 flex items-start gap-1.5 bg-muted/20 p-2.5 rounded-xl border border-border/10">
+                  <Info className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
+                  <span>{isRtl ? 'العقدة تستخدم المقابض القياسية (أعلى وأسفل). انقر على "تفعيل وضع 360°" أعلاه للتحكم الكامل والدقيق بموضع كل مقابض التوصيل.' : 'Node is using standard top/bottom handles. Tap "Enable 360° mode" above to gain precise placement control around all perimeters.'}</span>
+                </div>
+              )}
             </div>
 
             {/* Actions: Duplicate / Delete Node */}

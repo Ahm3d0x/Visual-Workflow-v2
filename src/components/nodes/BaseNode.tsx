@@ -24,6 +24,13 @@ interface BaseNodeProps {
       width?: number;
       height?: number;
     };
+    polarHandles?: {
+      id: string;
+      label: string;
+      type: 'target' | 'source';
+      angle: number;
+      color: string;
+    }[];
     [key: string]: unknown;
   };
   selected?: boolean;
@@ -34,6 +41,43 @@ interface BaseNodeProps {
   inputs?: { id: string; label?: string; position?: Position; color?: string }[];
   outputs?: { id: string; label?: string; position?: Position; color?: string }[];
 }
+
+const getPolarStyle = (angle: number, color: string) => {
+  const alpha = (angle * Math.PI) / 180;
+  const absCos = Math.abs(Math.cos(alpha));
+  const absSin = Math.abs(Math.sin(alpha));
+  
+  let x = 0;
+  let y = 0;
+  
+  if (absCos >= absSin) {
+    x = Math.cos(alpha) > 0 ? 0.5 : -0.5;
+    y = (Math.sin(alpha) / (absCos || 1)) * 0.5;
+  } else {
+    x = (Math.cos(alpha) / (absSin || 1)) * 0.5;
+    y = Math.sin(alpha) > 0 ? 0.5 : -0.5;
+  }
+  
+  const left = (x + 0.5) * 100;
+  const top = (y + 0.5) * 100;
+  
+  return {
+    left: `${left}%`,
+    top: `${top}%`,
+    transform: 'translate(-50%, -50%)',
+    backgroundColor: color,
+    borderColor: 'var(--border)',
+    position: 'absolute' as const,
+  };
+};
+
+const getPolarPosition = (angle: number): Position => {
+  const normAngle = ((angle % 360) + 360) % 360;
+  if (normAngle >= 45 && normAngle < 135) return Position.Bottom;
+  if (normAngle >= 135 && normAngle < 225) return Position.Left;
+  if (normAngle >= 225 && normAngle < 315) return Position.Top;
+  return Position.Right;
+};
 
 export function BaseNode({
   id,
@@ -117,6 +161,8 @@ export function BaseNode({
     handlesBySide[pos].push({ ...h, type: 'source' });
   });
 
+  const polarHandles = data.polarHandles || [];
+
   return (
     <div
       style={inlineStyles}
@@ -128,36 +174,12 @@ export function BaseNode({
           : ''
       }`}
     >
-      {/* Handles rendering for all 4 sides */}
-      {(Object.keys(handlesBySide) as Position[]).map((pos) => {
-        const sideHandles = handlesBySide[pos];
-        const isHorizontal = pos === Position.Top || pos === Position.Bottom;
-        
-        return sideHandles.map((h, index) => {
-          const style: React.CSSProperties = {
-            backgroundColor: h.color || (h.type === 'target' ? '#10b981' : '#ef4444'),
-            borderColor: 'var(--border)',
-            position: 'absolute',
-          };
-
-          if (isHorizontal) {
-            style.left = sideHandles.length === 1 ? '50%' : `${((index + 1) * 100) / (sideHandles.length + 1)}%`;
-            style.transform = 'translateX(-50%)';
-            if (pos === Position.Top) {
-              style.top = '-6px';
-            } else {
-              style.bottom = '-6px';
-            }
-          } else {
-            style.top = sideHandles.length === 1 ? '50%' : `${((index + 1) * 100) / (sideHandles.length + 1)}%`;
-            style.transform = 'translateY(-50%)';
-            if (pos === Position.Left) {
-              style.left = '-6px';
-            } else {
-              style.right = '-6px';
-            }
-          }
-
+      {/* 360-degree Polar Handles rendering or standard handles */}
+      {polarHandles.length > 0 ? (
+        polarHandles.map((h) => {
+          const style = getPolarStyle(h.angle, h.color);
+          const pos = getPolarPosition(h.angle);
+          
           return (
             <Handle
               key={h.id}
@@ -165,12 +187,56 @@ export function BaseNode({
               position={pos}
               id={h.id}
               style={style}
-              className="w-3 h-3 border-2 hover:scale-125 transition-all cursor-crosshair rounded-full shadow-sm z-30"
-              title={h.label}
+              className="w-3.5 h-3.5 border-2 hover:scale-130 transition-all cursor-crosshair rounded-full shadow-md z-30"
+              title={`${h.label} (${h.angle}°)`}
             />
           );
-        });
-      })}
+        })
+      ) : (
+        /* Handles rendering for all 4 sides */
+        (Object.keys(handlesBySide) as Position[]).map((pos) => {
+          const sideHandles = handlesBySide[pos];
+          const isHorizontal = pos === Position.Top || pos === Position.Bottom;
+          
+          return sideHandles.map((h, index) => {
+            const style: React.CSSProperties = {
+              backgroundColor: h.color || (h.type === 'target' ? '#10b981' : '#ef4444'),
+              borderColor: 'var(--border)',
+              position: 'absolute',
+            };
+
+            if (isHorizontal) {
+              style.left = sideHandles.length === 1 ? '50%' : `${((index + 1) * 100) / (sideHandles.length + 1)}%`;
+              style.transform = 'translateX(-50%)';
+              if (pos === Position.Top) {
+                style.top = '-6px';
+              } else {
+                style.bottom = '-6px';
+              }
+            } else {
+              style.top = sideHandles.length === 1 ? '50%' : `${((index + 1) * 100) / (sideHandles.length + 1)}%`;
+              style.transform = 'translateY(-50%)';
+              if (pos === Position.Left) {
+                style.left = '-6px';
+              } else {
+                style.right = '-6px';
+              }
+            }
+
+            return (
+              <Handle
+                key={h.id}
+                type={h.type}
+                position={pos}
+                id={h.id}
+                style={style}
+                className="w-3 h-3 border-2 hover:scale-125 transition-all cursor-crosshair rounded-full shadow-sm z-30"
+                title={h.label}
+              />
+            );
+          });
+        })
+      )}
 
       {/* Node Accent Left Bar */}
       <div className={`absolute left-0 top-3.5 bottom-3.5 w-1.5 rounded-r-md ${accentBar}`} />
