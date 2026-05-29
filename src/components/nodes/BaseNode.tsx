@@ -104,6 +104,48 @@ export function BaseNode({
   const activeSimNodeId = useEditorStore((s) => s.activeSimNodeId);
   const isSimActive = activeSimNodeId === id;
 
+  // Click-to-Connect actions
+  const pendingConnection = useEditorStore((s) => s.pendingConnection);
+  const setPendingConnection = useEditorStore((s) => s.setPendingConnection);
+  const onConnect = useEditorStore((s) => s.onConnect);
+
+  const handleHandleClick = (e: React.MouseEvent, handleId: string, handleType: 'source' | 'target') => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (!pendingConnection) {
+      setPendingConnection({ nodeId: id, handleId, handleType });
+    } else {
+      const isSame = pendingConnection.nodeId === id && pendingConnection.handleId === handleId;
+      if (isSame) {
+        setPendingConnection(null);
+        return;
+      }
+
+      const isCompatible = 
+        pendingConnection.nodeId !== id && 
+        pendingConnection.handleType !== handleType;
+
+      if (isCompatible) {
+        const sourceNodeId = pendingConnection.handleType === 'source' ? pendingConnection.nodeId : id;
+        const sourceHandleId = pendingConnection.handleType === 'source' ? pendingConnection.handleId : handleId;
+        const targetNodeId = pendingConnection.handleType === 'target' ? pendingConnection.nodeId : id;
+        const targetHandleId = pendingConnection.handleType === 'target' ? pendingConnection.handleId : handleId;
+
+        onConnect({
+          source: sourceNodeId,
+          sourceHandle: sourceHandleId,
+          target: targetNodeId,
+          targetHandle: targetHandleId,
+        });
+
+        setPendingConnection(null);
+      } else {
+        setPendingConnection({ nodeId: id, handleId, handleType });
+      }
+    }
+  };
+
   const unresolvedComments = comments.filter((c) => c.node_id === id && !c.resolved_at);
   const commentCount = unresolvedComments.length;
 
@@ -186,6 +228,7 @@ export function BaseNode({
         polarHandles.map((h) => {
           const style = getPolarStyle(h.angle, h.color);
           const pos = getPolarPosition(h.angle);
+          const isPending = pendingConnection && pendingConnection.nodeId === id && pendingConnection.handleId === h.id;
           
           return (
             <Handle
@@ -194,8 +237,9 @@ export function BaseNode({
               position={pos}
               id={h.id}
               style={style}
-              className="w-3.5 h-3.5 border-2 hover:scale-130 transition-all cursor-crosshair rounded-full shadow-md z-30"
+              className={`w-3.5 h-3.5 border-2 hover:scale-130 transition-all cursor-crosshair rounded-full shadow-md z-30 ${isPending ? 'ring-4 ring-primary ring-offset-1 animate-pulse scale-125 z-50' : ''}`}
               title={`${h.label} (${h.angle}°)`}
+              onClick={(e) => handleHandleClick(e, h.id, h.type)}
             />
           );
         })
@@ -230,6 +274,8 @@ export function BaseNode({
               }
             }
 
+            const isPending = pendingConnection && pendingConnection.nodeId === id && pendingConnection.handleId === h.id;
+
             return (
               <Handle
                 key={h.id}
@@ -237,8 +283,9 @@ export function BaseNode({
                 position={pos}
                 id={h.id}
                 style={style}
-                className="w-3 h-3 border-2 hover:scale-125 transition-all cursor-crosshair rounded-full shadow-sm z-30"
+                className={`w-3 h-3 border-2 hover:scale-125 transition-all cursor-crosshair rounded-full shadow-sm z-30 ${isPending ? 'ring-4 ring-primary ring-offset-1 animate-pulse scale-125 z-50' : ''}`}
                 title={h.label}
+                onClick={(e) => handleHandleClick(e, h.id, h.type)}
               />
             );
           });

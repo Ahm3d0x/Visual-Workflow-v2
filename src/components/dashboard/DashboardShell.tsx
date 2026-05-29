@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import { useRouter, usePathname } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { signOut } from '@/actions/auth.actions';
@@ -64,17 +64,22 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
-  const [activeWorkspace, setActiveWorkspace] = useState(() => {
+  const [activeWorkspace, setActiveWorkspace] = useState(() => workspaces[0] || null);
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const wsId = params.get('w');
       if (wsId) {
         const found = workspaces.find((w) => w.id === wsId);
-        if (found) return found;
+        if (found) {
+          setTimeout(() => {
+            setActiveWorkspace(found);
+          }, 0);
+        }
       }
     }
-    return workspaces[0] || null;
-  });
+  }, [workspaces]);
 
   const [isPending, startTransition] = useTransition();
   const [createWsOpen, setCreateWsOpen] = useState(false);

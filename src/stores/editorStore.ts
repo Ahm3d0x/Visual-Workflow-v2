@@ -75,6 +75,10 @@ export interface EditorState {
   // Simulation state
   activeSimNodeId: string | null;
 
+  // Click-to-Connect Mode
+  pendingConnection: { nodeId: string; handleId: string; handleType: 'source' | 'target' } | null;
+  setPendingConnection: (conn: { nodeId: string; handleId: string; handleType: 'source' | 'target' } | null) => void;
+
   // React Flow Handlers
   onNodesChange: OnNodesChange;
   onEdgesChange: OnEdgesChange;
@@ -131,6 +135,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   collaborators: {},
   comments: [],
   activeSimNodeId: null,
+  pendingConnection: null,
+  setPendingConnection: (pendingConnection) => set({ pendingConnection }),
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),

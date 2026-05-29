@@ -99,20 +99,29 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   // Real-time collaborative whiteboard drawings preview state
   const [remoteDrawings, setRemoteDrawings] = useState<Record<string, BoardStroke>>({});
   const [currentUserId, setCurrentUserId] = useState<string>('collaborator');
+  const [userName, setUserName] = useState<string>('Collaborator');
+  const [userColor] = useState<string>(() => {
+    const randomHex = PALETTES[Math.floor(Math.random() * PALETTES.length)] || '#ec4899';
+    return randomHex;
+  });
 
   /* ── Drag & Resize States/Handlers ── */
-  const [size, setSize] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return {
-        width: Math.floor(window.innerWidth * 0.9),
-        height: Math.floor(window.innerHeight * 0.85),
-      };
-    }
-    return { width: 1200, height: 800 };
-  });
+  const [size, setSize] = useState({ width: 1200, height: 800 });
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const dragRef = useRef<{ startX: number; startY: number; startPosX: number; startPosY: number } | null>(null);
   const resizeRef = useRef<{ startWidth: number; startHeight: number; startX: number; startY: number } | null>(null);
+  const lastBroadcastTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setSize({
+        width: Math.floor(window.innerWidth * 0.9),
+        height: Math.floor(window.innerHeight * 0.85),
+      });
+    };
+    const timer = setTimeout(handleResize, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   const onDragStart = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -196,11 +205,26 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     return { x, y };
   }, [view]);
 
-  // Load active user session metadata
+  // Load active user session metadata and profile details
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data?.session?.user?.id) {
-        setCurrentUserId(data.session.user.id);
+      const uid = data?.session?.user?.id;
+      if (uid) {
+        setCurrentUserId(uid);
+        
+        // Fetch collaborator name from database profile
+        (supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', uid)
+          .single() as unknown as {
+            then: (cb: (res: { data: { full_name: string | null } | null }) => void) => void;
+          })
+          .then(({ data: profile }) => {
+            if (profile?.full_name) {
+              setUserName(profile.full_name);
+            }
+          });
       }
     });
   }, [supabase]);
@@ -209,6 +233,25 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   useEffect(() => {
     const ch = supabase.channel(`board:${nodeId}`, {
       config: { broadcast: { self: false } }
+    });
+
+    ch.on('broadcast', { event: 'pointer_sync' }, ({ payload }) => {
+      if (!payload?.userId) return;
+      setCollaborators((prev) => ({
+        ...prev,
+        [payload.userId]: {
+          x: payload.x,
+          y: payload.y,
+          color: payload.color || '#ec4899',
+          name: payload.name || 'User',
+        },
+      }));
+      if (payload.drawing) {
+        setRemoteDrawings((prev) => ({
+          ...prev,
+          [payload.userId]: payload.drawing,
+        }));
+      }
     });
 
     ch.on('broadcast', { event: 'cursor' }, ({ payload }) => {
@@ -593,13 +636,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
 
-    // Broadcast cursor
-    if (channelRef.current?.state === 'joined') {
-      channelRef.current.send({
-        type: 'broadcast', event: 'cursor', payload: { x, y }
-      });
-    }
-
+    // 1. Dragging committed shapes
     if (tool === 'select' && isDraggingObject && selectedStrokeId) {
       setStrokes((prev) => prev.map((s) => {
         if (s.id !== selectedStrokeId) return s;
@@ -610,39 +647,95 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         return { ...s, points: newPts };
       }));
       setPointer((p) => ({ ...p, x, y }));
+
+      // Throttle object drag sync
+      const now = Date.now();
+      if (now - lastBroadcastTimeRef.current > 40) {
+        lastBroadcastTimeRef.current = now;
+        if (channelRef.current?.state === 'joined') {
+          const movedStroke = strokes.find((s) => s.id === selectedStrokeId);
+          if (movedStroke) {
+            const nextPts = movedStroke.points.map((p) => ({
+              x: p.x + (x - pointer.x),
+              y: p.y + (y - pointer.y),
+            }));
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'pointer_sync',
+              payload: {
+                userId: currentUserId,
+                name: userName,
+                color: userColor,
+                x,
+                y,
+                drawing: { ...movedStroke, points: nextPts }
+              }
+            });
+          }
+        }
+      }
       return;
     }
 
-    if (!pointer.down) return;
+    // 2. Active pointer drawing
+    if (pointer.down) {
+      const newPts = tool === 'pen' || tool === 'eraser'
+        ? [...currentPen, { x, y }]
+        : [{ x: pointer.startX, y: pointer.startY }, { x, y }];
 
-    const newPts = tool === 'pen' || tool === 'eraser'
-      ? [...currentPen, { x, y }]
-      : [{ x: pointer.startX, y: pointer.startY }, { x, y }];
+      setCurrentPen(newPts);
+      renderOverlay(newPts);
+      setPointer((p) => ({ ...p, x, y }));
 
-    setCurrentPen(newPts);
-    renderOverlay(newPts);
-    setPointer((p) => ({ ...p, x, y }));
-
-    // Broadcast current in-progress drawings preview to other collaborators
-    if (channelRef.current?.state === 'joined') {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'stroke_draw',
-        payload: {
-          userId: currentUserId,
-          stroke: {
-            id: 'temp_draw',
-            tool: tool,
-            points: newPts,
-            color,
-            width: strokeWidth,
-            fill: useFill,
-            fillColor: useFill ? fillColor : undefined,
-          }
+      // Throttle active drawing and cursor broadcast
+      const now = Date.now();
+      if (now - lastBroadcastTimeRef.current > 40) {
+        lastBroadcastTimeRef.current = now;
+        if (channelRef.current?.state === 'joined') {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'pointer_sync',
+            payload: {
+              userId: currentUserId,
+              name: userName,
+              color: userColor,
+              x,
+              y,
+              drawing: {
+                id: 'temp_draw',
+                tool: tool,
+                points: newPts,
+                color,
+                width: strokeWidth,
+                fill: useFill,
+                fillColor: useFill ? fillColor : undefined,
+              }
+            }
+          });
         }
-      });
+      }
+    } else {
+      // Just moving pointer -> throttle cursor broadcast
+      const now = Date.now();
+      if (now - lastBroadcastTimeRef.current > 40) {
+        lastBroadcastTimeRef.current = now;
+        if (channelRef.current?.state === 'joined') {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'pointer_sync',
+            payload: {
+              userId: currentUserId,
+              name: userName,
+              color: userColor,
+              x,
+              y,
+              drawing: null
+            }
+          });
+        }
+      }
     }
-  }, [tool, isDraggingObject, selectedStrokeId, pointer, currentPen, toCanvasCoords, renderOverlay, currentUserId, color, strokeWidth, useFill, fillColor]);
+  }, [tool, isDraggingObject, selectedStrokeId, pointer, currentPen, toCanvasCoords, renderOverlay, currentUserId, userName, userColor, color, strokeWidth, useFill, fillColor, strokes]);
 
   const onPointerUp = useCallback(() => {
     if (isDraggingObject) {
@@ -1093,6 +1186,25 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               </div>
             )}
           </div>
+
+          {/* Circular Quick Color Toggles matching the screenshot */}
+          <button
+            onClick={() => setColor('#ffffff')}
+            className={`w-10 h-10 rounded-full border-2 transition-all cursor-pointer flex items-center justify-center relative hover:scale-105 bg-white border-zinc-700
+              ${color === '#ffffff' ? 'ring-2 ring-offset-2 ring-fuchsia-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
+            title="Set White Brush Color"
+          >
+            <div className="w-4 h-4 rounded-full bg-zinc-300 border border-zinc-400" />
+          </button>
+
+          <button
+            onClick={() => setColor('#18181b')}
+            className={`w-10 h-10 rounded-full border-2 transition-all cursor-pointer flex items-center justify-center relative hover:scale-105 bg-zinc-950 border-zinc-700
+              ${color === '#18181b' ? 'ring-2 ring-offset-2 ring-fuchsia-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
+            title="Set Dark Brush Color"
+          >
+            <div className="w-4 h-4 rounded-full bg-zinc-800 border border-zinc-700" />
+          </button>
 
           {/* Fill toggle & fill color */}
           {['rect', 'circle', 'triangle'].includes(tool) && (

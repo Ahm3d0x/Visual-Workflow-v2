@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { 
-  Lock, Unlock, RotateCcw, Maximize, Trash2, MousePointerSquareDashed, FolderPlus
+  Lock, Unlock, RotateCcw, Maximize, Trash2, MousePointerSquareDashed, FolderPlus,
+  Play, GitBranch, Database, Mail, Sparkles, StopCircle, X
 } from 'lucide-react';
 import {
   ReactFlow,
@@ -19,7 +20,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 
-import { useEditorStore, EditorComment } from '@/stores/editorStore';
+import { useEditorStore, EditorComment, PolarHandle } from '@/stores/editorStore';
 import { useDebouncedCallback } from '@/hooks/useDebounce';
 import { createClient } from '@/lib/supabase/client';
 import { EditorToolbar } from './EditorToolbar';
@@ -93,6 +94,8 @@ function EditorInner({
     selectedEdgeId,
     setComments,
     addComment,
+    pendingConnection,
+    setPendingConnection,
   } = useEditorStore();
 
   // Box Selection Mode and Grouping States
@@ -103,6 +106,19 @@ function EditorInner({
 
   // Phase 12: Share dialog state
   const [showShareDialog, setShowShareDialog] = useState(false);
+
+  // Quick Connect / Drag-to-Create States
+  const [connectStartParams, setConnectStartParams] = useState<{
+    nodeId: string;
+    handleId: string;
+    handleType: 'source' | 'target';
+  } | null>(null);
+  const [quickConnectOpen, setQuickConnectOpen] = useState(false);
+  const [quickConnectPos, setQuickConnectPos] = useState<{ x: number; y: number; clientX: number; clientY: number } | null>(null);
+  
+  // Auto-save serialization queue locks
+  const saveInFlightRef = useRef(false);
+  const saveQueuedRef = useRef(false);
 
   // Premium Canvas and Custom Styling controls
   const [canvasBg, setCanvasBg] = useState<'zinc' | 'blue' | 'forest' | 'midnight'>('zinc');
@@ -198,7 +214,7 @@ function EditorInner({
     let maxY = -Infinity;
 
     selectedNodes.forEach((n) => {
-      const customStyle = ((n.data || {}) as any).customStyle || {};
+      const customStyle = (n.data?.customStyle || {}) as Record<string, unknown>;
       const width = (n.style?.width as number) || (customStyle.width as number) || 220;
       const height = (n.style?.height as number) || (customStyle.height as number) || 90;
       
@@ -276,53 +292,85 @@ function EditorInner({
 
   // 4. Debounced save synchronization to Supabase
   const handleSaveToSupabase = useDebouncedCallback(async (nextName?: string) => {
+    if (saveInFlightRef.current) {
+      saveQueuedRef.current = true;
+      return;
+    }
+
+    saveInFlightRef.current = true;
     setSaving(true);
     const workflowName = nextName || workflow.name;
 
     try {
       // Step A: Sync Nodes inside workflow
-      await (supabase.from('workflow_nodes') as unknown as {
-        delete: () => { eq: (col: string, val: string) => Promise<unknown> };
-      }).delete().eq('workflow_id', workflow.id);
-      
+      const currentNodeIds = nodes.map((n) => n.id);
+      if (currentNodeIds.length > 0) {
+        await supabase
+          .from('workflow_nodes')
+          .delete()
+          .eq('workflow_id', workflow.id)
+          .not('id', 'in', `(${currentNodeIds.join(',')})`);
+      } else {
+        await supabase
+          .from('workflow_nodes')
+          .delete()
+          .eq('workflow_id', workflow.id);
+      }
+
       if (nodes.length > 0) {
-        const nodesToInsert = nodes.map((n) => ({
+        const nodesToUpsert = nodes.map((n) => ({
           id: n.id,
           workflow_id: workflow.id,
-          type: n.type,
-          position: n.position,
-          data: n.data || {},
-          style: n.style || {},
+          type: n.type || 'default',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          position: n.position as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data: (n.data || {}) as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          style: (n.style || {}) as any,
+          parent_id: n.parentId || null,
         }));
-        await (supabase.from('workflow_nodes') as unknown as {
-          insert: (arg: unknown[]) => Promise<unknown>;
-        }).insert(nodesToInsert);
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase.from('workflow_nodes') as any)
+          .upsert(nodesToUpsert, { onConflict: 'id' });
       }
 
       // Step B: Sync Edges inside workflow
-      await (supabase.from('workflow_edges') as unknown as {
-        delete: () => { eq: (col: string, val: string) => Promise<unknown> };
-      }).delete().eq('workflow_id', workflow.id);
-      
+      const currentEdgeIds = edges.map((e) => e.id);
+      if (currentEdgeIds.length > 0) {
+        await supabase
+          .from('workflow_edges')
+          .delete()
+          .eq('workflow_id', workflow.id)
+          .not('id', 'in', `(${currentEdgeIds.join(',')})`);
+      } else {
+        await supabase
+          .from('workflow_edges')
+          .delete()
+          .eq('workflow_id', workflow.id);
+      }
+
       if (edges.length > 0) {
-        const edgesToInsert = edges.map((e) => ({
+        const edgesToUpsert = edges.map((e) => ({
           id: e.id,
           workflow_id: workflow.id,
           source_node_id: e.source,
           target_node_id: e.target,
           source_handle: e.sourceHandle || null,
           target_handle: e.targetHandle || null,
-          data: e.data || {},
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data: (e.data || {}) as any,
         }));
-        await (supabase.from('workflow_edges') as unknown as {
-          insert: (arg: unknown[]) => Promise<unknown>;
-        }).insert(edgesToInsert);
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase.from('workflow_edges') as any)
+          .upsert(edgesToUpsert, { onConflict: 'id' });
       }
 
       // Step C: Update workflow updated_at and name
-      await (supabase.from('workflows') as unknown as {
-        update: (arg: Record<string, unknown>) => { eq: (col: string, val: string) => Promise<unknown> };
-      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.from('workflows') as any)
         .update({
           name: workflowName,
           node_count: nodes.length,
@@ -338,7 +386,14 @@ function EditorInner({
     } catch (err: unknown) {
       console.error('Failed to auto-save workflow:', (err as Error).message);
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
+      
+      if (saveQueuedRef.current) {
+        saveQueuedRef.current = false;
+        // Trigger save immediately to process queued edits
+        handleSaveToSupabase();
+      }
     }
   }, 1500);
 
@@ -509,6 +564,195 @@ function EditorInner({
     [screenToFlowPosition, addNode, permissions.canEdit, realtime]
   );
 
+  const onConnectStart = useCallback((_: unknown, params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null }) => {
+    if (params.nodeId && params.handleId && params.handleType) {
+      setConnectStartParams({
+        nodeId: params.nodeId,
+        handleId: params.handleId,
+        handleType: params.handleType,
+      });
+    }
+  }, []);
+
+  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent) => {
+    if (!connectStartParams || !permissions.canEdit) return;
+
+    const target = event.target as Element;
+    if (!target) return;
+
+    // A. Drop on target node -> auto-connect
+    const nodeElement = target.closest('.react-flow__node');
+    const targetNodeId = nodeElement?.getAttribute('data-id');
+
+    if (targetNodeId && targetNodeId !== connectStartParams.nodeId) {
+      const targetNode = nodes.find((n) => n.id === targetNodeId);
+      if (targetNode) {
+        let connectionCreated = false;
+        
+        if (connectStartParams.handleType === 'source') {
+          let targetHandleId = 'in';
+          const polarHandles = targetNode.data?.polarHandles as PolarHandle[] | undefined;
+          if (polarHandles && polarHandles.length > 0) {
+            const firstTarget = polarHandles.find((h) => h.type === 'target');
+            if (firstTarget) targetHandleId = firstTarget.id;
+          }
+          
+          onConnect({
+            source: connectStartParams.nodeId,
+            sourceHandle: connectStartParams.handleId,
+            target: targetNodeId,
+            targetHandle: targetHandleId,
+          });
+          
+          const newEdge = {
+            id: crypto.randomUUID(),
+            source: connectStartParams.nodeId,
+            sourceHandle: connectStartParams.handleId,
+            target: targetNodeId,
+            targetHandle: targetHandleId,
+          };
+          realtime.broadcastEdgeChange('INSERT', newEdge as Edge);
+          connectionCreated = true;
+        } else {
+          let sourceHandleId = 'out';
+          const polarHandles = targetNode.data?.polarHandles as PolarHandle[] | undefined;
+          if (polarHandles && polarHandles.length > 0) {
+            const firstSource = polarHandles.find((h) => h.type === 'source');
+            if (firstSource) sourceHandleId = firstSource.id;
+          }
+          
+          onConnect({
+            source: targetNodeId,
+            sourceHandle: sourceHandleId,
+            target: connectStartParams.nodeId,
+            targetHandle: connectStartParams.handleId,
+          });
+          
+          const newEdge = {
+            id: crypto.randomUUID(),
+            source: targetNodeId,
+            sourceHandle: sourceHandleId,
+            target: connectStartParams.nodeId,
+            targetHandle: connectStartParams.handleId,
+          };
+          realtime.broadcastEdgeChange('INSERT', newEdge as Edge);
+          connectionCreated = true;
+        }
+
+        if (connectionCreated) {
+          setConnectStartParams(null);
+          return;
+        }
+      }
+    }
+
+    // B. Drop on empty canvas pane -> quick connect picker
+    const isPane = target.classList.contains('react-flow__pane') || target.closest('.react-flow__pane');
+
+    if (isPane) {
+      const clientX = 'clientX' in event ? event.clientX : event.changedTouches[0].clientX;
+      const clientY = 'clientY' in event ? event.clientY : event.changedTouches[0].clientY;
+
+      const position = screenToFlowPosition({
+        x: clientX,
+        y: clientY,
+      });
+
+      setQuickConnectPos({
+        x: position.x,
+        y: position.y,
+        clientX,
+        clientY,
+      });
+      setQuickConnectOpen(true);
+    }
+  }, [connectStartParams, nodes, onConnect, realtime, screenToFlowPosition, permissions.canEdit]);
+
+  const handleCreateAndConnectNode = useCallback((type: string) => {
+    if (!connectStartParams || !quickConnectPos || !permissions.canEdit) return;
+
+    const newNodeId = crypto.randomUUID();
+    const isAr = locale === 'ar';
+    
+    const CATALOG: Record<string, { label: string; desc: string }> = {
+      start: { label: isAr ? 'مُشغّل البداية' : 'Start Trigger', desc: isAr ? 'نقطة البداية للمخطط' : 'Entry point of the workflow.' },
+      decision: { label: isAr ? 'عقدة القرار' : 'Decision Split', desc: isAr ? 'تقسيم التدفق بناءً على شرط' : 'True/False condition split.' },
+      api_request: { label: isAr ? 'طلب REST API' : 'REST API Request', desc: isAr ? 'تنفيذ استدعاءات HTTP خارجية' : 'Execute external GET/POST requests.' },
+      email: { label: isAr ? 'إرسال بريد إلكتروني' : 'Send Email', desc: isAr ? 'إرسال إشعارات بريدية' : 'Send email notifications.' },
+      ai_generate: { label: isAr ? 'توليد بالذكاء الاصطناعي' : 'AI Generate', desc: isAr ? 'توليد استجابات ذكية بالذكاء الاصطناعي' : 'Generate content via GPT models.' },
+      end: { label: isAr ? 'خطوة النهاية' : 'End Step', desc: isAr ? 'إنهاء تدفق التنفيذ بأمان' : 'Safely terminate workflow execution.' },
+    };
+
+    const nodeInfo = CATALOG[type] || { label: type, desc: `Custom configured ${type} parameters.` };
+
+    const newNode = {
+      id: newNodeId,
+      type,
+      position: {
+        x: quickConnectPos.x,
+        y: quickConnectPos.y,
+      },
+      data: {
+        label: nodeInfo.label,
+        description: nodeInfo.desc,
+      },
+    };
+
+    addNode(newNode);
+    realtime.broadcastNodeChange('INSERT', newNode);
+
+    if (connectStartParams.handleType === 'source') {
+      const connection = {
+        source: connectStartParams.nodeId,
+        sourceHandle: connectStartParams.handleId,
+        target: newNodeId,
+        targetHandle: 'in',
+      };
+      onConnect(connection);
+      
+      const newEdge = {
+        id: crypto.randomUUID(),
+        ...connection,
+      };
+      realtime.broadcastEdgeChange('INSERT', newEdge as Edge);
+    } else {
+      const connection = {
+        source: newNodeId,
+        sourceHandle: 'out',
+        target: connectStartParams.nodeId,
+        targetHandle: connectStartParams.handleId,
+      };
+      onConnect(connection);
+      
+      const newEdge = {
+        id: crypto.randomUUID(),
+        ...connection,
+      };
+      realtime.broadcastEdgeChange('INSERT', newEdge as Edge);
+    }
+
+    setQuickConnectOpen(false);
+    setConnectStartParams(null);
+    setQuickConnectPos(null);
+  }, [connectStartParams, quickConnectPos, locale, addNode, onConnect, realtime, permissions.canEdit]);
+
+  // Cancel Quick Connect / Drag Connect picker on click outside
+  useEffect(() => {
+    if (!quickConnectOpen) return;
+
+    const handleOutsideClick = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (target && !target.closest('.quick-connect-picker')) {
+        setQuickConnectOpen(false);
+        setConnectStartParams(null);
+        setQuickConnectPos(null);
+      }
+    };
+
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [quickConnectOpen]);
+
   // 7. Select canvas element listeners
   const onNodeClick = useCallback(
     (_: unknown, node: unknown) => {
@@ -662,6 +906,7 @@ function EditorInner({
               permissions.canEdit 
                 ? (conn) => {
                     onConnect(conn);
+                    setConnectStartParams(null);
                     // Broadcast new edge creation immediately
                     const newEdge = {
                       id: crypto.randomUUID(),
@@ -674,6 +919,8 @@ function EditorInner({
                   }
                 : undefined
             }
+            onConnectStart={permissions.canEdit ? onConnectStart : undefined}
+            onConnectEnd={permissions.canEdit ? onConnectEnd : undefined}
             panOnDrag={!selectionModeActive}
             selectionOnDrag={selectionModeActive}
             panOnScroll={true}
@@ -799,6 +1046,77 @@ function EditorInner({
               </>
             )}
           </div>
+
+          {/* A. Click-to-Connect instructions banner */}
+          {pendingConnection && (
+            <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 bg-background/85 backdrop-blur-md border border-primary/30 px-5 py-3 rounded-2xl shadow-xl flex items-center gap-4 animate-bounce-subtle select-none font-sans max-w-sm md:max-w-md">
+              <div className="w-2.5 h-2.5 rounded-full bg-primary animate-ping shrink-0" />
+              <p className="text-xs md:text-sm font-medium text-foreground flex-1 leading-normal">
+                {locale === 'ar' 
+                  ? 'وضع التوصيل السريع نشط. انقر على نقطة اتصال أخرى لتوصيلهما.' 
+                  : 'Quick-connect mode active. Click another connection point to connect.'}
+              </p>
+              <button
+                className="h-7 px-3 rounded-lg text-xs font-semibold cursor-pointer border border-border hover:bg-muted text-muted-foreground transition-all shrink-0 bg-background"
+                onClick={() => setPendingConnection(null)}
+              >
+                {locale === 'ar' ? 'إلغاء' : 'Cancel'}
+              </button>
+            </div>
+          )}
+
+          {/* B. Floating Quick Connect Picker context-menu dropdown */}
+          {quickConnectOpen && quickConnectPos && (
+            <div 
+              style={{ 
+                top: quickConnectPos.clientY, 
+                left: quickConnectPos.clientX,
+                transform: locale === 'ar' ? 'translateX(10%)' : 'translateX(-10%)'
+              }}
+              className="fixed z-50 w-64 bg-background/95 backdrop-blur-md border border-border rounded-2xl shadow-2xl p-2 font-sans flex flex-col gap-0.5 animate-fadeIn quick-connect-picker"
+            >
+              <div className="px-2.5 py-1.5 border-b border-border/60 flex items-center justify-between select-none">
+                <span className="text-xs font-bold text-muted-foreground tracking-tight">
+                  {locale === 'ar' ? 'إنشاء وتوصيل' : 'Create & Connect'}
+                </span>
+                <button 
+                  onClick={() => {
+                    setQuickConnectOpen(false);
+                    setConnectStartParams(null);
+                    setQuickConnectPos(null);
+                  }}
+                  className="w-5 h-5 rounded-md hover:bg-muted flex items-center justify-center cursor-pointer text-muted-foreground transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="py-1 flex flex-col max-h-[280px] overflow-y-auto pr-0.5">
+                {[
+                  { type: 'start', labelEn: 'Start Trigger', labelAr: 'مُشغّل البداية', icon: Play, color: 'text-emerald-500 bg-emerald-500/10' },
+                  { type: 'decision', labelEn: 'Decision / Split', labelAr: 'عقدة القرار (شرط)', icon: GitBranch, color: 'text-blue-500 bg-blue-500/10' },
+                  { type: 'api_request', labelEn: 'REST API Request', labelAr: 'طلب REST API', icon: Database, color: 'text-purple-500 bg-purple-500/10' },
+                  { type: 'email', labelEn: 'Send Email', labelAr: 'إرسال بريد إلكتروني', icon: Mail, color: 'text-amber-500 bg-amber-500/10' },
+                  { type: 'ai_generate', labelEn: 'AI Content', labelAr: 'توليد بالذكاء الاصطناعي', icon: Sparkles, color: 'text-violet-500 bg-violet-500/10' },
+                  { type: 'end', labelEn: 'End Step', labelAr: 'خطوة النهاية', icon: StopCircle, color: 'text-rose-500 bg-rose-500/10' },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.type}
+                      onClick={() => handleCreateAndConnectNode(item.type)}
+                      className="w-full text-start px-2.5 py-2 rounded-xl hover:bg-muted text-foreground transition-all cursor-pointer flex items-center gap-3 select-none text-xs font-semibold"
+                    >
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border border-border/10 ${item.color}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <span className="truncate">{locale === 'ar' ? item.labelAr : item.labelEn}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Real-time collaborators overlay mouse cursors layer */}
           <CursorOverlay />
