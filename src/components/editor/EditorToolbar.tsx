@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
+import { useTheme } from 'next-themes';
 import { getNodesBounds } from '@xyflow/react';
 
 interface EditorToolbarProps {
@@ -39,6 +40,7 @@ export function EditorToolbar({
   onShareClick,
 }: EditorToolbarProps) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
   const isRtl = locale === 'ar';
 
   const {
@@ -99,14 +101,17 @@ export function EditorToolbar({
       const viewportElement = document.querySelector('.react-flow__viewport') as HTMLElement;
       if (!viewportElement) throw new Error('Viewport not found');
 
-      // Temporarily expand bounds and capture
+      // Calculate exact bounding box offset + padding to center the workflow
       const bounds = getNodesBounds(nodes);
+      const computedStyle = getComputedStyle(document.documentElement);
+      const canvasBg = computedStyle.getPropertyValue('--canvas-bg').trim() || (resolvedTheme === 'dark' ? '#0f172a' : '#f8fafc');
+
       const dataUrl = await toPng(viewportElement, {
-        backgroundColor: '#0a0a0a', // dark theme support
+        backgroundColor: canvasBg,
         width: bounds.width + 200,
         height: bounds.height + 200,
         style: {
-          transform: 'translate(0px, 0px) scale(1)',
+          transform: `translate(${-bounds.x + 100}px, ${-bounds.y + 100}px) scale(1)`,
         },
       });
 
@@ -131,23 +136,27 @@ export function EditorToolbar({
       const viewportElement = document.querySelector('.react-flow__viewport') as HTMLElement;
       if (!viewportElement) throw new Error('Viewport not found');
 
+      // Calculate exact bounding box offset + padding to center the workflow
       const bounds = getNodesBounds(nodes);
+      const computedStyle = getComputedStyle(document.documentElement);
+      const canvasBg = computedStyle.getPropertyValue('--canvas-bg').trim() || (resolvedTheme === 'dark' ? '#0f172a' : '#f8fafc');
+
       const dataUrl = await toPng(viewportElement, {
-        backgroundColor: '#0a0a0a',
-        width: bounds.width + 100,
-        height: bounds.height + 100,
+        backgroundColor: canvasBg,
+        width: bounds.width + 200,
+        height: bounds.height + 200,
         style: {
-          transform: 'translate(0px, 0px) scale(1)',
+          transform: `translate(${-bounds.x + 100}px, ${-bounds.y + 100}px) scale(1)`,
         },
       });
 
       const pdf = new jsPDF({
         orientation: bounds.width > bounds.height ? 'landscape' : 'portrait',
         unit: 'px',
-        format: [bounds.width + 100, bounds.height + 100],
+        format: [bounds.width + 200, bounds.height + 200],
       });
 
-      pdf.addImage(dataUrl, 'PNG', 20, 20, bounds.width, bounds.height);
+      pdf.addImage(dataUrl, 'PNG', 0, 0, bounds.width + 200, bounds.height + 200);
       pdf.save(`${name.replace(/\s+/g, '_')}_report.pdf`);
     } catch (err) {
       alert('Failed to export PDF: ' + (err as Error).message);

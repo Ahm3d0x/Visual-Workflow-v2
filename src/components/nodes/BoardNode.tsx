@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Handle, Position } from '@xyflow/react';
 import { PenLine, Maximize2, MessageSquare, Users } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
@@ -249,14 +250,15 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
       </div>
 
       {/* Full Board Modal */}
-      {isOpen && (
+      {isOpen && createPortal(
         <BoardCanvas
           nodeId={id}
           label={data.label || 'Board'}
           initialStrokes={(data.boardStrokes as BoardStroke[]) || []}
           initialBg={data.boardBg as string | undefined}
           onClose={() => setIsOpen(false)}
-        />
+        />,
+        document.body
       )}
     </>
   );

@@ -96,6 +96,84 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const [isSyncing, setIsSyncing] = useState(false);
   const [showZoomMenu, setShowZoomMenu] = useState(false);
 
+  /* ── Drag & Resize States/Handlers ── */
+  const [size, setSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return {
+        width: Math.floor(window.innerWidth * 0.9),
+        height: Math.floor(window.innerHeight * 0.85),
+      };
+    }
+    return { width: 1200, height: 800 };
+  });
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; startPosX: number; startPosY: number } | null>(null);
+  const resizeRef = useRef<{ startWidth: number; startHeight: number; startX: number; startY: number } | null>(null);
+
+  const onDragStart = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('textarea')) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPosX: position.x,
+      startPosY: position.y,
+    };
+
+    const onDragMove = (moveEvent: MouseEvent) => {
+      if (!dragRef.current) return;
+      const deltaX = moveEvent.clientX - dragRef.current.startX;
+      const deltaY = moveEvent.clientY - dragRef.current.startY;
+      setPosition({
+        x: dragRef.current.startPosX + deltaX,
+        y: dragRef.current.startPosY + deltaY,
+      });
+    };
+
+    const onDragStop = () => {
+      dragRef.current = null;
+      document.removeEventListener('mousemove', onDragMove);
+      document.removeEventListener('mouseup', onDragStop);
+    };
+
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragStop);
+  };
+
+  const onResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = {
+      startWidth: size.width,
+      startHeight: size.height,
+      startX: e.clientX,
+      startY: e.clientY,
+    };
+
+    const onResizeMove = (moveEvent: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const deltaX = moveEvent.clientX - resizeRef.current.startX;
+      const deltaY = moveEvent.clientY - resizeRef.current.startY;
+
+      const newWidth = Math.max(800, Math.min(resizeRef.current.startWidth + deltaX, window.innerWidth - 40));
+      const newHeight = Math.max(500, Math.min(resizeRef.current.startHeight + deltaY, window.innerHeight - 40));
+
+      setSize({ width: newWidth, height: newHeight });
+    };
+
+    const onResizeStop = () => {
+      resizeRef.current = null;
+      document.removeEventListener('mousemove', onResizeMove);
+      document.removeEventListener('mouseup', onResizeStop);
+    };
+
+    document.addEventListener('mousemove', onResizeMove);
+    document.addEventListener('mouseup', onResizeStop);
+  };
+
   const updateNode = useEditorStore((s) => s.updateNode);
   const supabase = createClient();
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -713,12 +791,24 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   /* ─── Render ─── */
   return (
     <div
-      className="fixed inset-0 z-9999 flex flex-col bg-zinc-950/98 backdrop-blur-sm animate-fadeIn"
-      style={{ fontFamily: 'Inter, sans-serif' }}
-      onClick={(e) => e.stopPropagation()}
+      className="fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fadeIn"
+      onClick={onClose}
     >
-      {/* ═══ TOP TOOLBAR ═══ */}
-      <div className="h-14 shrink-0 flex items-center justify-between px-4 border-b border-zinc-800/80 bg-zinc-900/90 backdrop-blur-md z-20">
+      <div
+        className="flex flex-col bg-zinc-950 border border-zinc-800/80 shadow-2xl rounded-2xl overflow-hidden relative"
+        style={{
+          fontFamily: 'Inter, sans-serif',
+          width: `${size.width}px`,
+          height: `${size.height}px`,
+          transform: `translate(${position.x}px, ${position.y}px)`,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* ═══ TOP TOOLBAR ═══ */}
+        <div
+          onMouseDown={onDragStart}
+          className="h-14 shrink-0 flex items-center justify-between px-4 border-b border-zinc-800/80 bg-zinc-900/90 backdrop-blur-md z-20 cursor-move select-none"
+        >
         {/* Left: Title + Sync */}
         <div className="flex items-center gap-3">
           <div className="w-7 h-7 rounded-lg bg-fuchsia-500/15 border border-fuchsia-500/30 flex items-center justify-center">
@@ -1152,6 +1242,20 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           {isSyncing && <span className="text-fuchsia-400 animate-pulse">● Syncing</span>}
         </div>
       </div>
+
+      {/* Resize Handle */}
+      <div
+        onMouseDown={onResizeStart}
+        className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize z-50 flex items-end justify-end p-1 select-none"
+        title="Drag to resize"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" className="text-zinc-500 hover:text-fuchsia-500 active:text-fuchsia-500 transition-colors">
+          <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.5" />
+          <line x1="10" y1="4" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" />
+          <line x1="10" y1="8" x2="8" y2="10" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+      </div>
     </div>
-  );
+  </div>
+);
 }
