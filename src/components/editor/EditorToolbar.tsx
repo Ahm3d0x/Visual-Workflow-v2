@@ -93,7 +93,7 @@ export function EditorToolbar({
 
   const handleExportPng = async () => {
     if (nodes.length === 0) {
-      alert('Cannot export an empty canvas.');
+      alert(isRtl ? 'لا يمكن تصدير لوحة فارغة.' : 'Cannot export an empty canvas.');
       return;
     }
     setExporting(true);
@@ -120,7 +120,7 @@ export function EditorToolbar({
       link.href = dataUrl;
       link.click();
     } catch (err) {
-      alert('Failed to export image: ' + (err as Error).message);
+      alert((isRtl ? 'فشل تصدير الصورة: ' : 'Failed to export image: ') + (err as Error).message);
     } finally {
       setExporting(false);
     }
@@ -128,7 +128,7 @@ export function EditorToolbar({
 
   const handleExportPdf = async () => {
     if (nodes.length === 0) {
-      alert('Cannot export empty canvas.');
+      alert(isRtl ? 'لا يمكن تصدير لوحة فارغة.' : 'Cannot export empty canvas.');
       return;
     }
     setExporting(true);
@@ -159,14 +159,14 @@ export function EditorToolbar({
       pdf.addImage(dataUrl, 'PNG', 0, 0, bounds.width + 200, bounds.height + 200);
       pdf.save(`${name.replace(/\s+/g, '_')}_report.pdf`);
     } catch (err) {
-      alert('Failed to export PDF: ' + (err as Error).message);
+      alert((isRtl ? 'فشل تصدير ملف PDF: ' : 'Failed to export PDF: ') + (err as Error).message);
     } finally {
       setExporting(false);
     }
   };
 
   return (
-    <header className="h-16 border-b border-border bg-background/60 backdrop-blur-md flex items-center justify-between px-6 z-10 shrink-0 select-none shadow-xs">
+    <header className="h-16 border-b border-border bg-background/60 backdrop-blur-md flex items-center justify-between px-6 z-10 shrink-0 select-none shadow-xs font-sans">
       {/* 1. Left controls (Back & Title) */}
       <div className="flex items-center gap-4">
         <Button
@@ -186,12 +186,12 @@ export function EditorToolbar({
               onBlur={handleTitleSubmit}
               onKeyDown={(e) => e.key === 'Enter' && handleTitleSubmit()}
               autoFocus
-              className="h-8 py-0.5 rounded-lg border-border font-bold font-sans text-sm focus:ring-accent max-w-[200px]"
+              className="h-8 py-0.5 rounded-lg border-border font-bold text-sm focus:ring-accent max-w-[200px]"
             />
           ) : (
             <h1
               onClick={() => canEdit && setEditing(true)}
-              className={`text-base font-bold font-sans tracking-tight leading-tight ${
+              className={`text-base font-bold tracking-tight leading-tight ${
                 canEdit ? 'cursor-pointer hover:bg-muted/40 rounded-lg px-2 -ml-2 py-0.5 transition-colors' : ''
               }`}
             >
@@ -204,20 +204,22 @@ export function EditorToolbar({
             {isSaving ? (
               <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin text-accent" />
-                <span>Saving...</span>
+                <span>{isRtl ? 'جاري الحفظ...' : 'Saving...'}</span>
               </span>
             ) : hasUnsavedChanges ? (
               <span className="text-[10px] text-amber-500/80 flex items-center gap-1">
                 <AlertCircle className="w-3 h-3 text-amber-500" />
-                <span>Unsaved changes</span>
+                <span>{isRtl ? 'تغييرات غير محفوظة' : 'Unsaved changes'}</span>
               </span>
             ) : (
               <span className="text-[10px] text-emerald-500/80 flex items-center gap-1">
                 <Check className="w-3 h-3 text-emerald-500" />
                 <span>
                   {lastSavedAt
-                    ? `Saved at ${lastSavedAt.toLocaleTimeString()}`
-                    : 'All changes saved'}
+                    ? (isRtl 
+                        ? `تم الحفظ في ${lastSavedAt.toLocaleTimeString()}`
+                        : `Saved at ${lastSavedAt.toLocaleTimeString()}`)
+                    : (isRtl ? 'تم حفظ جميع التغييرات' : 'All changes saved')}
                 </span>
               </span>
             )}
@@ -235,7 +237,7 @@ export function EditorToolbar({
           className="rounded-xl border border-border cursor-pointer h-10 w-10 lg:w-auto lg:h-9 px-3 gap-1 hover:bg-muted justify-center flex items-center shrink-0"
         >
           <Undo className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
-          <span className="text-xs font-semibold hidden lg:inline">Undo</span>
+          <span className="text-xs font-semibold hidden lg:inline">{isRtl ? 'تراجع' : 'Undo'}</span>
         </Button>
 
         <Button
@@ -246,7 +248,7 @@ export function EditorToolbar({
           className="rounded-xl border border-border cursor-pointer h-10 w-10 lg:w-auto lg:h-9 px-3 gap-1 hover:bg-muted justify-center flex items-center shrink-0"
         >
           <Redo className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
-          <span className="text-xs font-semibold hidden lg:inline">Redo</span>
+          <span className="text-xs font-semibold hidden lg:inline">{isRtl ? 'إعادة' : 'Redo'}</span>
         </Button>
 
         <div className="w-px h-5 bg-border mx-1" />
@@ -255,21 +257,21 @@ export function EditorToolbar({
         <DropdownMenu>
           <DropdownMenuTrigger className="inline-flex items-center justify-center rounded-xl border border-border bg-background hover:bg-muted w-10 h-10 lg:w-auto lg:h-9 px-3 gap-1.5 cursor-pointer font-semibold text-xs transition-colors focus:outline-hidden">
             <Layout className="w-4 h-4 lg:w-3.5 lg:h-3.5 text-accent" />
-            <span className="hidden lg:inline">Auto Layout</span>
+            <span className="hidden lg:inline">{isRtl ? 'تنسيق تلقائي' : 'Auto Layout'}</span>
             <ChevronDown className="w-3 h-3 text-muted-foreground hidden lg:inline" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="center" className="bg-background border border-border rounded-xl shadow-md w-40">
+          <DropdownMenuContent align="center" className="bg-background border border-border rounded-xl shadow-md w-44 font-sans">
             <DropdownMenuItem
               onClick={() => onApplyLayout('TB')}
-              className="cursor-pointer rounded-lg m-1 font-medium"
+              className="cursor-pointer rounded-lg m-1 font-medium text-xs"
             >
-              Top to Bottom (Vertical)
+              {isRtl ? 'من الأعلى إلى الأسفل (عمودي)' : 'Top to Bottom (Vertical)'}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => onApplyLayout('LR')}
-              className="cursor-pointer rounded-lg m-1 font-medium"
+              className="cursor-pointer rounded-lg m-1 font-medium text-xs"
             >
-              Left to Right (Horizontal)
+              {isRtl ? 'من اليسار إلى اليمين (أفقي)' : 'Left to Right (Horizontal)'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -286,7 +288,7 @@ export function EditorToolbar({
             className="rounded-xl border border-border cursor-pointer h-10 w-10 lg:w-auto lg:h-9 px-3 gap-1.5 font-semibold text-xs hover:bg-muted hover:border-sky-500/30 hover:text-sky-300 transition-all duration-200 justify-center flex items-center shrink-0"
           >
             <Share2 className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
-            <span className="hidden lg:inline">Share</span>
+            <span className="hidden lg:inline">{isRtl ? 'مشاركة' : 'Share'}</span>
           </Button>
         )}
 
@@ -302,7 +304,7 @@ export function EditorToolbar({
           }`}
         >
           <BrainCircuit className={`w-4 h-4 lg:w-3.5 lg:h-3.5 ${panels.aiAssistant ? 'text-purple-400' : ''}`} />
-          <span className="hidden lg:inline">AI Assistant</span>
+          <span className="hidden lg:inline">{isRtl ? 'مساعد الذكاء' : 'AI Assistant'}</span>
         </Button>
 
         <div className="w-px h-5 bg-border" />
@@ -318,30 +320,30 @@ export function EditorToolbar({
             ) : (
               <Download className="w-4 h-4 lg:w-3.5 lg:h-3.5" />
             )}
-            <span className="hidden lg:inline">Export</span>
+            <span className="hidden lg:inline">{isRtl ? 'تصدير' : 'Export'}</span>
             <ChevronDown className="w-3 h-3 hidden lg:inline" />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-md w-44">
+          <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-md w-44 font-sans">
             <DropdownMenuItem
               onClick={handleExportPng}
-              className="cursor-pointer rounded-lg m-1 font-medium flex items-center gap-2"
+              className="cursor-pointer rounded-lg m-1 font-medium flex items-center gap-2 text-xs"
             >
               <ImageIcon className="w-4 h-4 text-emerald-500" />
-              <span>Export as PNG</span>
+              <span>{isRtl ? 'تصدير كصورة PNG' : 'Export as PNG'}</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={handleExportJson}
-              className="cursor-pointer rounded-lg m-1 font-medium flex items-center gap-2"
+              className="cursor-pointer rounded-lg m-1 font-medium flex items-center gap-2 text-xs"
             >
               <FileJson className="w-4 h-4 text-sky-500" />
-              <span>Export Schema (JSON)</span>
+              <span>{isRtl ? 'تصدير المخطط (JSON)' : 'Export Schema (JSON)'}</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={handleExportPdf}
-              className="cursor-pointer rounded-lg m-1 font-medium flex items-center gap-2"
+              className="cursor-pointer rounded-lg m-1 font-medium flex items-center gap-2 text-xs"
             >
               <FileText className="w-4 h-4 text-rose-500" />
-              <span>Export Report (PDF)</span>
+              <span>{isRtl ? 'تصدير التقرير (PDF)' : 'Export Report (PDF)'}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

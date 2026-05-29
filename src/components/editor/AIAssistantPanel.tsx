@@ -120,19 +120,23 @@ const QUICK_ACTIONS = [
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function AnalysisResults({ issues }: { issues: AnalysisIssue[] }) {
+function AnalysisResults({ issues, isRtl }: { issues: AnalysisIssue[]; isRtl: boolean }) {
   if (issues.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 py-4 text-center">
+      <div className="flex flex-col items-center gap-2 py-4 text-center font-sans">
         <CheckCircle className="w-8 h-8 text-emerald-400" />
-        <p className="text-sm font-semibold text-emerald-400">No issues found!</p>
-        <p className="text-xs text-zinc-500">Your workflow looks great.</p>
+        <p className="text-sm font-semibold text-emerald-400">
+          {isRtl ? 'لم يتم العثور على أخطاء!' : 'No issues found!'}
+        </p>
+        <p className="text-xs text-zinc-500">
+          {isRtl ? 'يبدو مخطط سير عملك ممتازاً ومكتملاً.' : 'Your workflow looks great.'}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-2 mt-2">
+    <div className="space-y-2 mt-2 font-sans">
       {issues.map((issue, idx) => {
         const cfg = SEVERITY_CONFIG[issue.severity];
         const Icon = cfg.icon;
@@ -143,7 +147,9 @@ function AnalysisResults({ issues }: { issues: AnalysisIssue[] }) {
               <p className={cn('text-xs font-bold', cfg.color)}>{issue.title}</p>
               <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">{issue.description}</p>
               {issue.node_id && (
-                <code className="text-[10px] text-zinc-500 mt-1 block">node: {issue.node_id}</code>
+                <code className="text-[10px] text-zinc-500 mt-1 block">
+                  {isRtl ? 'العقدة: ' : 'node: '}{issue.node_id}
+                </code>
               )}
             </div>
           </div>
@@ -153,15 +159,17 @@ function AnalysisResults({ issues }: { issues: AnalysisIssue[] }) {
   );
 }
 
-function SuggestionResults({ suggestions }: { suggestions: Suggestion[] }) {
+function SuggestionResults({ suggestions, isRtl }: { suggestions: Suggestion[]; isRtl: boolean }) {
   if (suggestions.length === 0) {
     return (
-      <p className="text-xs text-zinc-500 py-2">No suggestions at this time.</p>
+      <p className="text-xs text-zinc-500 py-2 font-sans">
+        {isRtl ? 'لا توجد اقتراحات تحسين حالياً.' : 'No suggestions at this time.'}
+      </p>
     );
   }
 
   return (
-    <div className="space-y-2 mt-2">
+    <div className="space-y-2 mt-2 font-sans">
       {suggestions.map((s, idx) => {
         const cfg = SUGGESTION_TYPE_CONFIG[s.type] || SUGGESTION_TYPE_CONFIG.optimization;
         const Icon = cfg.icon;
@@ -171,8 +179,10 @@ function SuggestionResults({ suggestions }: { suggestions: Suggestion[] }) {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="text-xs font-bold text-zinc-200">{s.title}</p>
-                <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border font-semibold', PRIORITY_COLORS[s.priority])}>
-                  {s.priority}
+                <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full border font-semibold capitalize', PRIORITY_COLORS[s.priority])}>
+                  {isRtl 
+                    ? (s.priority === 'high' ? 'عالية' : s.priority === 'medium' ? 'متوسطة' : 'منخفضة')
+                    : s.priority}
                 </span>
               </div>
               <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{s.description}</p>
@@ -189,18 +199,26 @@ function GeneratedWorkflowPreview({
   edges,
   onApply,
   onInsert,
+  isRtl,
 }: {
   nodes: Node[];
   edges: Edge[];
   onApply: () => void;
   onInsert: () => void;
+  isRtl: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 mt-2">
+    <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 mt-2 font-sans">
       <div className="flex items-center gap-2 mb-3">
         <CheckCircle className="w-4 h-4 text-emerald-400" />
-        <p className="text-xs font-bold text-emerald-400">Workflow Generated</p>
-        <span className="text-xs text-zinc-500 ml-auto">{nodes.length} nodes · {edges.length} edges</span>
+        <p className="text-xs font-bold text-emerald-400">
+          {isRtl ? 'تم توليد مسار العمل' : 'Workflow Generated'}
+        </p>
+        <span className="text-xs text-zinc-500 ml-auto">
+          {isRtl 
+            ? `${nodes.length} عقد · ${edges.length} روابط` 
+            : `${nodes.length} nodes · ${edges.length} edges`}
+        </span>
       </div>
       <div className="flex gap-2">
         <Button
@@ -209,31 +227,31 @@ function GeneratedWorkflowPreview({
           className="flex-1 h-8 text-xs bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-lg gap-1 cursor-pointer"
         >
           <Wand2 className="w-3.5 h-3.5" />
-          Apply to Canvas
+          {isRtl ? 'تطبيق على اللوحة' : 'Apply to Canvas'}
         </Button>
         <Button
           size="sm"
           variant="outline"
           onClick={onInsert}
-          className="flex-1 h-8 text-xs border-white/10 hover:bg-white/5 rounded-lg gap-1 cursor-pointer"
+          className="flex-1 h-8 text-xs border-white/10 hover:bg-white/5 rounded-lg gap-1 cursor-pointer text-zinc-300"
         >
           <ArrowRight className="w-3.5 h-3.5" />
-          Insert Alongside
+          {isRtl ? 'إدراج بجانب الحالي' : 'Insert Alongside'}
         </Button>
       </div>
     </div>
   );
 }
 
-function CreditsChip({ used, limit }: { used: number; limit: number }) {
+function CreditsChip({ used, limit, isRtl }: { used: number; limit: number; isRtl: boolean }) {
   const pct = Math.min((used / limit) * 100, 100);
   const color = pct > 80 ? 'text-red-400' : pct > 50 ? 'text-amber-400' : 'text-emerald-400';
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5 font-sans">
       <CreditCard className={cn('w-3.5 h-3.5', color)} />
       <span className={cn('text-xs font-semibold tabular-nums', color)}>
-        {limit - used} <span className="text-zinc-500 font-normal">credits left</span>
+        {limit - used} <span className="text-zinc-500 font-normal">{isRtl ? 'رصيد متبقٍ' : 'credits left'}</span>
       </span>
     </div>
   );
@@ -249,7 +267,9 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'Hi! I\'m your AI workflow assistant. I can generate workflows from descriptions, analyze your current workflow for issues, or suggest improvements. What would you like to do?',
+      content: isRtl
+        ? 'أهلاً بك! أنا مساعد الذكاء الاصطناعي لمسار العمل الخاص بك. يمكنني إنشاء مسارات عمل من الوصف، وتحليل مسار عملك الحالي بحثاً عن مشكلات، أو تقديم اقتراحات للتحسين. ماذا تريد أن تفعل؟'
+        : 'Hi! I\'m your AI workflow assistant. I can generate workflows from descriptions, analyze your current workflow for issues, or suggest improvements. What would you like to do?',
       timestamp: new Date(),
     },
   ]);
@@ -307,7 +327,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       if (!res.ok || data.error) {
         updateMessage(loadingId, {
           loading: false,
-          content: data.message || 'Failed to generate workflow. Please try again.',
+          content: data.message || (isRtl ? 'فشل توليد مسار العمل. يرجى المحاولة مرة أخرى.' : 'Failed to generate workflow. Please try again.'),
         });
         return;
       }
@@ -319,25 +339,29 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
 
       updateMessage(loadingId, {
         loading: false,
-        content: `I've designed a workflow with **${data.nodes.length} nodes** and **${data.edges.length} connections** based on your description. Choose how to apply it:`,
+        content: isRtl
+          ? `لقد قمت بتصميم مخطط سير عمل يحتوي على **${data.nodes.length} عقد** و **${data.edges.length} روابط** بناءً على وصفك. اختر كيفية تطبيقه:`
+          : `I've designed a workflow with **${data.nodes.length} nodes** and **${data.edges.length} connections** based on your description. Choose how to apply it:`,
         data: { nodes: data.nodes, edges: data.edges, creditsUsed: data.creditsUsed, creditsRemaining: data.creditsRemaining },
       });
     } catch (err) {
       updateMessage(loadingId, {
         loading: false,
-        content: `Failed to connect to AI service. Please check your internet connection. (${(err as Error).message})`,
+        content: isRtl
+          ? `فشل الاتصال بخدمة الذكاء الاصطناعي. يرجى التحقق من اتصالك بالإنترنت. (${(err as Error).message})`
+          : `Failed to connect to AI service. Please check your internet connection. (${(err as Error).message})`,
       });
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, workflowId, workspaceId, addMessage, updateMessage, creditsUsed]);
+  }, [isLoading, workflowId, workspaceId, addMessage, updateMessage, creditsUsed, isRtl]);
 
   // ─── Analyze Action ──────────────────────────────────────────────────────
 
   const handleAnalyze = useCallback(async () => {
     if (isLoading) return;
 
-    addMessage({ role: 'user', content: 'Analyze my workflow for issues', action: 'analyze' });
+    addMessage({ role: 'user', content: isRtl ? 'تحليل مسار عملي بحثاً عن مشكلات' : 'Analyze my workflow for issues', action: 'analyze' });
 
     const loadingId = addMessage({
       role: 'assistant',
@@ -359,7 +383,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       if (!res.ok || data.error) {
         updateMessage(loadingId, {
           loading: false,
-          content: data.message || 'Analysis failed. Please try again.',
+          content: data.message || (isRtl ? 'فشل التحليل. يرجى المحاولة مرة أخرى.' : 'Analysis failed. Please try again.'),
         });
         return;
       }
@@ -369,8 +393,10 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       const warnCount = issues.filter((i) => i.severity === 'warning').length;
 
       const summary = issues.length === 0
-        ? 'Your workflow has no structural issues — great work! 🎉'
-        : `Found **${issues.length} issue${issues.length > 1 ? 's' : ''}**: ${errorCount} error${errorCount !== 1 ? 's' : ''}, ${warnCount} warning${warnCount !== 1 ? 's' : ''}.`;
+        ? (isRtl ? 'لا يحتوي مسار عملك على أي مشاكل هيكلية — عمل رائع! 🎉' : 'Your workflow has no structural issues — great work! 🎉')
+        : (isRtl
+            ? `تم العثور على **${issues.length} مشكلة**: ${errorCount} أخطاء، و ${warnCount} تحذيرات.`
+            : `Found **${issues.length} issue${issues.length > 1 ? 's' : ''}**: ${errorCount} error${errorCount !== 1 ? 's' : ''}, ${warnCount} warning${warnCount !== 1 ? 's' : ''}.`);
 
       if (data.creditsUsed) setCreditsUsed((prev) => prev + data.creditsUsed);
 
@@ -382,19 +408,19 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
     } catch (err) {
       updateMessage(loadingId, {
         loading: false,
-        content: `Analysis error: ${(err as Error).message}`,
+        content: isRtl ? `خطأ في التحليل: ${(err as Error).message}` : `Analysis error: ${(err as Error).message}`,
       });
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, nodes, edges, workflowId, workspaceId, addMessage, updateMessage]);
+  }, [isLoading, nodes, edges, workflowId, workspaceId, addMessage, updateMessage, isRtl]);
 
   // ─── Suggest Action ──────────────────────────────────────────────────────
 
   const handleSuggest = useCallback(async () => {
     if (isLoading) return;
 
-    addMessage({ role: 'user', content: 'Suggest improvements for my workflow', action: 'suggest' });
+    addMessage({ role: 'user', content: isRtl ? 'اقتراح تحسينات لمسار عملي' : 'Suggest improvements for my workflow', action: 'suggest' });
 
     const loadingId = addMessage({
       role: 'assistant',
@@ -416,7 +442,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       if (!res.ok || data.error) {
         updateMessage(loadingId, {
           loading: false,
-          content: data.message || 'Could not generate suggestions. Please try again.',
+          content: data.message || (isRtl ? 'تعذر توليد الاقتراحات. يرجى المحاولة مرة أخرى.' : 'Could not generate suggestions. Please try again.'),
         });
         return;
       }
@@ -427,26 +453,30 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       updateMessage(loadingId, {
         loading: false,
         content: suggestions.length > 0
-          ? `Here are **${suggestions.length} improvement suggestion${suggestions.length > 1 ? 's' : ''}** for your workflow:`
-          : 'Your workflow looks well-optimized — no major improvements needed right now.',
+          ? (isRtl
+              ? `إليك **${suggestions.length} اقتراحات تحسين** لمخطط سير العمل الخاص بك:`
+              : `Here are **${suggestions.length} improvement suggestion${suggestions.length > 1 ? 's' : ''}** for your workflow:`)
+          : (isRtl ? 'يبدو مسار العمل الخاص بك محسناً بشكل جيد — لا توجد تحسينات رئيسية مطلوبة حالياً.' : 'Your workflow looks well-optimized — no major improvements needed right now.'),
         data: { suggestions, creditsUsed: data.creditsUsed, creditsRemaining: data.creditsRemaining },
       });
     } catch (err) {
       updateMessage(loadingId, {
         loading: false,
-        content: `Suggestion error: ${(err as Error).message}`,
+        content: isRtl ? `خطأ في الاقتراح: ${(err as Error).message}` : `Suggestion error: ${(err as Error).message}`,
       });
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, nodes, edges, workflowId, workspaceId, addMessage, updateMessage]);
+  }, [isLoading, nodes, edges, workflowId, workspaceId, addMessage, updateMessage, isRtl]);
 
   // ─── Apply Generated Workflow ────────────────────────────────────────────
 
   const handleApplyWorkflow = useCallback((genNodes: Node[], genEdges: Edge[], replace: boolean) => {
     if (replace) {
       const confirmed = window.confirm(
-        'This will replace your current canvas with the generated workflow. Are you sure?'
+        isRtl
+          ? 'سيؤدي هذا إلى استبدال اللوحة الحالية بمسار العمل المولد. هل أنت متأكد؟'
+          : 'This will replace your current canvas with the generated workflow. Are you sure?'
       );
       if (!confirmed) return;
       setNodes(genNodes);
@@ -468,7 +498,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       setNodes([...nodes, ...offsetNodes]);
       setEdges([...edges, ...offsetEdges]);
     }
-  }, [nodes, edges, setNodes, setEdges]);
+  }, [nodes, edges, setNodes, setEdges, isRtl]);
 
   // ─── Submit handler ──────────────────────────────────────────────────────
 
@@ -491,7 +521,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
   return (
     <div
       className={cn(
-        'absolute top-0 bottom-0 w-[360px] z-20 flex flex-col',
+        'absolute top-0 bottom-0 w-[360px] z-20 flex flex-col font-sans',
         'bg-zinc-950/95 backdrop-blur-xl border-l border-white/6',
         'shadow-2xl shadow-black/50',
         isRtl ? 'left-0 border-r border-l-0' : 'right-0'
@@ -503,11 +533,13 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
         <div className="w-8 h-8 rounded-xl bg-linear-to-br from-purple-500 to-sky-500 flex items-center justify-center shadow-lg shadow-purple-500/20 shrink-0">
           <BrainCircuit className="w-4 h-4 text-white" />
         </div>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-sm font-bold text-zinc-100 leading-tight">AI Assistant</h2>
-          <p className="text-[10px] text-zinc-500">Powered by Gemini 2.5 Flash</p>
+        <div className="flex-1 min-w-0 text-left rtl:text-right">
+          <h2 className="text-sm font-bold text-zinc-100 leading-tight">
+            {isRtl ? 'مساعد الذكاء الاصطناعي' : 'AI Assistant'}
+          </h2>
+          <p className="text-[10px] text-zinc-500">{isRtl ? 'مدعوم بواسطة Gemini 2.5 Flash' : 'Powered by Gemini 2.5 Flash'}</p>
         </div>
-        <CreditsChip used={creditsUsed} limit={creditsLimit} />
+        <CreditsChip used={creditsUsed} limit={creditsLimit} isRtl={isRtl} />
       </div>
 
       {/* ── Quick Action Buttons ── */}
@@ -528,8 +560,14 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
               )}
             >
               <Icon className={cn('w-4 h-4', action.iconColor)} />
-              <span className="text-[11px] font-bold text-zinc-300">{action.label}</span>
-              <span className="text-[9px] text-zinc-500">{action.cost} credits</span>
+              <span className="text-[11px] font-bold text-zinc-300">
+                {action.id === 'analyze' 
+                  ? (isRtl ? 'تحليل اللوحة' : 'Analyze')
+                  : (isRtl ? 'تحسين اللوحة' : 'Improve')}
+              </span>
+              <span className="text-[9px] text-zinc-500">
+                {isRtl ? `${action.cost} رصيد` : `${action.cost} credits`}
+              </span>
             </button>
           );
         })}
@@ -559,14 +597,16 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
                   className={cn(
                     'rounded-2xl px-3.5 py-2.5 max-w-[90%]',
                     msg.role === 'user'
-                      ? 'bg-linear-to-br from-purple-600 to-sky-600 text-white rounded-tr-sm'
-                      : 'bg-white/5 border border-white/6 text-zinc-300 rounded-tl-sm'
+                      ? 'bg-linear-to-br from-purple-600 to-sky-600 text-white rounded-tr-sm text-right rtl:text-right'
+                      : 'bg-white/5 border border-white/6 text-zinc-300 rounded-tl-sm text-left rtl:text-right'
                   )}
                 >
                   {msg.loading ? (
                     <div className="flex items-center gap-2">
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
-                      <span className="text-xs text-zinc-400 animate-pulse">Thinking...</span>
+                      <span className="text-xs text-zinc-400 animate-pulse">
+                        {isRtl ? 'جاري التفكير...' : 'Thinking...'}
+                      </span>
                     </div>
                   ) : (
                     <p className="text-xs leading-relaxed whitespace-pre-wrap">
@@ -581,15 +621,16 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
                 {!msg.loading && msg.data && msg.role === 'assistant' && (
                   <div className="mt-1.5 w-full">
                     {msg.data.issues && (
-                      <AnalysisResults issues={msg.data.issues} />
+                      <AnalysisResults issues={msg.data.issues} isRtl={isRtl} />
                     )}
                     {msg.data.suggestions && (
-                      <SuggestionResults suggestions={msg.data.suggestions} />
+                      <SuggestionResults suggestions={msg.data.suggestions} isRtl={isRtl} />
                     )}
                     {msg.data.nodes && msg.data.edges && (
                       <GeneratedWorkflowPreview
                         nodes={msg.data.nodes}
                         edges={msg.data.edges}
+                        isRtl={isRtl}
                         onApply={() => handleApplyWorkflow(msg.data!.nodes!, msg.data!.edges!, true)}
                         onInsert={() => handleApplyWorkflow(msg.data!.nodes!, msg.data!.edges!, false)}
                       />
@@ -597,7 +638,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
                     {msg.data.creditsUsed !== undefined && (
                       <p className="text-[10px] text-zinc-600 mt-1.5 flex items-center gap-1">
                         <CreditCard className="w-3 h-3" />
-                        Used {msg.data.creditsUsed} credits
+                        {isRtl ? `تم استخدام ${msg.data.creditsUsed} رصيد` : `Used ${msg.data.creditsUsed} credits`}
                       </p>
                     )}
                   </div>
@@ -612,7 +653,9 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
               {/* User avatar placeholder */}
               {msg.role === 'user' && (
                 <div className="w-6 h-6 rounded-lg bg-zinc-700 flex items-center justify-center shrink-0 mt-0.5">
-                  <span className="text-[10px] font-bold text-zinc-300">You</span>
+                  <span className="text-[10px] font-bold text-zinc-300">
+                    {isRtl ? 'أنت' : 'You'}
+                  </span>
                 </div>
               )}
             </div>
@@ -629,7 +672,9 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       <div className="px-3 pt-2 pb-1 shrink-0">
         <p className="text-[10px] text-zinc-600 flex items-center gap-1">
           <Sparkles className="w-3 h-3 text-purple-400" />
-          Describe a workflow to generate it with AI (10 credits)
+          {isRtl 
+            ? 'صف مسار العمل الذي تريد إنشاءه بالذكاء الاصطناعي (10 رصيد)'
+            : 'Describe a workflow to generate it with AI (10 credits)'}
         </p>
       </div>
 
@@ -641,12 +686,14 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="e.g. Create an employee onboarding workflow with approval steps..."
+            placeholder={isRtl 
+              ? 'مثال: إنشاء مسار عمل لتهيئة الموظفين الجدد مع خطوات موافقة...'
+              : 'e.g. Create an employee onboarding workflow with approval steps...'}
             disabled={isLoading}
             rows={3}
             className={cn(
               'flex-1 resize-none text-xs leading-relaxed rounded-xl',
-              'bg-white/4 border-white/8 text-zinc-300 placeholder:text-zinc-600',
+              'bg-white/4 border-white/8 text-zinc-300 placeholder:text-zinc-600 text-left rtl:text-right',
               'focus:ring-1 focus:ring-purple-500/40 focus:border-purple-500/30',
               'transition-all duration-200'
             )}

@@ -732,11 +732,12 @@ function EditorInner({
       </div>
 
       {/* Footer statistics */}
-      <StatusPanel />
+      <StatusPanel locale={locale} />
 
       {/* Phase 12: Share Dialog */}
       {showShareDialog && (
         <ShareDialog
+          locale={locale}
           workflowId={workflow.id}
           workspaceId={workflow.workspace_id}
           workflowName={workflow.name}

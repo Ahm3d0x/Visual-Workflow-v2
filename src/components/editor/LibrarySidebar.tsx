@@ -52,6 +52,42 @@ interface CustomTemplate {
   created_at: string;
 }
 
+const LOCALIZED_CATALOG: Record<string, { label: string; description: string }> = {
+  board: { label: 'لوحة بيضاء', description: 'لوحة رسم تعاونية كاملة الميزات مع الأشكال والنصوص والرسم الحر والمزامنة الفورية.' },
+  start: { label: 'مُشغّل البداية', description: 'مُشغّل نقطة البداية للمخطط البصري.' },
+  process: { label: 'خطوة معالجة', description: 'تطبيق عملية حوسبة عامة أو منطقية.' },
+  decision: { label: 'عقدة القرار', description: 'تقسيم التدفق بناءً على خيارات صحيحة/خاطئة.' },
+  delay: { label: 'مؤقت التأخير', description: 'إيقاف المعالجة مؤقتاً لوقت محدد مجدول.' },
+  note: { label: 'ملاحظة اللوحة', description: 'إضافة بطاقات نصوص/تنسيقات عائمة إلى اللوحة.' },
+  end: { label: 'خطوة النهاية', description: 'إنهاء تدفق التنفيذ النشط بشكل آمن.' },
+  if_else: { label: 'إذا / وإلا', description: 'توجيه المسارات بناءً على تقييم الشروط المخصصة.' },
+  switch: { label: 'حالة التبديل (Switch)', description: 'توجيه المدخلات إلى قنوات متعددة تطابق حالات معينة.' },
+  loop: { label: 'حلقة تكرار (Loop)', description: 'تكرار خطوات مصفوفة من البيانات بشكل متتابع.' },
+  parallel: { label: 'تقسيم متوازي', description: 'تشغيل عدة خطوات بشكل متزامن ومتوازٍ.' },
+  merge: { label: 'دمج المسارات', description: 'دمج قنوات متعددة وإعادتها إلى مسار واحد.' },
+  retry: { label: 'إعادة المحاولة', description: 'إعادة محاولة العمليات تلقائياً عند حدوث فشل.' },
+  input: { label: 'مدخلات JSON', description: 'تعريف خصائص البيانات الواردة في الطلب.' },
+  output: { label: 'مخرجات JSON', description: 'هيكلة وتنسيق خصائص البيانات الصادرة.' },
+  variable: { label: 'تعيين متغير', description: 'تخزين وتعيين متغيرات في ذاكرة الجلسة.' },
+  transform: { label: 'تنسيق البيانات', description: 'إعادة صياغة الكائنات عبر صيغ تعيين بسيطة.' },
+  filter: { label: 'تصفية القائمة', description: 'إزالة العناصر التي لا تطابق الشروط المحددة من القوائم.' },
+  api_request: { label: 'REST API', description: 'تنفيذ استدعاءات بروتوكول HTTP الخارجية (GET/POST).' },
+  webhook: { label: 'مُشغّل الويب هوك', description: 'انتظار استقبال تنبيهات ويب هوك ديناميكية بصيغة JSON.' },
+  email: { label: 'إرسال بريد إلكتروني', description: 'إرسال إشعارات وتحديثات بريدية للمتعاونين.' },
+  sms: { label: 'إرسال رسالة SMS', description: 'إرسال تنبيهات نصية قصيرة للهواتف الجوالة للجهات الإدارية.' },
+  database: { label: 'استعلام قاعدة البيانات', description: 'تنفيذ استعلامات SQL وتحديثات مباشرة في الجداول.' },
+  google_sheets: { label: 'جداول بيانات Google', description: 'إضافة صفوف أو جلب جداول كاملة من جداول بيانات Google.' },
+  form_step: { label: 'انتظار النموذج', description: 'جمع مدخلات مخصصة من المستخدم عبر نماذج تفاعلية.' },
+  approval: { label: 'انتظار الموافقة', description: 'حظر الخطوات مؤقتاً حتى يقوم المدير بالنقر على موافقة.' },
+  checklist: { label: 'قائمة المهام', description: 'التحقق من قائمة المهام التشغيلية المطلوبة.' },
+  signature: { label: 'توقيع المستند', description: 'فرض الموافقات الرقمية على المستندات والملفات.' },
+  ai_generate: { label: 'توليد الذكاء الاصطناعي', description: 'توليد إجابات ونصوص ذكية فائقة الدقة باستخدام GPT.' },
+  ai_classify: { label: 'تصنيف بالذكاء الاصطناعي', description: 'تصنيف المحتوى تلقائياً إلى فئات معرفة مسبقاً.' },
+  ai_extract: { label: 'استخراج بالذكاء الاصطناعي', description: 'استخراج الكيانات والبيانات المهيكلة من النصوص غير المنظمة.' },
+  ai_summarize: { label: 'تلخيص بالذكاء الاصطناعي', description: 'تلخيص وتكثيف الفقرات الطويلة إلى ملخصات موجزة.' },
+  ai_route: { label: 'توجيه بالذكاء الاصطناعي', description: 'توجيه مسارات العمل بذكاء بناءً على شروط موجهة بالذكاء الاصطناعي.' }
+};
+
 export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: LibrarySidebarProps) {
   const isRtl = locale === 'ar';
   const { panels, togglePanel } = useEditorStore();
@@ -74,16 +110,16 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
 
   // Group mappings
   const categories = [
-    { id: 'all', label: 'All', icon: <Sliders className="w-3.5 h-3.5" /> },
-    { id: 'favorites', label: 'Favorites', icon: <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> },
-    { id: 'custom', label: 'Custom', icon: <Sparkles className="w-3.5 h-3.5 text-accent animate-pulse" /> },
-    { id: 'board', label: 'Boards', icon: <span className="text-[10px]">🎨</span> },
-    { id: 'basic', label: 'Basic', icon: <Play className="w-3.5 h-3.5" /> },
-    { id: 'logic', label: 'Logic', icon: <GitFork className="w-3.5 h-3.5" /> },
-    { id: 'data', label: 'Data', icon: <ArrowRightLeft className="w-3.5 h-3.5" /> },
-    { id: 'integration', label: 'Integrat.', icon: <Send className="w-3.5 h-3.5" /> },
-    { id: 'human', label: 'Human', icon: <Play className="w-3.5 h-3.5" /> },
-    { id: 'ai', label: 'AI', icon: <BrainCircuit className="w-3.5 h-3.5 text-rose-500" /> },
+    { id: 'all', label: isRtl ? 'الكل' : 'All', icon: <Sliders className="w-3.5 h-3.5" /> },
+    { id: 'favorites', label: isRtl ? 'المفضلة' : 'Favorites', icon: <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" /> },
+    { id: 'custom', label: isRtl ? 'مخصصة' : 'Custom', icon: <Sparkles className="w-3.5 h-3.5 text-accent animate-pulse" /> },
+    { id: 'board', label: isRtl ? 'لوحات' : 'Boards', icon: <span className="text-[10px]">🎨</span> },
+    { id: 'basic', label: isRtl ? 'أساسي' : 'Basic', icon: <Play className="w-3.5 h-3.5" /> },
+    { id: 'logic', label: isRtl ? 'منطق' : 'Logic', icon: <GitFork className="w-3.5 h-3.5" /> },
+    { id: 'data', label: isRtl ? 'بيانات' : 'Data', icon: <ArrowRightLeft className="w-3.5 h-3.5" /> },
+    { id: 'integration', label: isRtl ? 'تكامل' : 'Integrat.', icon: <Send className="w-3.5 h-3.5" /> },
+    { id: 'human', label: isRtl ? 'بشري' : 'Human', icon: <Play className="w-3.5 h-3.5" /> },
+    { id: 'ai', label: isRtl ? 'ذكاء اصطناعي' : 'AI', icon: <BrainCircuit className="w-3.5 h-3.5 text-rose-500" /> },
   ] as const;
 
   // 1. Fetch Sidebar Data (Favorites, Subscriptions, Templates) asynchronously in useEffect
@@ -174,7 +210,11 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
       const limit = PLAN_LIMITS[activePlan]?.max_favorites ?? 5;
       if (favorites.length >= limit) {
         setShowUpgradeBanner(true);
-        alert(`Limit Reached: You can only have up to ${limit} favorites on your current ${activePlan} plan. Please upgrade your plan in the Billing section to unlock more favorites.`);
+        if (isRtl) {
+          alert(`تم الوصول للحد الأقصى: يمكنك الحصول على ما يصل إلى ${limit} من العناصر المفضلة في باقتك الحالية (${activePlan}). يرجى ترقية باقتك في قسم الفواتير لفتح المزيد.`);
+        } else {
+          alert(`Limit Reached: You can only have up to ${limit} favorites on your current ${activePlan} plan. Please upgrade your plan in the Billing section to unlock more favorites.`);
+        }
         return;
       }
 
@@ -263,7 +303,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
             ? 'text-amber-500 scale-100 opacity-100' 
             : 'text-muted-foreground/45 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-amber-500'
         }`}
-        title={isFav ? "Remove from Favorites" : "Add to Favorites"}
+        title={isFav ? (isRtl ? 'إزالة من المفضلة' : 'Remove from Favorites') : (isRtl ? 'إضافة إلى المفضلة' : 'Add to Favorites')}
       >
         <Star className={`w-3.5 h-3.5 ${isFav ? 'fill-amber-500' : ''}`} />
       </button>
@@ -305,9 +345,9 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
       <button
         onClick={() => togglePanel('library')}
         className={`absolute top-20 ${
-          isRtl ? 'right-4' : 'left-4'
+          isRtl ? 'right-4 animate-slideInRight' : 'left-4 animate-slideInLeft'
         } z-10 w-9 h-9 bg-background/95 border border-border shadow-md rounded-xl flex items-center justify-center cursor-pointer transition-transform hover:scale-[1.03] focus:outline-hidden`}
-        title="Open Library"
+        title={isRtl ? 'افتح المكتبة' : 'Open Library'}
       >
         {isRtl ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
@@ -322,7 +362,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Sliders className="w-4 h-4 text-accent" />
-          <h2 className="font-bold text-sm font-sans tracking-tight">Nodes Library</h2>
+          <h2 className="font-bold text-sm font-sans tracking-tight">{isRtl ? 'مكتبة العقد' : 'Nodes Library'}</h2>
         </div>
         <button
           onClick={() => togglePanel('library')}
@@ -334,14 +374,16 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
 
       {/* Upgrade Banner for Subscription Guard */}
       {showUpgradeBanner && (
-        <div className="mx-4 mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-2 animate-fadeIn relative">
+        <div className="mx-4 mt-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-2 animate-fadeIn relative font-sans">
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <h4 className="text-[10px] font-bold text-amber-500 uppercase tracking-wider">
-              Subscription Guard
+              {isRtl ? 'حماية باقة الاشتراك' : 'Subscription Guard'}
             </h4>
             <p className="text-[10px] text-muted-foreground font-light leading-snug">
-              You&apos;ve hit the limits on your <strong>{activePlan}</strong> plan. Upgrade to unlock unlimited custom nodes & favorites!
+              {isRtl 
+                ? <>لقد وصلت إلى الحد الأقصى في باقتك الحالية <strong>{activePlan}</strong>. قم بالترقية لفتح مفضلات وعناصر مخصصة بلا حدود!</>
+                : <>You&apos;ve hit the limits on your <strong>{activePlan}</strong> plan. Upgrade to unlock unlimited custom nodes & favorites!</>}
             </p>
           </div>
           <button 
@@ -360,7 +402,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search nodes..."
+            placeholder={isRtl ? 'البحث عن عقد...' : 'Search nodes...'}
             className="h-9 pl-9 pr-3 rounded-xl border-border focus:ring-accent text-xs font-light"
           />
         </div>
@@ -405,16 +447,16 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
         {loading ? (
           <div className="text-center py-12">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto text-muted-foreground/40" />
-            <p className="text-xs text-muted-foreground font-light mt-2">Loading library elements...</p>
+            <p className="text-xs text-muted-foreground font-light mt-2">{isRtl ? 'جاري تحميل عناصر المكتبة...' : 'Loading library elements...'}</p>
           </div>
         ) : (
           <>
             {/* Standard elements section */}
-            <div className="space-y-3">
+            <div className="space-y-3 font-sans">
               {filteredCatalog.length === 0 && filteredCustomTemplates.length === 0 ? (
                 <div className="text-center py-12 space-y-1">
                   <Sliders className="w-8 h-8 mx-auto text-muted-foreground/35" />
-                  <p className="text-xs text-muted-foreground font-light">No node types found</p>
+                  <p className="text-xs text-muted-foreground font-light">{isRtl ? 'لم يتم العثور على عقد' : 'No node types found'}</p>
                 </div>
               ) : (
                 filteredCatalog.map((item) => (
@@ -431,8 +473,8 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                     <div className={`absolute top-0 bottom-0 left-0 w-1 ${getCategoryColor(item.category)}`} />
 
                     <div className="flex items-center justify-between pl-1">
-                      <span className="font-bold text-xs font-sans text-foreground group-hover:text-accent transition-colors pr-6">
-                        {item.label}
+                      <span className="font-bold text-xs text-foreground group-hover:text-accent transition-colors pr-6">
+                        {isRtl && LOCALIZED_CATALOG[item.type] ? LOCALIZED_CATALOG[item.type].label : item.label}
                       </span>
                       
                       {/* Star Favorite Action */}
@@ -441,16 +483,16 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                       </div>
                     </div>
                     <p className="text-[10px] font-light text-muted-foreground leading-tight pl-1 pr-6">
-                      {item.description}
+                      {isRtl && LOCALIZED_CATALOG[item.type] ? LOCALIZED_CATALOG[item.type].description : item.description}
                     </p>
 
                     <div className="mt-1 flex items-center justify-between pl-1">
                       <span className="text-[8px] font-mono text-muted-foreground bg-border/40 px-1.5 py-0.5 rounded-md capitalize">
-                        {item.category}
+                        {isRtl ? (categories.find(c => c.id === item.category)?.label || item.category) : item.category}
                       </span>
                       {canEdit && (
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity text-[8px] font-semibold text-accent uppercase tracking-wider">
-                          Drag / Click +
+                          {isRtl ? 'سحب / نقر +' : 'Drag / Click +'}
                         </div>
                       )}
                     </div>
@@ -461,14 +503,14 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
 
             {/* Custom reusable nodes section */}
             {(activeTab === 'custom' || activeTab === 'all') && (
-              <div className="pt-4 border-t border-border/60 space-y-3">
+              <div className="pt-4 border-t border-border/60 space-y-3 font-sans">
                 <div className="flex items-center justify-between pl-1">
                   <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-accent" />
-                    <span>Custom Elements</span>
+                    <span>{isRtl ? 'عناصر مخصصة' : 'Custom Elements'}</span>
                   </h3>
                   <span className="text-[9px] font-mono text-muted-foreground/60 bg-muted px-2 py-0.5 rounded-md">
-                    {customTemplates.length} templates
+                    {customTemplates.length} {isRtl ? 'قوالب' : 'templates'}
                   </span>
                 </div>
 
@@ -486,7 +528,9 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                   <div className="text-center py-4 bg-muted/10 border border-dashed border-border/40 rounded-xl p-3">
                     <Sparkles className="w-5 h-5 mx-auto text-muted-foreground/25 mb-1" />
                     <p className="text-[10px] text-muted-foreground font-light leading-snug">
-                      No custom templates found. Use the designer modal to construct customized nodes.
+                      {isRtl 
+                        ? 'لم يتم العثور على قوالب مخصصة. استخدم مصمم العناصر لإنشاء عقد مخصصة.'
+                        : 'No custom templates found. Use the designer modal to construct customized nodes.'}
                     </p>
                   </div>
                 ) : (
@@ -510,7 +554,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                             <div className="w-4.5 h-4.5 rounded-md bg-muted flex items-center justify-center border border-border/40 shrink-0 text-foreground">
                               {getCustomIconForSidebar(tpl.default_style?.iconName || 'settings')}
                             </div>
-                            <span className="font-bold text-xs font-sans text-foreground group-hover:text-accent transition-colors truncate">
+                            <span className="font-bold text-xs text-foreground group-hover:text-accent transition-colors truncate">
                               {tpl.name}
                             </span>
                           </div>
@@ -521,7 +565,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                           </div>
                         </div>
                         <p className="text-[10px] font-light text-muted-foreground leading-tight pl-1 pr-6 line-clamp-2">
-                          {tpl.description || 'Custom configured template.'}
+                          {tpl.description || (isRtl ? 'تم تكوين قالب مخصص.' : 'Custom configured template.')}
                         </p>
 
                         <div className="mt-1 flex items-center justify-between pl-1">
@@ -531,7 +575,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                           
                           {canEdit && (
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity text-[8px] font-semibold text-accent uppercase tracking-wider">
-                              Drag / Click +
+                              {isRtl ? 'سحب / نقر +' : 'Drag / Click +'}
                             </div>
                           )}
                         </div>
@@ -544,10 +588,10 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
             
             {/* If we are on favorites and we have custom favorites, list them here */}
             {activeTab === 'favorites' && filteredCustomTemplates.length > 0 && (
-              <div className="pt-4 border-t border-border/60 space-y-3">
+              <div className="pt-4 border-t border-border/60 space-y-3 font-sans">
                 <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-accent" />
-                  <span>Favorite Custom Elements</span>
+                  <span>{isRtl ? 'عناصر مخصصة مفضلة' : 'Favorite Custom Elements'}</span>
                 </h3>
                 <div className="space-y-3">
                   {filteredCustomTemplates.map((tpl) => (
@@ -568,7 +612,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                           <div className="w-4.5 h-4.5 rounded-md bg-muted flex items-center justify-center border border-border/40 shrink-0 text-foreground">
                             {getCustomIconForSidebar(tpl.default_style?.iconName || 'settings')}
                           </div>
-                          <span className="font-bold text-xs font-sans text-foreground group-hover:text-accent transition-colors truncate">
+                          <span className="font-bold text-xs text-foreground group-hover:text-accent transition-colors truncate">
                             {tpl.name}
                           </span>
                         </div>
@@ -579,7 +623,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                         </div>
                       </div>
                       <p className="text-[10px] font-light text-muted-foreground leading-tight pl-1 pr-6 line-clamp-2">
-                        {tpl.description || 'Custom configured template.'}
+                        {tpl.description || (isRtl ? 'تم تكوين قالب مخصص.' : 'Custom configured template.')}
                       </p>
 
                       <div className="mt-1 flex items-center justify-between pl-1">
@@ -589,7 +633,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                         
                         {canEdit && (
                           <div className="opacity-0 group-hover:opacity-100 transition-opacity text-[8px] font-semibold text-accent uppercase tracking-wider">
-                            Drag / Click +
+                            {isRtl ? 'سحب / نقر +' : 'Drag / Click +'}
                           </div>
                         )}
                       </div>

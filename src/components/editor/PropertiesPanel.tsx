@@ -61,42 +61,42 @@ interface PropertiesPanelProps {
 }
 
 const COLOR_PRESETS = [
-  { name: 'Zinc Dark', key: 'zinc', colorClass: 'border-zinc-800 bg-zinc-950/90 text-zinc-100 dark:border-zinc-800/40', accentBar: 'bg-zinc-500', badgeColor: 'bg-zinc-500/10 text-zinc-400' },
-  { name: 'Ocean Blue', key: 'blue', colorClass: 'border-blue-500/30 bg-blue-950/20 text-blue-400 dark:border-blue-500/40', accentBar: 'bg-blue-500', badgeColor: 'bg-blue-500/10 text-blue-400' },
-  { name: 'Forest Emerald', key: 'emerald', colorClass: 'border-emerald-500/30 bg-emerald-950/20 text-emerald-400 dark:border-emerald-500/40', accentBar: 'bg-emerald-500', badgeColor: 'bg-emerald-500/10 text-emerald-400' },
-  { name: 'Amber Sunset', key: 'amber', colorClass: 'border-amber-500/30 bg-amber-950/20 text-amber-400 dark:border-amber-500/40', accentBar: 'bg-amber-500', badgeColor: 'bg-amber-500/10 text-amber-400' },
-  { name: 'Rose Fire', key: 'rose', colorClass: 'border-rose-500/30 bg-rose-950/20 text-rose-400 dark:border-rose-500/40', accentBar: 'bg-rose-500', badgeColor: 'bg-rose-500/10 text-rose-400' },
-  { name: 'Cosmic Purple', key: 'purple', colorClass: 'border-purple-500/30 bg-purple-950/20 text-purple-400 dark:border-purple-500/40', accentBar: 'bg-purple-500', badgeColor: 'bg-purple-500/10 text-purple-400' },
-  { name: 'Cosmic Gold', key: 'gold', colorClass: 'border-yellow-500/30 bg-yellow-950/20 text-yellow-400 dark:border-yellow-500/40', accentBar: 'bg-yellow-500', badgeColor: 'bg-yellow-500/10 text-yellow-400' },
+  { name: 'Zinc Dark', nameAr: 'زنك داكن', key: 'zinc', colorClass: 'border-zinc-800 bg-zinc-950/90 text-zinc-100 dark:border-zinc-800/40', accentBar: 'bg-zinc-500', badgeColor: 'bg-zinc-500/10 text-zinc-400' },
+  { name: 'Ocean Blue', nameAr: 'أزرق محيطي', key: 'blue', colorClass: 'border-blue-500/30 bg-blue-950/20 text-blue-400 dark:border-blue-500/40', accentBar: 'bg-blue-500', badgeColor: 'bg-blue-500/10 text-blue-400' },
+  { name: 'Forest Emerald', nameAr: 'زمرد الغابة', key: 'emerald', colorClass: 'border-emerald-500/30 bg-emerald-950/20 text-emerald-400 dark:border-emerald-500/40', accentBar: 'bg-emerald-500', badgeColor: 'bg-emerald-500/10 text-emerald-400' },
+  { name: 'Amber Sunset', nameAr: 'غروب العنبر', key: 'amber', colorClass: 'border-amber-500/30 bg-amber-950/20 text-amber-400 dark:border-amber-500/40', accentBar: 'bg-amber-500', badgeColor: 'bg-amber-500/10 text-amber-400' },
+  { name: 'Rose Fire', nameAr: 'نار الورد', key: 'rose', colorClass: 'border-rose-500/30 bg-rose-950/20 text-rose-400 dark:border-rose-500/40', accentBar: 'bg-rose-500', badgeColor: 'bg-rose-500/10 text-rose-400' },
+  { name: 'Cosmic Purple', nameAr: 'بنفسجي كوني', key: 'purple', colorClass: 'border-purple-500/30 bg-purple-950/20 text-purple-400 dark:border-purple-500/40', accentBar: 'bg-purple-500', badgeColor: 'bg-purple-500/10 text-purple-400' },
+  { name: 'Cosmic Gold', nameAr: 'ذهبي كوني', key: 'gold', colorClass: 'border-yellow-500/30 bg-yellow-950/20 text-yellow-400 dark:border-yellow-500/40', accentBar: 'bg-yellow-500', badgeColor: 'bg-yellow-500/10 text-yellow-400' },
 ];
 
 const ICON_PRESETS = [
-  { label: 'Settings', value: 'settings' },
-  { label: 'Play / Trigger', value: 'play' },
-  { label: 'Stop / Terminal', value: 'stop' },
-  { label: 'Branch / Fork', value: 'branch' },
-  { label: 'Data Transform', value: 'data' },
-  { label: 'API Send', value: 'send' },
-  { label: 'Database Query', value: 'database' },
-  { label: 'Checklist / Task', value: 'check' },
-  { label: 'AI Agent Brain', value: 'ai' },
-  { label: 'Timer Delay', value: 'timer' },
-  { label: 'Loop Sync', value: 'loop' },
-  { label: 'Heart', value: 'heart' },
-  { label: 'Award', value: 'award' },
-  { label: 'Shield / Security', value: 'shield' },
-  { label: 'CPU / Process', value: 'cpu' },
-  { label: 'Mail', value: 'mail' },
-  { label: 'Notification Bell', value: 'bell' },
-  { label: 'Global Network', value: 'globe' },
-  { label: 'User Trigger', value: 'user' },
-  { label: 'Power Zap', value: 'zap' },
-  { label: 'Image Logo', value: 'image' },
-  { label: 'Pulse Activity', value: 'activity' },
-  { label: 'Cloud Function', value: 'cloud' },
-  { label: 'Coding Script', value: 'code' },
-  { label: 'Safe Lock', value: 'lock' },
-  { label: 'Security Key', value: 'key' }
+  { label: 'Settings', labelAr: 'الإعدادات', value: 'settings' },
+  { label: 'Play / Trigger', labelAr: 'تشغيل / تحفيز', value: 'play' },
+  { label: 'Stop / Terminal', labelAr: 'إيقاف / محطة طرفية', value: 'stop' },
+  { label: 'Branch / Fork', labelAr: 'تفريع / تشعب', value: 'branch' },
+  { label: 'Data Transform', labelAr: 'تحويل البيانات', value: 'data' },
+  { label: 'API Send', labelAr: 'إرسال واجهة برمجة التطبيقات', value: 'send' },
+  { label: 'Database Query', labelAr: 'استعلام قاعدة البيانات', value: 'database' },
+  { label: 'Checklist / Task', labelAr: 'قائمة مهام / مهمة', value: 'check' },
+  { label: 'AI Agent Brain', labelAr: 'دماغ عميل الذكاء الاصطناعي', value: 'ai' },
+  { label: 'Timer Delay', labelAr: 'تأخير المؤقت', value: 'timer' },
+  { label: 'Loop Sync', labelAr: 'مزامنة الحلقة', value: 'loop' },
+  { label: 'Heart', labelAr: 'قلب', value: 'heart' },
+  { label: 'Award', labelAr: 'جائزة', value: 'award' },
+  { label: 'Shield / Security', labelAr: 'درع / أمان', value: 'shield' },
+  { label: 'CPU / Process', labelAr: 'معالج / عملية', value: 'cpu' },
+  { label: 'Mail', labelAr: 'بريد', value: 'mail' },
+  { label: 'Notification Bell', labelAr: 'جرس التنبيه', value: 'bell' },
+  { label: 'Global Network', labelAr: 'شبكة عالمية', value: 'globe' },
+  { label: 'User Trigger', labelAr: 'مشغل المستخدم', value: 'user' },
+  { label: 'Power Zap', labelAr: 'صاعقة الطاقة', value: 'zap' },
+  { label: 'Image Logo', labelAr: 'شعار الصورة', value: 'image' },
+  { label: 'Pulse Activity', labelAr: 'نشاط النبض', value: 'activity' },
+  { label: 'Cloud Function', labelAr: 'دالة سحابية', value: 'cloud' },
+  { label: 'Coding Script', labelAr: 'نص برمجية', value: 'code' },
+  { label: 'Safe Lock', labelAr: 'قفل آمن', value: 'lock' },
+  { label: 'Security Key', labelAr: 'مفتاح أمان', value: 'key' }
 ];
 
 export function PropertiesPanel({ 
@@ -188,7 +188,7 @@ export function PropertiesPanel({
         className={`absolute top-20 ${
           isRtl ? 'left-4' : 'right-4'
         } z-10 w-9 h-9 bg-background/95 border border-border shadow-md rounded-xl flex items-center justify-center cursor-pointer transition-transform hover:scale-[1.03] focus:outline-hidden`}
-        title="Open Inspector"
+        title={isRtl ? 'فتح المفتش' : 'Open Inspector'}
       >
         {isRtl ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
       </button>
@@ -340,10 +340,12 @@ export function PropertiesPanel({
 
   const handleTransferOwnership = async (targetUserId: string, targetName: string) => {
     if (userRole !== 'owner' || !workspaceId) {
-      alert('Only the workspace owner can transfer ownership.');
+      alert(isRtl ? 'فقط مالك مساحة العمل يمكنه نقل الملكية.' : 'Only the workspace owner can transfer ownership.');
       return;
     }
-    const message = `WARNING: Are you sure you want to transfer ownership of this workspace to ${targetName}?\n\nYou will be downgraded to 'admin' and they will become the new sole 'owner' of this workspace. This action is irreversible.`;
+    const message = isRtl
+      ? `تحذير: هل أنت متأكد أنك تريد نقل ملكية مساحة العمل هذه إلى ${targetName}؟\n\nستتم ترقيتك إلى "مسؤول" وسيصبح هو المالك الوحيد لمساحة العمل. هذا الإجراء لا يمكن التراجع عنه.`
+      : `WARNING: Are you sure you want to transfer ownership of this workspace to ${targetName}?\n\nYou will be downgraded to 'admin' and they will become the new sole 'owner' of this workspace. This action is irreversible.`;
     if (!confirm(message)) return;
 
     try {
@@ -374,12 +376,12 @@ export function PropertiesPanel({
 
       if (selfError) throw selfError;
 
-      alert('Ownership successfully transferred! The workspace will reload.');
+      alert(isRtl ? 'تم نقل الملكية بنجاح! ستتم إعادة تحميل مساحة العمل.' : 'Ownership successfully transferred! The workspace will reload.');
       if (typeof window !== 'undefined') {
         window.location.reload();
       }
     } catch (err: any) {
-      alert('Failed to transfer ownership: ' + (err.message || err));
+      alert((isRtl ? 'فشل نقل الملكية: ' : 'Failed to transfer ownership: ') + (err.message || err));
       console.error('Transfer ownership failed:', err);
     }
   };
@@ -394,16 +396,16 @@ export function PropertiesPanel({
     
     if (!error) {
       setMembers((prev) => prev.map((m) => m.user_id === targetUserId ? { ...m, role: newRole } : m));
-      alert('Collaborator role successfully updated!');
+      alert(isRtl ? 'تم تحديث دور المتعاون بنجاح!' : 'Collaborator role successfully updated!');
     }
   };
 
   const handleRemoveMember = async (targetUserId: string) => {
     if (userRole !== 'owner' || !workspaceId) {
-      alert('Only workspace owners can revoke access.');
+      alert(isRtl ? 'فقط مالكو مساحة العمل يمكنهم إلغاء الوصول.' : 'Only workspace owners can revoke access.');
       return;
     }
-    if (!confirm('Are you sure you want to revoke access for this collaborator?')) return;
+    if (!confirm(isRtl ? 'هل أنت متأكد أنك تريد إلغاء الوصول لهذا المتعاون؟' : 'Are you sure you want to revoke access for this collaborator?')) return;
     
     const { error } = await (supabase.from('workspace_members') as any)
       .delete()
@@ -412,7 +414,7 @@ export function PropertiesPanel({
     
     if (!error) {
       setMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
-      alert('Collaborator access successfully revoked.');
+      alert(isRtl ? 'تم إلغاء وصول المتعاون بنجاح.' : 'Collaborator access successfully revoked.');
     }
   };
 
@@ -429,7 +431,7 @@ export function PropertiesPanel({
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Settings className="w-4 h-4 text-accent" />
-          <h2 className="font-bold text-sm font-sans tracking-tight">Inspector Panel</h2>
+          <h2 className="font-bold text-sm font-sans tracking-tight">{isRtl ? 'لوحة المفتش' : 'Inspector Panel'}</h2>
         </div>
         <button
           onClick={() => togglePanel('properties')}
@@ -450,7 +452,7 @@ export function PropertiesPanel({
               </div>
               <div>
                 <h3 className="text-xs uppercase font-extrabold tracking-wider text-muted-foreground">
-                  Node Class
+                  {isRtl ? 'فئة العقدة' : 'Node Class'}
                 </h3>
                 <p className="text-xs font-semibold capitalize text-foreground">
                   {selectedNode.type?.replace('_', ' ')}
@@ -463,7 +465,7 @@ export function PropertiesPanel({
               <div className="space-y-1.5">
                 <Label htmlFor="nodeLabel" className="text-xs font-semibold flex items-center gap-1.5">
                   <Type className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span>Node Title</span>
+                  <span>{isRtl ? 'عنوان العقدة' : 'Node Title'}</span>
                 </Label>
                 <Input
                   id="nodeLabel"
@@ -477,7 +479,7 @@ export function PropertiesPanel({
               <div className="space-y-1.5">
                 <Label htmlFor="nodeDesc" className="text-xs font-semibold flex items-center gap-1.5">
                   <AlignLeft className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span>Description</span>
+                  <span>{isRtl ? 'الوصف' : 'Description'}</span>
                 </Label>
                 <Textarea
                   id="nodeDesc"
@@ -495,7 +497,7 @@ export function PropertiesPanel({
             {/* Node type specific custom parameters dynamically compiled */}
             <div className="space-y-4">
               <h4 className="text-xs font-bold font-sans flex items-center gap-1 text-accent uppercase tracking-wider">
-                Custom Configuration
+                {isRtl ? 'التكوين المخصص' : 'Custom Configuration'}
               </h4>
 
               {configFields.length > 0 ? (
@@ -561,7 +563,7 @@ export function PropertiesPanel({
                           disabled={!canEdit}
                         >
                           <SelectTrigger className="rounded-xl border-border text-xs">
-                            <SelectValue placeholder={field.placeholder || "Select option"} />
+                            <SelectValue placeholder={field.placeholder || (isRtl ? "اختر خياراً" : "Select option")} />
                           </SelectTrigger>
                           <SelectContent className="bg-background border border-border rounded-xl">
                             {field.options?.map((opt: { label: string; value: string }) => (
@@ -608,7 +610,7 @@ export function PropertiesPanel({
               ) : (
                 <div className="text-[11px] font-light text-muted-foreground flex items-start gap-1.5 bg-muted/20 p-2.5 rounded-xl border border-border/10">
                   <Info className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
-                  <span>No complex custom fields required. Standard operational details are used.</span>
+                  <span>{isRtl ? 'لا توجد حقول مخصصة معقدة مطلوبة. يتم استخدام التفاصيل التشغيلية القياسية.' : 'No complex custom fields required. Standard operational details are used.'}</span>
                 </div>
               )}
             </div>
@@ -619,12 +621,12 @@ export function PropertiesPanel({
             <div className="space-y-4">
               <h4 className="text-xs font-bold font-sans flex items-center gap-1.5 text-accent uppercase tracking-wider">
                 <Sparkles className="w-4 h-4" />
-                <span>Style & Appearance</span>
+                <span>{isRtl ? 'النمط والمظهر' : 'Style & Appearance'}</span>
               </h4>
 
               {/* Node background color selectors */}
               <div className="space-y-2">
-                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Background Theme Preset</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground">{isRtl ? 'قالب مظهر الخلفية المسبق' : 'Background Theme Preset'}</Label>
                 <div className="grid grid-cols-4 gap-2">
                   {COLOR_PRESETS.map((preset) => {
                     const isSelected = nodeData.customStyle?.colorClass === preset.colorClass;
@@ -636,9 +638,9 @@ export function PropertiesPanel({
                         className={`h-7 rounded-lg border flex items-center justify-center text-[10px] font-semibold transition-all hover:scale-105 cursor-pointer ${preset.colorClass} ${
                           isSelected ? 'ring-2 ring-accent ring-offset-1 scale-105' : 'opacity-85 hover:opacity-100'
                         }`}
-                        title={preset.name}
+                        title={isRtl ? preset.nameAr : preset.name}
                       >
-                        {preset.name.split(' ')[0]}
+                        {isRtl ? preset.nameAr.split(' ')[0] : preset.name.split(' ')[0]}
                       </button>
                     );
                   })}
@@ -647,10 +649,10 @@ export function PropertiesPanel({
 
               {/* Custom Hex Color Pickers */}
               <div className="space-y-2.5 border-t border-border/40 pt-3">
-                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Custom Color Pickers</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground">{isRtl ? 'منتقي الألوان المخصصة' : 'Custom Color Pickers'}</Label>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="flex flex-col gap-1 items-center bg-muted/20 p-2 rounded-xl border border-border/10">
-                    <span className="text-[9px] text-muted-foreground font-semibold">Background</span>
+                    <span className="text-[9px] text-muted-foreground font-semibold">{isRtl ? 'الخلفية' : 'Background'}</span>
                     <input
                       type="color"
                       value={nodeData.customStyle?.hexBg || '#0a0a0a'}
@@ -660,7 +662,7 @@ export function PropertiesPanel({
                     />
                   </div>
                   <div className="flex flex-col gap-1 items-center bg-muted/20 p-2 rounded-xl border border-border/10">
-                    <span className="text-[9px] text-muted-foreground font-semibold">Border</span>
+                    <span className="text-[9px] text-muted-foreground font-semibold">{isRtl ? 'الحدود' : 'Border'}</span>
                     <input
                       type="color"
                       value={nodeData.customStyle?.hexBorder || '#27272a'}
@@ -670,7 +672,7 @@ export function PropertiesPanel({
                     />
                   </div>
                   <div className="flex flex-col gap-1 items-center bg-muted/20 p-2 rounded-xl border border-border/10">
-                    <span className="text-[9px] text-muted-foreground font-semibold">Text</span>
+                    <span className="text-[9px] text-muted-foreground font-semibold">{isRtl ? 'النص' : 'Text'}</span>
                     <input
                       type="color"
                       value={nodeData.customStyle?.hexText || '#ffffff'}
@@ -684,11 +686,11 @@ export function PropertiesPanel({
 
               {/* Layout & Geometry sliders */}
               <div className="space-y-3.5 border-t border-border/40 pt-3">
-                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Layout & Geometry</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground">{isRtl ? 'التخطيط والأبعاد' : 'Layout & Geometry'}</Label>
                 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
-                    <span>Width ({nodeData.customStyle?.width || 220}px)</span>
+                    <span>{isRtl ? 'العرض' : 'Width'} ({nodeData.customStyle?.width || 220}{isRtl ? 'بكسل' : 'px'})</span>
                     <span>150 - 400</span>
                   </div>
                   <input
@@ -704,7 +706,7 @@ export function PropertiesPanel({
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
-                    <span>Height ({nodeData.customStyle?.height || 90}px)</span>
+                    <span>{isRtl ? 'الارتفاع' : 'Height'} ({nodeData.customStyle?.height || 90}{isRtl ? 'بكسل' : 'px'})</span>
                     <span>60 - 300</span>
                   </div>
                   <input
@@ -720,7 +722,7 @@ export function PropertiesPanel({
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
-                    <span>Border Radius ({nodeData.customStyle?.borderRadius ?? 16}px)</span>
+                    <span>{isRtl ? 'نصف قطر الحدود' : 'Border Radius'} ({nodeData.customStyle?.borderRadius ?? 16}{isRtl ? 'بكسل' : 'px'})</span>
                     <span>0 - 40</span>
                   </div>
                   <input
@@ -736,7 +738,7 @@ export function PropertiesPanel({
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold">
-                    <span>Border Width ({nodeData.customStyle?.borderWidth ?? 1}px)</span>
+                    <span>{isRtl ? 'عرض الحدود' : 'Border Width'} ({nodeData.customStyle?.borderWidth ?? 1}{isRtl ? 'بكسل' : 'px'})</span>
                     <span>0 - 10</span>
                   </div>
                   <input
@@ -753,19 +755,19 @@ export function PropertiesPanel({
 
               {/* Icon presets */}
               <div className="space-y-2 border-t border-border/40 pt-3">
-                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Lucide Symbol Icon</Label>
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground">{isRtl ? 'رمز أيقونة Lucide' : 'Lucide Symbol Icon'}</Label>
                 <Select
                   value={(nodeData.customStyle?.iconName || 'settings') as string}
                   onValueChange={(val) => canEdit && handleIconChange(val || 'settings')}
                   disabled={!canEdit}
                 >
                   <SelectTrigger className="rounded-xl border-border text-xs">
-                    <SelectValue placeholder="Choose icon..." />
+                    <SelectValue placeholder={isRtl ? "اختر أيقونة..." : "Choose icon..."} />
                   </SelectTrigger>
                   <SelectContent className="bg-background border border-border rounded-xl">
                     {ICON_PRESETS.map((opt) => (
                       <SelectItem key={opt.value} value={opt.value} className="cursor-pointer capitalize text-xs">
-                        {opt.label}
+                        {isRtl ? opt.labelAr : opt.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -776,7 +778,7 @@ export function PropertiesPanel({
               <div className="space-y-1.5">
                 <Label htmlFor="nodeImageUrl" className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1.5">
                   <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span>Custom Image Logo URL</span>
+                  <span>{isRtl ? 'عنوان URL لشعار صورة مخصص' : 'Custom Image Logo URL'}</span>
                 </Label>
                 <Input
                   id="nodeImageUrl"
@@ -788,7 +790,7 @@ export function PropertiesPanel({
                   className="rounded-xl border-border focus:ring-accent text-xs"
                 />
                 <p className="text-[9px] text-muted-foreground/60 leading-tight">
-                  Input a direct URL to an image or custom SVG vector. Overrides the Lucide icon preset automatically!
+                  {isRtl ? 'أدخل عنوان URL مباشراً لصورة أو متجه SVG مخصص. يتجاوز إعداد أيقونة Lucide تلقائياً!' : 'Input a direct URL to an image or custom SVG vector. Overrides the Lucide icon preset automatically!'}
                 </p>
               </div>
             </div>
@@ -802,7 +804,7 @@ export function PropertiesPanel({
                   className="flex-1 justify-center bg-accent/10 border-accent/20 hover:bg-accent hover:text-accent-foreground text-accent rounded-xl font-semibold gap-1.5 h-9 cursor-pointer"
                 >
                   <Copy className="w-4 h-4" />
-                  <span>Duplicate</span>
+                  <span>{isRtl ? 'تكرار' : 'Duplicate'}</span>
                 </Button>
                 <Button
                   variant="ghost"
@@ -813,7 +815,7 @@ export function PropertiesPanel({
                   className="flex-1 justify-center bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-destructive-foreground rounded-xl font-semibold gap-1.5 h-9 cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
-                  <span>Delete</span>
+                  <span>{isRtl ? 'حذف' : 'Delete'}</span>
                 </Button>
               </div>
             )}
@@ -822,7 +824,7 @@ export function PropertiesPanel({
           <div className="space-y-6">
             <div className="bg-muted/40 p-3 rounded-2xl border border-border/30">
               <h3 className="text-xs uppercase font-extrabold tracking-wider text-muted-foreground">
-                Connecting Edge
+                {isRtl ? 'رابط التوصيل' : 'Connecting Edge'}
               </h3>
               <p className="text-xs font-mono text-foreground mt-0.5">
                 {selectedEdge.source.slice(0, 5)} → {selectedEdge.target.slice(0, 5)}
@@ -830,8 +832,8 @@ export function PropertiesPanel({
             </div>
 
             <div className="text-xs font-light text-muted-foreground space-y-2">
-              <p>This line links the outputs of the source node directly to the inputs of the target node.</p>
-              <p>Type: <span className="font-mono text-foreground font-semibold">Bezier Line</span></p>
+              <p>{isRtl ? 'يربط هذا الخط مخرجات عقدة المصدر مباشرة بمدخلات عقدة الهدف.' : 'This line links the outputs of the source node directly to the inputs of the target node.'}</p>
+              <p>{isRtl ? 'النوع:' : 'Type:'} <span className="font-mono text-foreground font-semibold">{isRtl ? 'خط بيزييه' : 'Bezier Line'}</span></p>
             </div>
 
             {/* Actions: Delete Edge */}
@@ -846,7 +848,7 @@ export function PropertiesPanel({
                   className="w-full justify-center bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive hover:text-destructive-foreground rounded-xl font-semibold gap-1.5 h-9 cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
-                  <span>Remove Link</span>
+                  <span>{isRtl ? 'إزالة الرابط' : 'Remove Link'}</span>
                 </Button>
               </div>
             )}
@@ -860,9 +862,9 @@ export function PropertiesPanel({
               </div>
               <div>
                 <h3 className="text-xs uppercase font-extrabold tracking-wider text-muted-foreground">
-                  Canvas Inspector
+                  {isRtl ? 'مفتش اللوحة' : 'Canvas Inspector'}
                 </h3>
-                <p className="text-[10px] text-muted-foreground/60 leading-snug">Configure workspace theme & manage collaborators.</p>
+                <p className="text-[10px] text-muted-foreground/60 leading-snug">{isRtl ? 'تهيئة مظهر مساحة العمل وإدارة المتعاونين.' : 'Configure workspace theme & manage collaborators.'}</p>
               </div>
             </div>
 
@@ -870,19 +872,19 @@ export function PropertiesPanel({
             <div className="space-y-4">
               <h4 className="text-xs font-bold font-sans flex items-center gap-1.5 text-accent uppercase tracking-wider">
                 <Sparkles className="w-4 h-4" />
-                <span>Canvas Themes</span>
+                <span>{isRtl ? 'سمات اللوحة' : 'Canvas Themes'}</span>
               </h4>
 
               {/* Background radial glows triggers */}
               {setCanvasBg && (
                 <div className="space-y-3">
-                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">Canvas Background Glow</Label>
+                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">{isRtl ? 'توهج خلفية اللوحة' : 'Canvas Background Glow'}</Label>
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      { key: 'zinc', name: 'Dark Zinc', style: 'bg-zinc-900 text-zinc-100' },
-                      { key: 'blue', name: 'Ocean Blue', style: 'bg-blue-950/40 text-blue-400 border-blue-500/20' },
-                      { key: 'forest', name: 'Forest Emerald', style: 'bg-emerald-950/40 text-emerald-400 border-emerald-500/20' },
-                      { key: 'midnight', name: 'Cosmic Purple', style: 'bg-violet-950/40 text-violet-400 border-violet-500/20' }
+                      { key: 'zinc', name: 'Dark Zinc', nameAr: 'زنك داكن', style: 'bg-zinc-900 text-zinc-100' },
+                      { key: 'blue', name: 'Ocean Blue', nameAr: 'أزرق محيطي', style: 'bg-blue-950/40 text-blue-400 border-blue-500/20' },
+                      { key: 'forest', name: 'Forest Emerald', nameAr: 'زمرد الغابة', style: 'bg-emerald-950/40 text-emerald-400 border-emerald-500/20' },
+                      { key: 'midnight', name: 'Cosmic Purple', nameAr: 'بنفسجي كوني', style: 'bg-violet-950/40 text-violet-400 border-violet-500/20' }
                     ].map((theme) => {
                       const isSelected = !canvasBgHex && canvasBg === theme.key;
                       return (
@@ -896,7 +898,7 @@ export function PropertiesPanel({
                             isSelected ? 'ring-2 ring-accent ring-offset-1 scale-105' : 'opacity-75 hover:opacity-100'
                           }`}
                         >
-                          {theme.name}
+                          {isRtl ? theme.nameAr : theme.name}
                         </button>
                       );
                     })}
@@ -908,8 +910,8 @@ export function PropertiesPanel({
               {setCanvasBgHex && (
                 <div className="space-y-2 border-t border-border/40 pt-3 flex items-center justify-between">
                   <div className="space-y-0.5">
-                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Custom Space Glow Hex</Label>
-                    <p className="text-[9px] text-muted-foreground/60 leading-tight">Pick a custom color aura for your radial canvas grid</p>
+                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">{isRtl ? 'لون توهج الفضاء المخصص (Hex)' : 'Custom Space Glow Hex'}</Label>
+                    <p className="text-[9px] text-muted-foreground/60 leading-tight">{isRtl ? 'اختر هالة لون مخصصة لشبكة اللوحة الشعاعية' : 'Pick a custom color aura for your radial canvas grid'}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {canvasBgHex && (
@@ -917,7 +919,7 @@ export function PropertiesPanel({
                         onClick={() => setCanvasBgHex(null)}
                         className="text-[9px] font-bold text-rose-500 border border-rose-500/25 bg-rose-500/10 px-1.5 py-0.5 rounded-md hover:bg-rose-500 hover:text-white transition-colors"
                       >
-                        Reset
+                        {isRtl ? 'إعادة ضبط' : 'Reset'}
                       </button>
                     )}
                     <input
@@ -933,12 +935,12 @@ export function PropertiesPanel({
               {/* Grid design selector */}
               {setGridVariant && (
                 <div className="space-y-2">
-                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">Grid Design Style</Label>
+                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">{isRtl ? 'نمط تصميم الشبكة' : 'Grid Design Style'}</Label>
                   <div className="grid grid-cols-3 gap-2">
                     {[
-                      { key: 'dots', name: 'Dots' },
-                      { key: 'lines', name: 'Lines' },
-                      { key: 'none', name: 'Blank' }
+                      { key: 'dots', name: 'Dots', nameAr: 'نقاط' },
+                      { key: 'lines', name: 'Lines', nameAr: 'خطوط' },
+                      { key: 'none', name: 'Blank', nameAr: 'فارغ' }
                     ].map((variant) => {
                       const isSelected = gridVariant === variant.key;
                       return (
@@ -949,7 +951,7 @@ export function PropertiesPanel({
                             isSelected ? 'ring-2 ring-accent text-accent border-accent/20 bg-accent/5' : 'text-muted-foreground'
                           }`}
                         >
-                          {variant.name}
+                          {isRtl ? variant.nameAr : variant.name}
                         </button>
                       );
                     })}
@@ -965,11 +967,11 @@ export function PropertiesPanel({
               <div className="flex items-center justify-between">
                 <h4 className="text-xs font-bold font-sans flex items-center gap-1.5 text-accent uppercase tracking-wider">
                   <User className="w-4 h-4" />
-                  <span>Workspace Members</span>
+                  <span>{isRtl ? 'أعضاء مساحة العمل' : 'Workspace Members'}</span>
                 </h4>
                 {members.length > 0 && (
                   <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded-full bg-muted border border-border/40 text-muted-foreground">
-                    {members.length} active
+                    {isRtl ? `${members.length} نشط` : `${members.length} active`}
                   </span>
                 )}
               </div>
@@ -977,12 +979,12 @@ export function PropertiesPanel({
               {loadingMembers ? (
                 <div className="py-8 text-center text-xs text-muted-foreground font-light flex items-center justify-center gap-2">
                   <RefreshCw className="w-4.5 h-4.5 animate-spin text-accent" />
-                  <span>Syncing collaborators list...</span>
+                  <span>{isRtl ? 'جاري مزامنة قائمة المتعاونين...' : 'Syncing collaborators list...'}</span>
                 </div>
               ) : members.length === 0 ? (
                 <div className="text-[11px] font-light text-muted-foreground flex items-start gap-1.5 bg-muted/20 p-3 rounded-2xl border border-border/10">
                   <Info className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
-                  <span>No guest collaborators in this workspace. Copy your share link from the toolbar above to invite players!</span>
+                  <span>{isRtl ? 'لا يوجد متعاونون ضيوف في مساحة العمل هذه. انسخ رابط المشاركة من شريط الأدوات أعلاه لدعوة الآخرين!' : 'No guest collaborators in this workspace. Copy your share link from the toolbar above to invite players!'}</span>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -992,6 +994,17 @@ export function PropertiesPanel({
                     const fullName = profile.full_name || 'Collaborator';
                     const email = profile.email || '';
                     
+                    const displayRole = (role: string) => {
+                      const rolesAr: Record<string, string> = {
+                        owner: 'مالك',
+                        admin: 'مسؤول',
+                        editor: 'محرر',
+                        commenter: 'معلق',
+                        viewer: 'مشاهد'
+                      };
+                      return isRtl ? (rolesAr[role] || role) : role;
+                    };
+
                     return (
                       <div 
                         key={memberRecord.user_id} 
@@ -1008,7 +1021,7 @@ export function PropertiesPanel({
                           )}
                           <div className="min-w-0 flex-1">
                             <h4 className="font-bold text-xs font-sans text-foreground truncate">
-                              {fullName} {isSelf && <span className="text-[10px] font-normal text-muted-foreground/60">({locale === 'ar' ? 'أنت' : 'You'})</span>}
+                              {fullName} {isSelf && <span className="text-[10px] font-normal text-muted-foreground/60">({isRtl ? 'أنت' : 'You'})</span>}
                             </h4>
                             <p className="text-[9px] font-light text-muted-foreground truncate leading-none mt-0.5">{email}</p>
                           </div>
@@ -1029,14 +1042,14 @@ export function PropertiesPanel({
                                 <SelectContent className="bg-background border border-border rounded-xl">
                                   {['editor', 'commenter', 'viewer'].map((roleKey) => (
                                     <SelectItem key={roleKey} value={roleKey} className="cursor-pointer capitalize text-[10px]">
-                                      {roleKey}
+                                      {displayRole(roleKey)}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
                             ) : (
                               <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 pl-1.5">
-                                {memberRecord.role || ''}
+                                {displayRole(memberRecord.role || '')}
                               </span>
                             )}
                           </div>
@@ -1050,7 +1063,7 @@ export function PropertiesPanel({
                                 title="Transfer Ownership"
                               >
                                 <Zap className="w-3.5 h-3.5 text-yellow-400 animate-pulse" />
-                                <span>Transfer</span>
+                                <span>{isRtl ? 'نقل' : 'Transfer'}</span>
                               </button>
                               
                               <button
@@ -1059,7 +1072,7 @@ export function PropertiesPanel({
                                 title="Revoke access"
                               >
                                 <Trash className="w-3 h-3" />
-                                <span>Revoke</span>
+                                <span>{isRtl ? 'إلغاء' : 'Revoke'}</span>
                               </button>
                             </div>
                           )}

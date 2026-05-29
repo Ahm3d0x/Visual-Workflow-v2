@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { createClient } from '@/lib/supabase/client';
 import { getCollaboratorColor } from '@/hooks/useRealtime';
+import { cn } from '@/lib/utils';
 
 interface CommentsPanelProps {
   locale: string;
@@ -286,8 +287,8 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
 
   // Header display strings based on selections
   const headerTitle = selectedNodeId 
-    ? `${selectedNode?.data.label || 'Node'} Comments` 
-    : 'Comments Feed';
+    ? (isRtl ? `تعليقات ${selectedNode?.data.label || 'العقدة'}` : `${selectedNode?.data.label || 'Node'} Comments`) 
+    : (isRtl ? 'خلاصة التعليقات' : 'Comments Feed');
 
   if (!isOpen) return null;
 
@@ -317,10 +318,10 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
             className="flex items-center gap-1 text-[10px] font-semibold text-accent hover:underline cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>All Canvas Comments</span>
+            <span>{isRtl ? 'جميع تعليقات اللوحة' : 'All Canvas Comments'}</span>
           </button>
           <span className="text-[9px] uppercase tracking-wider font-extrabold text-muted-foreground bg-border/40 px-1.5 py-0.5 rounded-md">
-            Node View
+            {isRtl ? 'عرض العقدة' : 'Node View'}
           </span>
         </div>
       )}
@@ -330,13 +331,13 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
         {loading ? (
           <div className="text-center py-20">
             <RefreshCw className="w-6 h-6 animate-spin mx-auto text-muted-foreground/35 mb-2" />
-            <p className="text-xs text-muted-foreground font-light">Loading comments thread...</p>
+            <p className="text-xs text-muted-foreground font-light">{isRtl ? 'جاري تحميل خلاصة التعليقات...' : 'Loading comments thread...'}</p>
           </div>
         ) : threads.roots.length === 0 ? (
           <div className="text-center py-20 space-y-2">
             <MessageSquare className="w-8 h-8 mx-auto text-muted-foreground/25" />
             <p className="text-xs text-muted-foreground font-light max-w-[200px] mx-auto leading-relaxed">
-              No comments created yet. Highlight elements or tap the canvas to write threads.
+              {isRtl ? 'لا توجد تعليقات بعد. قم بتحديد العناصر أو النقر على اللوحة لكتابة التعليقات.' : 'No comments created yet. Highlight elements or tap the canvas to write threads.'}
             </p>
           </div>
         ) : (
@@ -354,9 +355,9 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
                 }`}
               >
                 {/* Visual accent left line matching deterministic color */}
-                <div className="absolute top-0 bottom-0 left-0 w-1" style={{ backgroundColor: userColor }} />
+                <div className={cn("absolute top-0 bottom-0 w-1", isRtl ? "right-0" : "left-0")} style={{ backgroundColor: userColor }} />
 
-                <div className="flex items-start justify-between gap-2 pl-1.5">
+                <div className={cn("flex items-start justify-between gap-2", isRtl ? "pr-1.5" : "pl-1.5")}>
                   <div className="flex items-center gap-2">
                     {/* User initials initials or avatar badge */}
                     <div 
@@ -384,21 +385,21 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
                           ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' 
                           : 'bg-muted hover:bg-muted/95 text-muted-foreground border-border'
                       }`}
-                      title={isResolved ? "Reopen thread" : "Resolve thread"}
+                      title={isResolved ? (isRtl ? "إعادة فتح الموضوع" : "Reopen thread") : (isRtl ? "حل الموضوع" : "Resolve thread")}
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>{isResolved ? 'Resolved' : 'Resolve'}</span>
+                      <span>{isResolved ? (isRtl ? 'تم الحل' : 'Resolved') : (isRtl ? 'حل' : 'Resolve')}</span>
                     </button>
                   )}
                 </div>
 
-                <p className="text-[11px] font-light text-foreground pl-1.5 leading-normal">
+                <p className={cn("text-[11px] font-light text-foreground leading-normal", isRtl ? "pr-1.5" : "pl-1.5")}>
                   {renderFormattedBody(root.body)}
                 </p>
 
                 {/* Reply button action */}
                 {!isResolved && canComment && replyingToId !== root.id && (
-                  <div className="pl-1.5">
+                  <div className={cn(isRtl ? "pr-1.5" : "pl-1.5")}>
                     <button
                       onClick={() => {
                         setReplyingToId(root.id);
@@ -406,21 +407,21 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
                       }}
                       className="text-[9px] font-bold text-accent hover:underline cursor-pointer flex items-center gap-0.5"
                     >
-                      <CornerDownRight className="w-3 h-3" />
-                      <span>Reply</span>
+                      <CornerDownRight className={cn("w-3 h-3", isRtl && "scale-x-[-1]")} />
+                      <span>{isRtl ? 'رد' : 'Reply'}</span>
                     </button>
                   </div>
                 )}
 
                 {/* Nested Replies Lists */}
                 {replies.length > 0 && (
-                  <div className="pl-5 border-l border-border/50 space-y-3 mt-1.5">
+                  <div className={cn("space-y-3 mt-1.5", isRtl ? "pr-5 border-r border-l-0 border-border/50" : "pl-5 border-l border-r-0 border-border/50")}>
                     {replies.map((reply) => {
                       const repColor = getCollaboratorColor(reply.created_by);
                       const repInitials = reply.profiles?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
 
                       return (
-                        <div key={reply.id} className="space-y-1.5 relative pl-1">
+                        <div key={reply.id} className={cn("space-y-1.5 relative", isRtl ? "pr-1" : "pl-1")}>
                           <div className="flex items-center gap-2">
                             <div 
                               className="w-5.5 h-5.5 rounded-full text-[8px] font-bold text-white flex items-center justify-center border border-white/5 shrink-0"
@@ -437,7 +438,7 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
                               </span>
                             </div>
                           </div>
-                          <p className="text-[10px] font-light text-foreground leading-normal pl-0.5">
+                          <p className={cn("text-[10px] font-light text-foreground leading-normal", isRtl ? "pr-0.5" : "pl-0.5")}>
                             {renderFormattedBody(reply.body)}
                           </p>
                         </div>
@@ -448,11 +449,11 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
 
                 {/* Inline nested Reply Input field */}
                 {replyingToId === root.id && (
-                  <div className="pl-1.5 pt-2 border-t border-border/20 flex gap-2">
+                  <div className={cn("pt-2 border-t border-border/20 flex gap-2", isRtl ? "pr-1.5" : "pl-1.5")}>
                     <input
                       value={replyText}
                       onChange={(e) => setReplyText(e.target.value)}
-                      placeholder="Write inline reply..."
+                      placeholder={isRtl ? "اكتب رداً..." : "Write inline reply..."}
                       className="flex-1 h-7 rounded-lg border border-border bg-background px-2.5 text-[10px] font-light focus:outline-hidden focus:ring-1 focus:ring-accent"
                     />
                     <Button
@@ -460,7 +461,7 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
                       onClick={() => handleAddReply(root.id)}
                       className="h-7 px-2.5 rounded-lg text-[9px] bg-accent hover:bg-accent/90"
                     >
-                      <Send className="w-2.5 h-2.5" />
+                      <Send className={cn("w-2.5 h-2.5", isRtl && "scale-x-[-1]")} />
                     </Button>
                     <button
                       onClick={() => setReplyingToId(null)}
@@ -485,16 +486,14 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
             <div className="absolute left-4 right-4 bottom-22 bg-background border border-border shadow-xl rounded-2xl overflow-hidden max-h-[140px] overflow-y-auto custom-scrollbar z-50 animate-fadeIn">
               <div className="p-2 bg-muted/40 border-b border-border text-[8px] font-bold uppercase tracking-widest text-muted-foreground/80 flex items-center gap-1">
                 <Sparkles className="w-3 h-3 text-accent" />
-                <span>Mentions Teammate</span>
+                <span>{isRtl ? 'إشارة إلى زميل' : 'Mentions Teammate'}</span>
               </div>
               <div className="divide-y divide-border/40">
                 {filteredMembers.map((m, idx) => (
                   <button
                     key={m.id}
                     onClick={() => selectMention(m)}
-                    className={`w-full text-left px-3.5 py-2 text-[10px] flex flex-col cursor-pointer transition-colors ${
-                      idx === mentionActiveIndex ? 'bg-accent/10 text-accent font-semibold' : 'hover:bg-muted text-foreground'
-                    }`}
+                    className={cn("w-full px-3.5 py-2 text-[10px] flex flex-col cursor-pointer transition-colors", isRtl ? "text-right" : "text-left", idx === mentionActiveIndex ? 'bg-accent/10 text-accent font-semibold' : 'hover:bg-muted text-foreground')}
                   >
                     <span>{m.fullName}</span>
                     <span className="text-[8px] text-muted-foreground font-light">{m.email}</span>
@@ -510,11 +509,11 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
                 ref={commentTextareaRef}
                 value={commentText}
                 onChange={(e) => handleTextareaChange(e.target.value)}
-                placeholder={selectedNodeId ? "Comment on selected node..." : "Leave canvas comment..."}
+                placeholder={selectedNodeId ? (isRtl ? "تعليق على العقدة المحددة..." : "Comment on selected node...") : (isRtl ? "اترك تعليقاً على اللوحة..." : "Leave canvas comment...")}
                 rows={2}
-                className="rounded-xl border-border text-xs focus:ring-accent font-light resize-none bg-background/55 pr-8"
+                className={cn("rounded-xl border-border text-xs focus:ring-accent font-light resize-none bg-background/55", isRtl ? "pl-8 pr-3" : "pr-8 pl-3")}
               />
-              <div className="absolute right-3 top-3 text-[10px] text-muted-foreground select-none pointer-events-none">
+              <div className={cn("absolute top-3 text-[10px] text-muted-foreground select-none pointer-events-none", isRtl ? "left-3" : "right-3")}>
                 @
               </div>
             </div>
@@ -524,8 +523,8 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
               disabled={!commentText.trim()}
               className="bg-accent hover:bg-accent/90 text-white rounded-xl h-8 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
             >
-              <Send className="w-3.5 h-3.5" />
-              <span>Broadcast Comment</span>
+              <Send className={cn("w-3.5 h-3.5", isRtl && "scale-x-[-1]")} />
+              <span>{isRtl ? 'بث التعليق' : 'Broadcast Comment'}</span>
             </Button>
           </form>
         </div>
