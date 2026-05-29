@@ -1,6 +1,7 @@
 'use client';
 
-import { Handle, Position } from '@xyflow/react';
+import { useEffect } from 'react';
+import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
 import { useEditorStore } from '@/stores/editorStore';
 import { MessageSquare } from 'lucide-react';
 
@@ -91,6 +92,12 @@ export function BaseNode({
   inputs = [{ id: 'in', label: 'In' }],
   outputs = [{ id: 'out', label: 'Out' }],
 }: BaseNodeProps) {
+  const updateNodeInternals = useUpdateNodeInternals();
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, data.polarHandles, updateNodeInternals]);
+
   const comments = useEditorStore((s) => s.comments);
   const togglePanel = useEditorStore((s) => s.togglePanel);
   const setSelectedNode = useEditorStore((s) => s.setSelectedNode);
