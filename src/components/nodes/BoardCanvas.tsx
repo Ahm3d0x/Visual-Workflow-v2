@@ -381,11 +381,10 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     if (!ctx) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Grid dots (subtle)
-    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    // Grid dots (subtle - adjust color for light/dark background contrast)
+    const isLightBg = bgColor === '#fafafa' || bgColor === '#f5f0e8' || bgColor.toLowerCase() === '#ffffff';
+    ctx.fillStyle = isLightBg ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.04)';
     for (let x = 0; x < canvas.width; x += 30) {
       for (let y = 0; y < canvas.height; y += 30) {
         ctx.beginPath();
@@ -751,11 +750,23 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const handleExport = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // Create an offscreen canvas to merge the chosen background color with drawing layers
+    const offscreen = document.createElement('canvas');
+    offscreen.width = canvas.width;
+    offscreen.height = canvas.height;
+    const oCtx = offscreen.getContext('2d');
+    if (oCtx) {
+      oCtx.fillStyle = bgColor;
+      oCtx.fillRect(0, 0, offscreen.width, offscreen.height);
+      oCtx.drawImage(canvas, 0, 0);
+    }
+
     const link = document.createElement('a');
     link.download = `board-${nodeId.slice(0, 6)}.png`;
-    link.href = canvas.toDataURL('image/png');
+    link.href = (oCtx ? offscreen : canvas).toDataURL('image/png');
     link.click();
-  }, [nodeId]);
+  }, [nodeId, bgColor]);
 
   /* ─── Keyboard shortcuts ─── */
   useEffect(() => {
@@ -1095,8 +1106,8 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               ref={canvasRef}
               width={canvasSize.w}
               height={canvasSize.h}
-              className="block"
-              style={{ cursor: cursorStyle[tool], touchAction: 'none' }}
+              className="block transition-colors duration-300"
+              style={{ cursor: cursorStyle[tool], touchAction: 'none', backgroundColor: bgColor }}
             />
             {/* Overlay preview canvas (same size, absolutely stacked) */}
             <canvas
