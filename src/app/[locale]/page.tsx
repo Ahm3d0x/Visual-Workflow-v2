@@ -62,7 +62,7 @@ export default async function LandingPage({
         </h1>
 
         <p className="text-muted-foreground text-lg md:text-xl max-w-2xl mb-12 font-light leading-relaxed">
-          Design, collaborate, and execute complex logic workflows with OpenAI-powered AI assistance, Supabase security, and fully real-time multiplayer boards.
+          Design, collaborate, and execute complex logic workflows with Gemini-powered AI assistance, Supabase security, and fully real-time multiplayer boards.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center gap-4 mb-20">

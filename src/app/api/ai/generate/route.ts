@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@/lib/supabase/server';
 import { checkPlanLimit } from '@/lib/planLimits';
 import { NODE_SCHEMAS } from '@/lib/nodeSchemas';
@@ -36,18 +36,42 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Build OpenAI prompt
+    // 3. Build Gemini prompt
     const nodeTypesList = Object.keys(NODE_SCHEMAS)
       .map((k) => `- ${k}: ${NODE_SCHEMAS[k].label} (${NODE_SCHEMAS[k].description})`)
       .join('\n');
 
-    const systemPrompt = `You are an expert workflow design assistant for a visual workflow builder. 
-The user will describe a business process and you will create a visual workflow diagram.
+    const systemPrompt = `You are a world-class expert workflow architect.
+Your task is to take a business problem or process described by the user and design a highly coherent, logically connected, and visually stunning visual workflow.
 
-Available node types:
+Available node types you can use in "nodes":
 ${nodeTypesList}
 
-Respond ONLY with a valid JSON object in this exact format (no markdown, no explanation):
+Rules for workflow construction:
+1. Cohesion & Specificity:
+   - Match the nodes and labels precisely to the problem domain (e.g., if it's marketing, use email, slack, delay, api_request nodes. If it's a software pipeline, use build, test, deploy nodes).
+   - Node labels must be clear, professional, and action-oriented (max 4 words).
+
+2. Logical Flow & Connectivity:
+   - Always start with exactly one "start" node.
+   - Terminate every logical path beautifully with at least one "end" node.
+   - All intermediate nodes must be navigable and connected; DO NOT leave any orphan or disconnected nodes.
+   - Connect handles perfectly:
+     * "start" node has output "out".
+     * Standard processes (process, delay, email, sms, slack, database, ai_generate, ai_classify, ai_extract, ai_summarize, form_step, user_task) have input "in" and output "out".
+     * Decision/Conditional nodes (decision, if_else, filter, error_handler) have input "in" and output handles "true" and "false".
+     * Loop/Parallel iteration nodes (loop, parallel) have input "in" and output handles "loop" and "exit".
+     * Integration nodes with failure modes (api_request, webhook) have input "in" and output handles "success" and "error".
+     * Approval gates (approval) have input "in" and output handles "approve" and "reject".
+
+3. Visually Polished Grid Coordinates:
+   - To make the diagram layout look beautiful and professional out-of-the-box:
+     * Position the "start" node at {"x": 250, "y": 50}.
+     * Advance subsequent linear steps vertically by adding 180px to the Y coordinate (e.g., 230, 410, 590).
+     * When encountering a branch (e.g., if_else or approval), place the node at the center (e.g., x: 250), then shift the primary path ("true", "success", "approve") to the left (x: 50) and the alternate path ("false", "error", "reject") to the right (x: 450).
+     * Subsequent nodes in each branch should continue down the Y axis (adding 180px for each step), and eventually merge back at the center (x: 250) or end in distinct "end" nodes to keep the diagram balanced and clear.
+
+You MUST respond with a valid JSON object in this exact schema structure:
 {
   "nodes": [
     {
@@ -68,34 +92,31 @@ Respond ONLY with a valid JSON object in this exact format (no markdown, no expl
   ]
 }
 
-Rules:
-- Always start with exactly one "start" node and end with at least one "end" node
-- Space nodes at least 150px apart vertically, 200px horizontally for branches
-- Use appropriate node types matching the description
-- Give meaningful, concise labels to each node (max 4 words)
-- Connect ALL nodes logically with no orphan nodes
-- For decision/if_else nodes, use handles "true" and "false"
-- For loop nodes, use handles "loop" and "exit"
-- For api_request nodes, use handles "success" and "error"
-- For approval nodes, use handles "approve" and "reject"
-- Aim for 5-15 nodes for most workflows`;
+DO NOT include any markdown code blocks, explanation, or HTML formatting. Return raw JSON only.`;
 
-    // 4. Call OpenAI
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // 4. Call Gemini
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) {
+      throw new Error('GEMINI_API_KEY environment variable is not configured.');
+    }
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt },
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 4000,
-      temperature: 0.4,
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    // Use gemini-1.5-pro for high-fidelity workflow design & layout planning
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-1.5-pro',
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
     });
 
-    const rawContent = completion.choices[0].message.content;
-    if (!rawContent) throw new Error('Empty response from AI');
+    const completion = await model.generateContent({
+      contents: [
+        { role: 'user', parts: [{ text: `${systemPrompt}\n\nUser Process Description:\n${prompt}` }] }
+      ]
+    });
+
+    const rawContent = completion.response.text();
+    if (!rawContent) throw new Error('Empty response from Gemini');
 
     const result = JSON.parse(rawContent);
 
@@ -105,13 +126,16 @@ Rules:
     }
 
     // 5. Log AI usage to database
+    const prompt_tokens = completion.response.usageMetadata?.promptTokenCount ?? 0;
+    const completion_tokens = completion.response.usageMetadata?.candidatesTokenCount ?? 0;
+
     const aiRequestData = {
       workspace_id: workspaceId,
       user_id: user.id,
       workflow_id: workflowId || null,
       action: 'generate',
-      prompt_tokens: completion.usage?.prompt_tokens ?? 0,
-      completion_tokens: completion.usage?.completion_tokens ?? 0,
+      prompt_tokens,
+      completion_tokens,
       credits_used: GENERATE_COST,
       status: 'success',
     };

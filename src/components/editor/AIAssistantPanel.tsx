@@ -505,7 +505,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
         </div>
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-bold text-zinc-100 leading-tight">AI Assistant</h2>
-          <p className="text-[10px] text-zinc-500">Powered by GPT-4o</p>
+          <p className="text-[10px] text-zinc-500">Powered by Gemini 1.5 Pro</p>
         </div>
         <CreditsChip used={creditsUsed} limit={creditsLimit} />
       </div>

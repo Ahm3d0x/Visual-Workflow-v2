@@ -106,9 +106,9 @@ export function DiagnosticsDashboardClient({ workspaceId, locale: _locale }: Dia
       setProgress(85);
       addLog('info', 'Verifying active AI model endpoint states...');
       if (results.aiConfigured) {
-        addLog('success', 'AI Service Endpoint online! OpenAI API token environment keys verified.');
+        addLog('success', 'AI Service Endpoint online! Google Gemini API token environment keys verified.');
       } else {
-        addLog('warn', 'AI environment key (OPENAI_API_KEY) is missing. AI generations will be disabled.');
+        addLog('warn', 'AI environment key (GEMINI_API_KEY) is missing. AI generations will be disabled.');
       }
 
       await new Promise((r) => setTimeout(r, 400));

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@/lib/supabase/server';
 import { checkPlanLimit } from '@/lib/planLimits';
 
@@ -69,34 +69,44 @@ Respond ONLY with a JSON array (no markdown):
 Types: "optimization" | "security" | "reliability" | "ux" | "performance"
 Priorities: "high" | "medium" | "low"`;
 
-    // 3. Call OpenAI
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // 3. Call Gemini
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) {
+      throw new Error('GEMINI_API_KEY environment variable is not configured.');
+    }
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify(workflowSummary) },
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 1500,
-      temperature: 0.6,
+    const genAI = new GoogleGenerativeAI(geminiKey);
+    // Use gemini-1.5-flash for fast and cheap structural improvement advice
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
     });
 
-    const rawContent = completion.choices[0].message.content;
-    if (!rawContent) throw new Error('Empty response from AI');
+    const completion = await model.generateContent({
+      contents: [
+        { role: 'user', parts: [{ text: `${systemPrompt}\n\nWorkflow Summary:\n${JSON.stringify(workflowSummary)}` }] }
+      ]
+    });
+
+    const rawContent = completion.response.text();
+    if (!rawContent) throw new Error('Empty response from Gemini');
 
     const parsed = JSON.parse(rawContent);
     const suggestions = Array.isArray(parsed) ? parsed : (parsed.suggestions || []);
 
     // 4. Log usage
+    const prompt_tokens = completion.response.usageMetadata?.promptTokenCount ?? 0;
+    const completion_tokens = completion.response.usageMetadata?.candidatesTokenCount ?? 0;
+
     const aiRequestData = {
       workspace_id: workspaceId,
       user_id: user.id,
       workflow_id: workflowId || null,
       action: 'suggest',
-      prompt_tokens: completion.usage?.prompt_tokens ?? 0,
-      completion_tokens: completion.usage?.completion_tokens ?? 0,
+      prompt_tokens,
+      completion_tokens,
       credits_used: SUGGEST_COST,
       status: 'success',
     };

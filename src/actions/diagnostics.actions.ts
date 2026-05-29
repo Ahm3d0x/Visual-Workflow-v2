@@ -163,7 +163,7 @@ export async function runDiagnosticsAudit(workspaceId: string): Promise<Diagnost
   }
 
   // 4. Validate Environment Variables Configuration
-  const aiConfigured = !!process.env.OPENAI_API_KEY;
+  const aiConfigured = !!process.env.GEMINI_API_KEY;
 
   return {
     databaseAudit,
