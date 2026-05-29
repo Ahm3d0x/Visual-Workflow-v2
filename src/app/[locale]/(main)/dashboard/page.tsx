@@ -29,11 +29,14 @@ interface WorkflowItem {
 }
 
 export default async function DashboardPage({
-  params
+  params,
+  searchParams
 }: {
   params: Promise<{ locale: string }>;
+  searchParams?: Promise<{ w?: string }>;
 }) {
   const { locale } = await params;
+  const { w: activeWorkspaceId } = (await searchParams) || {};
   const supabase = await createClient();
 
   // 1. Validate active user
@@ -97,7 +100,13 @@ export default async function DashboardPage({
     });
   }
 
-  const activeWorkspace = workspaces[0];
+  let activeWorkspace = workspaces[0];
+  if (activeWorkspaceId) {
+    const found = workspaces.find((ws) => ws.id === activeWorkspaceId);
+    if (found) {
+      activeWorkspace = found;
+    }
+  }
 
   if (!activeWorkspace) {
     // Return early if workspace triggers are still executing (graceful fallback)
@@ -214,6 +223,7 @@ export default async function DashboardPage({
         initialWorkflows={workflows}
         sharedWorkflows={sharedWorkflows}
         workspaceId={activeWorkspace.id}
+        workspaces={workspaces}
         locale={locale}
       />
     </div>

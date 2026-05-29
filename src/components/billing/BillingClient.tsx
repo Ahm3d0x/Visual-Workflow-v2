@@ -379,6 +379,24 @@ export function BillingClient({
                     {t.featuresTitle}
                   </h4>
                   <ul className="space-y-2.5">
+                    {/* Workspaces limit */}
+                    <li className="flex items-start gap-2 text-xs">
+                      <Check className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
+                      <span className="text-foreground/90 font-light leading-none">
+                        {limits.max_workspaces >= 9999 ? t.unlimited : limits.max_workspaces}{' '}
+                        {isRtl ? 'مساحات عمل' : 'Workspaces Allowed'}
+                      </span>
+                    </li>
+
+                    {/* Workspace Share links limit */}
+                    <li className={`flex items-start gap-2 text-xs ${limits.max_workspace_share_links === 0 && 'opacity-35 line-through decoration-border'}`}>
+                      <Check className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
+                      <span className="text-foreground/90 font-light leading-none">
+                        {limits.max_workspace_share_links >= 9999 ? t.unlimited : limits.max_workspace_share_links}{' '}
+                        {isRtl ? 'روابط دعوة نشطة' : 'Active Invite Links'}
+                      </span>
+                    </li>
+
                     {/* Workflows Limit */}
                     <li className="flex items-start gap-2 text-xs">
                       <Check className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />

@@ -26,8 +26,20 @@ import {
   User,
   Building,
   Menu,
+  Plus,
+  Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
+import { createWorkspace } from '@/actions/workspace.actions';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageToggle } from '@/components/LanguageToggle';
 
@@ -47,10 +59,25 @@ interface DashboardShellProps {
 }
 
 export function DashboardShell({ children, locale, profile, workspaces }: DashboardShellProps) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [activeWorkspace, setActiveWorkspace] = useState(workspaces[0] || null);
-  const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const [collapsed, setCollapsed] = useState(false);
+
+  const [activeWorkspace, setActiveWorkspace] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const wsId = params.get('w');
+      if (wsId) {
+        const found = workspaces.find((w) => w.id === wsId);
+        if (found) return found;
+      }
+    }
+    return workspaces[0] || null;
+  });
+
+  const [isPending, startTransition] = useTransition();
+  const [createWsOpen, setCreateWsOpen] = useState(false);
+  const [newWsName, setNewWsName] = useState('');
+  const [wsLoading, setWsLoading] = useState(false);
   const t = useTranslations('dashboard');
   const tAuth = useTranslations('auth');
 
@@ -63,11 +90,40 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
     });
   };
 
+  const handleSelectWorkspace = (ws: { id: string; name: string; plan: string }) => {
+    setActiveWorkspace(ws);
+    const searchParams = new URLSearchParams(window.location.search);
+    searchParams.set('w', ws.id);
+    router.push(`${window.location.pathname}?${searchParams.toString()}`);
+  };
+
+  const handleCreateWorkspaceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newWsName.trim()) return;
+
+    setWsLoading(true);
+    const res = await createWorkspace(newWsName);
+    setWsLoading(false);
+
+    if (res.error) {
+      if (res.error === 'PLAN_LIMIT_REACHED') {
+        alert(`Plan limit reached! Your plan allows up to ${res.data?.limit} workspaces. Please upgrade to create more.`);
+      } else {
+        alert('Failed to create workspace: ' + res.error);
+      }
+    } else if (res.data?.workspaceId) {
+      setNewWsName('');
+      setCreateWsOpen(false);
+      // Re-route to the newly created workspace
+      window.location.href = `/${locale}/dashboard?w=${res.data.workspaceId}`;
+    }
+  };
+
   const navItems = [
-    { name: t('title'), href: `/${locale}/dashboard`, icon: Home },
-    { name: 'Workflows', href: `/${locale}/dashboard`, icon: GitBranch },
-    { name: 'Workspace settings', href: `/${locale}/settings/workspace`, icon: Settings },
-    { name: 'Billing & Plans', href: `/${locale}/dashboard`, icon: CreditCard },
+    { name: t('title'), href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Home },
+    { name: 'Workflows', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: GitBranch },
+    { name: 'Workspace settings', href: `/${locale}/settings/workspace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Settings },
+    { name: 'Billing & Plans', href: `/${locale}/billing${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: CreditCard },
   ];
 
   return (
@@ -185,13 +241,21 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                     {workspaces.map((ws) => (
                       <DropdownMenuItem
                         key={ws.id}
-                        onClick={() => setActiveWorkspace(ws)}
+                        onClick={() => handleSelectWorkspace(ws)}
                         className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
                       >
                         <Building className="w-4 h-4 text-muted-foreground" />
                         <span className="truncate flex-1">{ws.name}</span>
                       </DropdownMenuItem>
                     ))}
+                    <DropdownMenuSeparator className="bg-border" />
+                    <DropdownMenuItem
+                      onClick={() => setCreateWsOpen(true)}
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-accent hover:text-accent-foreground"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Create Workspace</span>
+                    </DropdownMenuItem>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -240,6 +304,38 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
         {/* Main Content Pane */}
         <main className="flex-1 p-6 max-w-7xl mx-auto w-full">{children}</main>
       </div>
+
+      {/* Create Workspace Dialog */}
+      <Dialog open={createWsOpen} onOpenChange={setCreateWsOpen}>
+        <DialogContent className="bg-background border border-border rounded-2xl shadow-xl max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold font-sans">Create Workspace</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateWorkspaceSubmit} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="newWsName" className="font-semibold text-sm">
+                Workspace Name
+              </Label>
+              <Input
+                id="newWsName"
+                value={newWsName}
+                onChange={(e) => setNewWsName(e.target.value)}
+                placeholder="My Awesome Team"
+                required
+                className="rounded-xl border-border focus:ring-accent"
+              />
+            </div>
+            <DialogFooter className="pt-4 gap-2">
+              <Button type="button" variant="outline" onClick={() => setCreateWsOpen(false)} className="rounded-xl border-border cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" disabled={wsLoading || !newWsName.trim()} className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-xl px-5 cursor-pointer">
+                {wsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

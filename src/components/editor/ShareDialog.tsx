@@ -2,12 +2,11 @@
 
 import { useState, useEffect, useCallback, useTransition } from 'react';
 import {
-  Share2, X, Copy, Check, Mail, ChevronDown, Loader2,
-  Link2, Trash2, UserPlus, Globe, Clock, Crown, AlertCircle,
+  Share2, X, Copy, Check, ChevronDown, Loader2,
+  Link2, Trash2, Globe, Clock, Crown, AlertCircle,
   Eye, MessageSquare, Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -15,7 +14,6 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import {
   getWorkflowShares,
-  inviteToWorkflow,
   updateShareRole,
   removeShare,
   createShareLink,
@@ -140,11 +138,6 @@ export function ShareDialog({
   const [loadingShares, setLoadingShares] = useState(true);
   const [isPending, startTransition] = useTransition();
 
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<ShareRole>('editor');
-  const [inviteError, setInviteError] = useState('');
-  const [inviteSuccess, setInviteSuccess] = useState('');
-
   const [publicLinks, setPublicLinks] = useState<WorkflowShareRecord[]>([]);
   const [linkRole, setLinkRole] = useState<ShareRole>('viewer');
   const [linkExpiry, setLinkExpiry] = useState<number | undefined>(undefined);
@@ -171,25 +164,6 @@ export function ShareDialog({
     setPublicLinks(result.filter((s) => s.user_id === null && s.share_token));
     setLoadingShares(false);
   }, [workflowId]);
-
-  // Invite handler
-  const handleInvite = useCallback(async () => {
-    if (!inviteEmail.trim()) return;
-    setInviteError('');
-    setInviteSuccess('');
-
-    startTransition(async () => {
-      const result = await inviteToWorkflow(workflowId, workspaceId, inviteEmail.trim(), inviteRole);
-      if (result.error) {
-        setInviteError(result.error);
-      } else {
-        setInviteSuccess(`Invitation sent to ${inviteEmail.trim()}`);
-        setInviteEmail('');
-        await loadShares();
-        setTimeout(() => setInviteSuccess(''), 3000);
-      }
-    });
-  }, [inviteEmail, inviteRole, workflowId, workspaceId, loadShares]);
 
   // Update role
   const handleRoleChange = useCallback(async (shareId: string, newRole: ShareRole) => {
@@ -270,51 +244,6 @@ export function ShareDialog({
         </div>
 
         <div className="overflow-y-auto flex-1">
-          {/* ── Invite Section ── */}
-          {canManage && (
-            <div className="px-6 py-4 border-b border-white/6">
-              <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <UserPlus className="w-3.5 h-3.5" />
-                Invite People
-              </label>
-
-              <div className="flex gap-2 mt-2">
-                <Input
-                  type="email"
-                  placeholder="Enter email address..."
-                  value={inviteEmail}
-                  onChange={(e) => { setInviteEmail(e.target.value); setInviteError(''); }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleInvite()}
-                  disabled={isPending}
-                  className="flex-1 h-9 text-sm bg-white/4 border-white/8 rounded-xl text-zinc-300 placeholder:text-zinc-600 focus:ring-1 focus:ring-sky-500/40"
-                />
-                <RolePicker value={inviteRole} onChange={setInviteRole} disabled={isPending} size="sm" />
-                <Button
-                  size="sm"
-                  onClick={handleInvite}
-                  disabled={!inviteEmail.trim() || isPending}
-                  className="h-9 px-4 bg-sky-600 hover:bg-sky-500 text-white rounded-xl font-semibold text-xs cursor-pointer shrink-0 gap-1.5"
-                >
-                  {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
-                  Send
-                </Button>
-              </div>
-
-              {inviteError && (
-                <p className="text-xs text-red-400 mt-2 flex items-center gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  {inviteError}
-                </p>
-              )}
-              {inviteSuccess && (
-                <p className="text-xs text-emerald-400 mt-2 flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 shrink-0" />
-                  {inviteSuccess}
-                </p>
-              )}
-            </div>
-          )}
-
           {/* ── Current Collaborators ── */}
           <div className="px-6 py-4 border-b border-white/6">
             <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3 flex items-center gap-2">

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState } from 'react';
@@ -14,6 +15,14 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import {
   Search,
@@ -29,6 +38,7 @@ import {
   Calendar,
   Layers,
   Workflow as WorkflowIcon,
+  Loader2,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -49,10 +59,11 @@ interface WorkflowsListProps {
   initialWorkflows: WorkflowItem[];
   sharedWorkflows?: SharedWorkflowItem[];
   workspaceId: string;
+  workspaces: Array<{ id: string; name: string; plan: string }>;
   locale: string;
 }
 
-export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspaceId, locale }: WorkflowsListProps) {
+export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspaceId, workspaces, locale }: WorkflowsListProps) {
   const router = useRouter();
   const t = useTranslations('dashboard');
   const supabase = createClient();
@@ -64,18 +75,23 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'active' | 'archived' | 'published'>('all');
   const [sortBy, setSortBy] = useState<'modified' | 'name' | 'nodes'>('modified');
 
+  // Copy/Move Portability States
+  const [copyMoveOpen, setCopyMoveOpen] = useState(false);
+  const [selectedWf, setSelectedWf] = useState<WorkflowItem | null>(null);
+  const [copyMoveMode, setCopyMoveMode] = useState<'copy' | 'move'>('copy');
+  const [targetWsId, setTargetWsId] = useState('');
+  const [portingLoading, setPortingLoading] = useState(false);
+
   // Mutation Handlers
   const handleArchive = async (id: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'archived' ? 'draft' : 'archived';
     const { error } = await (supabase
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('workflows') as any)
       .update({ status: nextStatus, updated_at: new Date().toISOString() })
       .eq('id', id);
 
     if (!error) {
       setWorkflows((prev) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         prev.map((w) => (w.id === id ? { ...w, status: nextStatus as any, updated_at: new Date().toISOString() } : w))
       );
     }
@@ -86,7 +102,6 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
     
     // 1. Insert duplicated workflow
     const { data, error } = await (supabase
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .from('workflows') as any)
       .insert({
         workspace_id: workspaceId,
@@ -102,13 +117,11 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
     if (data && !error) {
       // 2. Fetch original nodes and duplicate them
       const { data: nodes } = await (supabase
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .from('workflow_nodes') as any)
         .select()
         .eq('workflow_id', workflow.id);
 
       if (nodes && nodes.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const nodesToInsert = nodes.map((n: any) => ({
           workflow_id: data.id,
           type: n.type,
@@ -116,7 +129,6 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
           data: n.data,
           style: n.style,
         }));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase.from('workflow_nodes') as any).insert(nodesToInsert);
       }
 
@@ -136,6 +148,113 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
       setWorkflows((prev) => prev.filter((w) => w.id !== id));
       alert('Workflow deleted.');
     }
+  };
+
+  const handleCopyMoveWorkflowSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedWf || !targetWsId) return;
+
+    setPortingLoading(true);
+    const { data: userData } = await supabase.auth.getUser();
+
+    if (copyMoveMode === 'copy') {
+      // 1. Insert duplicated workflow in target workspace
+      const { data: newWf, error: wfError } = await (supabase
+        .from('workflows') as any)
+        .insert({
+          workspace_id: targetWsId,
+          name: `Copy of ${selectedWf.name}`,
+          description: selectedWf.description,
+          status: 'draft',
+          node_count: selectedWf.node_count,
+          created_by: userData.user?.id || null,
+        })
+        .select()
+        .single();
+
+      if (wfError || !newWf) {
+        alert('Failed to duplicate workflow structure: ' + wfError?.message);
+        setPortingLoading(false);
+        return;
+      }
+
+      // 2. Fetch original nodes & edges
+      const { data: nodes } = await (supabase.from('workflow_nodes') as any).select().eq('workflow_id', selectedWf.id);
+      const { data: edges } = await (supabase.from('workflow_edges') as any).select().eq('workflow_id', selectedWf.id);
+
+      const nodeIdMap: Record<string, string> = {};
+
+      // 3. Batch insert nodes sequentially to establish old-to-new ID map
+      if (nodes && nodes.length > 0) {
+        for (const node of nodes) {
+          const { data: newNode, error: nodeErr } = await (supabase
+            .from('workflow_nodes') as any)
+            .insert({
+              workflow_id: newWf.id,
+              type: node.type,
+              position: node.position,
+              data: node.data,
+              style: node.style,
+            })
+            .select('id')
+            .single();
+
+          if (newNode && !nodeErr) {
+            nodeIdMap[node.id] = newNode.id;
+          }
+        }
+
+        // Adjust parent nesting relationships for ReactFlow groupings
+        for (const node of nodes) {
+          if (node.parent_id && nodeIdMap[node.parent_id]) {
+            await (supabase.from('workflow_nodes') as any)
+              .update({ parent_id: nodeIdMap[node.parent_id] })
+              .eq('id', nodeIdMap[node.id]);
+          }
+        }
+      }
+
+      // 4. Map and batch insert edges
+      if (edges && edges.length > 0) {
+        const edgesToInsert = edges
+          .filter((e: any) => nodeIdMap[e.source_node_id] && nodeIdMap[e.target_node_id])
+          .map((e: any) => ({
+            workflow_id: newWf.id,
+            source_node_id: nodeIdMap[e.source_node_id],
+            target_node_id: nodeIdMap[e.target_node_id],
+            source_handle: e.source_handle,
+            target_handle: e.target_handle,
+          }));
+
+        if (edgesToInsert.length > 0) {
+          await (supabase.from('workflow_edges') as any).insert(edgesToInsert);
+        }
+      }
+
+      // 5. Update local state list if target matches current active workspace
+      if (targetWsId === workspaceId) {
+        setWorkflows((prev) => [newWf as any, ...prev]);
+      }
+
+      alert('Workflow successfully copied to target workspace!');
+    } else {
+      // Move workflow: Update workspace_id
+      const { error: moveError } = await (supabase
+        .from('workflows') as any)
+        .update({ workspace_id: targetWsId })
+        .eq('id', selectedWf.id);
+
+      if (moveError) {
+        alert('Failed to transfer workflow: ' + moveError.message);
+      } else {
+        // Remove from current local state list
+        setWorkflows((prev) => prev.filter((w) => w.id !== selectedWf.id));
+        alert('Workflow successfully transferred to target workspace!');
+      }
+    }
+
+    setPortingLoading(false);
+    setCopyMoveOpen(false);
   };
 
   // Filter & Sort Logic
@@ -358,8 +477,14 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                           <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
                             <Edit2 className="w-4 h-4 text-muted-foreground" /> Edit Canvas
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('copy'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Copy className="w-4 h-4 text-muted-foreground" /> Copy to Workspace
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('move'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Layers className="w-4 h-4 text-muted-foreground" /> Move to Workspace
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate
+                            <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate Local
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
                             <Archive className="w-4 h-4 text-muted-foreground" />
@@ -440,8 +565,14 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                           <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
                             <Edit2 className="w-4 h-4 text-muted-foreground" /> Edit Canvas
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('copy'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Copy className="w-4 h-4 text-muted-foreground" /> Copy to Workspace
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('move'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                            <Layers className="w-4 h-4 text-muted-foreground" /> Move to Workspace
+                          </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleDuplicate(wf)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
-                            <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate
+                            <Copy className="w-4 h-4 text-muted-foreground" /> Duplicate Local
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleArchive(wf.id, wf.status)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
                             <Archive className="w-4 h-4 text-muted-foreground" />
@@ -461,6 +592,46 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
           </div>
         </div>
       )}
+      {/* Copy / Move Workspace Selector Dialog */}
+      <Dialog open={copyMoveOpen} onOpenChange={setCopyMoveOpen}>
+        <DialogContent className="bg-background border border-border rounded-2xl shadow-xl max-w-md p-6">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold font-sans capitalize">{copyMoveMode} Workflow</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCopyMoveWorkflowSubmit} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label className="font-semibold text-sm">Select Target Workspace</Label>
+              <div className="flex flex-col gap-2 bg-background/55 border border-border p-2 rounded-2xl max-h-56 overflow-y-auto shadow-xs">
+                {workspaces.map((ws) => (
+                  <button
+                    key={ws.id}
+                    type="button"
+                    onClick={() => setTargetWsId(ws.id)}
+                    className={`flex items-center justify-between p-3 rounded-xl text-left text-xs font-semibold cursor-pointer select-none transition-all ${
+                      targetWsId === ws.id
+                        ? 'bg-accent/15 border border-accent text-foreground'
+                        : 'border border-transparent text-muted-foreground hover:bg-white/5'
+                    }`}
+                  >
+                    <span>{ws.name}</span>
+                    <span className="text-[10px] uppercase bg-primary/10 text-primary px-1.5 py-0.5 rounded-md font-bold">
+                      {ws.plan}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <DialogFooter className="pt-4 gap-2">
+              <Button type="button" variant="outline" onClick={() => setCopyMoveOpen(false)} className="rounded-xl border-border cursor-pointer">
+                Cancel
+              </Button>
+              <Button type="submit" disabled={portingLoading || !targetWsId} className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-xl px-5 cursor-pointer capitalize flex items-center gap-1.5">
+                {portingLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : copyMoveMode}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

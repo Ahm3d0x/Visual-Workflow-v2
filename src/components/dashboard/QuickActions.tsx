@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, UserPlus, FileJson, Layout, Loader2 } from 'lucide-react';
+import { Plus, FileJson, Layout, Loader2 } from 'lucide-react';
 
 interface QuickActionsProps {
   workspaceId: string;
@@ -37,18 +37,12 @@ export function QuickActions({ workspaceId }: QuickActionsProps) {
 
   // Modals state
   const [workflowOpen, setWorkflowOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
 
   // Workflow Form State
   const [wfName, setWfName] = useState('');
   const [wfDesc, setWfDesc] = useState('');
   const [wfTemplate, setWfTemplate] = useState('blank');
   const [wfLoading, setWfLoading] = useState(false);
-
-  // Invite Form State
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'editor' | 'commenter' | 'viewer'>('editor');
-  const [inviteLoading, setInviteLoading] = useState(false);
 
   const handleCreateWorkflow = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,48 +87,6 @@ export function QuickActions({ workspaceId }: QuickActionsProps) {
       setWfDesc('');
       router.push(`/workflows/${data.id}`);
     }
-  };
-
-  const handleInviteMember = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteEmail.trim()) return;
-
-    setInviteLoading(true);
-    const { data: authData } = await supabase.auth.getUser();
-
-    // 1. Search if the email profile exists in public.profiles
-    const { data: profile } = await (supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', inviteEmail.trim())
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .maybeSingle() as any);
-
-    if (!profile) {
-      alert('Invite sent! (Simulated mail invitation: ' + inviteEmail + ')');
-      setInviteOpen(false);
-      setInviteLoading(false);
-      setInviteEmail('');
-      return;
-    }
-
-    // 2. Add member to public.workspace_members
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error } = await (supabase.from('workspace_members') as any).insert({
-      workspace_id: workspaceId,
-      user_id: profile.id,
-      role: inviteRole,
-      invited_by: authData.user?.id || null,
-    });
-
-    if (error) {
-      alert('Could not add member: ' + error.message);
-    } else {
-      alert('Member successfully added to workspace!');
-      setInviteOpen(false);
-      setInviteEmail('');
-    }
-    setInviteLoading(false);
   };
 
   return (
@@ -194,56 +146,6 @@ export function QuickActions({ workspaceId }: QuickActionsProps) {
               </Button>
               <Button type="submit" disabled={wfLoading || !wfName.trim()} className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-xl px-5 cursor-pointer">
                 {wfLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* 2. Invite Member Trigger Dialog */}
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogTrigger className="inline-flex items-center justify-center border border-border hover:bg-muted font-semibold px-5 py-2.5 rounded-xl cursor-pointer gap-2 focus:outline-hidden text-sm">
-          <UserPlus className="w-5 h-5 text-accent" />
-          <span>Invite Member</span>
-        </DialogTrigger>
-        <DialogContent className="bg-background border border-border rounded-2xl shadow-xl max-w-md p-6">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold font-sans">Invite to Workspace</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleInviteMember} className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="inviteEmail" className="font-semibold text-sm">
-                Email Address
-              </Label>
-              <Input
-                id="inviteEmail"
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="name@example.com"
-                required
-                className="rounded-xl border-border focus:ring-accent"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="font-semibold text-sm">Access Role</Label>
-              <Select value={inviteRole} onValueChange={(val: string | null) => setInviteRole((val || 'editor') as 'editor' | 'commenter' | 'viewer')}>
-                <SelectTrigger className="rounded-xl border-border">
-                  <SelectValue placeholder="Select role" />
-                </SelectTrigger>
-                <SelectContent className="bg-background border border-border rounded-xl">
-                  <SelectItem value="editor" className="cursor-pointer">Editor (Full edit rights)</SelectItem>
-                  <SelectItem value="commenter" className="cursor-pointer">Commenter (View + Comment)</SelectItem>
-                  <SelectItem value="viewer" className="cursor-pointer">Viewer (Read-only)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter className="pt-4 gap-2">
-              <Button type="button" variant="outline" onClick={() => setInviteOpen(false)} className="rounded-xl border-border cursor-pointer">
-                Cancel
-              </Button>
-              <Button type="submit" disabled={inviteLoading || !inviteEmail.trim()} className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-xl px-5 cursor-pointer">
-                {inviteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send Invitation'}
               </Button>
             </DialogFooter>
           </form>

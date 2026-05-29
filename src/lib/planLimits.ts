@@ -14,6 +14,8 @@ export interface PlanLimits {
   can_export_svg_pdf: boolean;
   can_workspace_elements: boolean;
   priority_support: boolean;
+  max_workspaces: number;
+  max_workspace_share_links: number;
 }
 
 export type PlanType = 'free' | 'warrior' | 'elite' | 'champion' | 'legend';
@@ -33,6 +35,8 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     can_export_svg_pdf: false,
     can_workspace_elements: false,
     priority_support: false,
+    max_workspaces: 1,
+    max_workspace_share_links: 0,
   },
   warrior: {
     max_workflows: 20,
@@ -48,6 +52,8 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     can_export_svg_pdf: false,
     can_workspace_elements: false,
     priority_support: false,
+    max_workspaces: 3,
+    max_workspace_share_links: 3,
   },
   elite: {
     max_workflows: 75,
@@ -63,6 +69,8 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     can_export_svg_pdf: true,
     can_workspace_elements: true,
     priority_support: false,
+    max_workspaces: 9999,
+    max_workspace_share_links: 9999,
   },
   champion: {
     max_workflows: 250,
@@ -78,6 +86,8 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     can_export_svg_pdf: true,
     can_workspace_elements: true,
     priority_support: true,
+    max_workspaces: 9999,
+    max_workspace_share_links: 9999,
   },
   legend: {
     max_workflows: 9999,
@@ -93,6 +103,8 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     can_export_svg_pdf: true,
     can_workspace_elements: true,
     priority_support: true,
+    max_workspaces: 9999,
+    max_workspace_share_links: 9999,
   },
 };
 
