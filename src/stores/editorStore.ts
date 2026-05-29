@@ -80,6 +80,7 @@ export interface EditorState {
   deleteNode: (id: string) => void;
   addEdge: (edge: Edge) => void;
   deleteEdge: (id: string) => void;
+  updateEdge: (id: string, edgeData: Partial<Edge>) => void;
   setSelectedNode: (id: string | null) => void;
   setSelectedEdge: (id: string | null) => void;
   togglePanel: (panel: keyof EditorPanels) => void;
@@ -189,10 +190,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   deleteNode: (id) => {
     get().pushToUndo();
+    set((state) => {
+      const targetNode = state.nodes.find((n) => n.id === id);
+      const isGroup = targetNode?.type === 'group';
+      
+      let nextNodes = state.nodes.filter((n) => n.id !== id);
+      
+      if (isGroup && targetNode) {
+        nextNodes = nextNodes.map((n) => {
+          if (n.parentId === id) {
+            return {
+              ...n,
+              parentId: undefined,
+              extent: undefined,
+              position: {
+                x: targetNode.position.x + n.position.x,
+                y: targetNode.position.y + n.position.y,
+              },
+            };
+          }
+          return n;
+        });
+      }
+
+      return {
+        nodes: nextNodes,
+        edges: state.edges.filter((e) => e.source !== id && e.target !== id),
+        selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+        hasUnsavedChanges: true,
+      };
+    });
+  },
+
+  updateEdge: (id, edgeData) => {
+    get().pushToUndo();
     set((state) => ({
-      nodes: state.nodes.filter((n) => n.id !== id),
-      edges: state.edges.filter((e) => e.source !== id && e.target !== id),
-      selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+      edges: state.edges.map((e) =>
+        e.id === id ? { ...e, ...edgeData } : e
+      ),
       hasUnsavedChanges: true,
     }));
   },

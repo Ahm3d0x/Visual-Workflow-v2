@@ -2,7 +2,7 @@
 
 import { useEffect, useCallback, useState } from 'react';
 import { 
-  Lock, Unlock, RotateCcw, Maximize, Trash2 
+  Lock, Unlock, RotateCcw, Maximize, Trash2, MousePointerSquareDashed, FolderPlus
 } from 'lucide-react';
 import {
   ReactFlow,
@@ -12,6 +12,7 @@ import {
   MiniMap,
   ReactFlowProvider,
   useReactFlow,
+  SelectionMode,
   type Node,
   type Edge,
 } from '@xyflow/react';
@@ -94,6 +95,9 @@ function EditorInner({
     addComment,
   } = useEditorStore();
 
+  // Box Selection Mode and Grouping States
+  const [selectionModeActive, setSelectionModeActive] = useState(false);
+
   // 1. Establish permission guards based on collaborator roles
   const permissions = useEditorPermissions(userRole);
 
@@ -173,6 +177,75 @@ function EditorInner({
   const { fitView, zoomTo } = useReactFlow();
 
   const isEditable = permissions.canEdit && !canvasLocked;
+
+  // Selection grouping handler
+  const handleGroupSelectedNodes = useCallback(() => {
+    if (!permissions.canEdit) return;
+    const selectedNodes = nodes.filter((n) => n.selected && n.type !== 'group');
+    if (selectedNodes.length < 2) {
+      alert(locale === 'ar' 
+        ? 'الرجاء اختيار عقدتين على الأقل في لوحة العمل لتجميعهم معاً.' 
+        : 'Please select at least 2 nodes to group them.');
+      return;
+    }
+
+    pushToUndo();
+    
+    // Calculate bounding box
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    selectedNodes.forEach((n) => {
+      const customStyle = ((n.data || {}) as any).customStyle || {};
+      const width = (n.style?.width as number) || (customStyle.width as number) || 220;
+      const height = (n.style?.height as number) || (customStyle.height as number) || 90;
+      
+      minX = Math.min(minX, n.position.x);
+      maxX = Math.max(maxX, n.position.x + width);
+      minY = Math.min(minY, n.position.y);
+      maxY = Math.max(maxY, n.position.y + height);
+    });
+
+    const padding = 35;
+    const groupX = minX - padding;
+    const groupY = minY - padding;
+    const groupW = (maxX - minX) + (padding * 2);
+    const groupH = (maxY - minY) + (padding * 2);
+
+    const groupId = crypto.randomUUID();
+    const groupNode: Node = {
+      id: groupId,
+      type: 'group',
+      position: { x: groupX, y: groupY },
+      data: { 
+        label: locale === 'ar' ? 'مجموعة جديدة' : 'New Group',
+      },
+      style: { width: groupW, height: groupH },
+    };
+
+    const updatedNodes = nodes.map((n) => {
+      const isSelectedChild = selectedNodes.some((sn) => sn.id === n.id);
+      if (isSelectedChild) {
+        return {
+          ...n,
+          parentId: groupId,
+          extent: 'parent' as const,
+          position: {
+            x: n.position.x - groupX,
+            y: n.position.y - groupY,
+          },
+          selected: false,
+        };
+      }
+      return n;
+    });
+
+    setNodes([groupNode, ...updatedNodes]);
+    setHasUnsavedChanges(true);
+    realtime.broadcastNodeChange('UPDATE');
+  }, [nodes, setNodes, pushToUndo, setHasUnsavedChanges, permissions.canEdit, realtime, locale]);
 
   const handleFitView = useCallback(() => {
     fitView({ duration: 500 });
@@ -539,13 +612,13 @@ function EditorInner({
 
       {/* Main workspace layout */}
       <div 
-        style={canvasBgHex ? { background: `radial-gradient(circle at center, ${canvasBgHex}22 0%, #09090b 100%)` } : undefined}
+        style={canvasBgHex ? { background: `radial-gradient(circle at center, ${canvasBgHex}22 0%, var(--background) 100%)` } : undefined}
         className={`flex-1 flex relative overflow-hidden transition-all duration-500 ${
           canvasBgHex ? '' : (
-            canvasBg === 'zinc' ? 'bg-zinc-950' :
-            canvasBg === 'blue' ? 'bg-zinc-950 bg-radial-[at_center_center] from-blue-950/20 via-zinc-950 to-zinc-950' :
-            canvasBg === 'forest' ? 'bg-zinc-950 bg-radial-[at_center_center] from-emerald-950/20 via-zinc-950 to-zinc-950' :
-            'bg-zinc-950 bg-radial-[at_center_center] from-violet-950/20 via-zinc-950 to-zinc-950'
+            canvasBg === 'zinc' ? 'bg-zinc-50 dark:bg-zinc-950' :
+            canvasBg === 'blue' ? 'bg-zinc-50 dark:bg-zinc-950 bg-radial-[at_center_center] from-blue-200/20 dark:from-blue-950/20 via-zinc-50 dark:via-zinc-950 to-zinc-50 dark:to-zinc-950' :
+            canvasBg === 'forest' ? 'bg-zinc-50 dark:bg-zinc-950 bg-radial-[at_center_center] from-emerald-200/20 dark:from-emerald-950/20 via-zinc-50 dark:via-zinc-950 to-zinc-50 dark:to-zinc-950' :
+            'bg-zinc-50 dark:bg-zinc-950 bg-radial-[at_center_center] from-violet-200/20 dark:from-violet-950/20 via-zinc-50 dark:via-zinc-950 to-zinc-50 dark:to-zinc-950'
           )
         }`}
       >
@@ -601,6 +674,10 @@ function EditorInner({
                   }
                 : undefined
             }
+            panOnDrag={!selectionModeActive}
+            selectionOnDrag={selectionModeActive}
+            panOnScroll={true}
+            selectionMode={SelectionMode.Partial}
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
@@ -622,7 +699,7 @@ function EditorInner({
                 variant={gridVariant === 'dots' ? BackgroundVariant.Dots : BackgroundVariant.Lines} 
                 gap={15} 
                 size={1} 
-                className="text-zinc-800" 
+                className="text-zinc-300 dark:text-zinc-800 transition-colors duration-500" 
               />
             )}
             <Controls showInteractive={false} className="bg-background border border-border shadow-md rounded-xl p-1 [&_button]:cursor-pointer" />
@@ -659,6 +736,32 @@ function EditorInner({
               {canvasLocked ? <Lock className="w-4 h-4 text-rose-400" /> : <Unlock className="w-4 h-4" />}
               <span>{canvasLocked ? (locale === 'ar' ? 'مغلق' : 'Locked') : (locale === 'ar' ? 'قفل اللوحة' : 'Lock')}</span>
             </button>
+
+            {/* Selection Mode toggle button */}
+            <button
+              onClick={() => setSelectionModeActive(!selectionModeActive)}
+              className={`h-9 px-3 rounded-xl flex items-center justify-center gap-1.5 text-xs font-bold transition-all hover:scale-105 cursor-pointer border ${
+                selectionModeActive 
+                  ? 'bg-accent/20 text-accent border-accent/30' 
+                  : 'border-transparent hover:bg-muted text-muted-foreground hover:text-foreground'
+              }`}
+              title={selectionModeActive ? "Deselect / Normal Mode" : "Activate Box Selection Mode"}
+            >
+              <MousePointerSquareDashed className="w-4 h-4" />
+              <span>{selectionModeActive ? (locale === 'ar' ? 'وضع التحديد نشط' : 'Selection Active') : (locale === 'ar' ? 'تحديد النطاق' : 'Box Selection')}</span>
+            </button>
+
+            {/* Group Selected Nodes button */}
+            {permissions.canEdit && (
+              <button
+                onClick={handleGroupSelectedNodes}
+                className="h-9 px-3 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 text-xs font-bold cursor-pointer transition-all hover:scale-105 border border-transparent"
+                title="Group Selected Nodes"
+              >
+                <FolderPlus className="w-4 h-4" />
+                <span>{locale === 'ar' ? 'تجميع المحدد' : 'Group Selected'}</span>
+              </button>
+            )}
 
             <div className="w-px h-5 bg-border" />
 

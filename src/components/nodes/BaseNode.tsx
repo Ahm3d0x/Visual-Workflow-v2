@@ -31,8 +31,8 @@ interface BaseNodeProps {
   accentBar: string;
   icon: React.ReactNode;
   badgeColor: string;
-  inputs?: { id: string; label?: string }[];
-  outputs?: { id: string; label?: string }[];
+  inputs?: { id: string; label?: string; position?: Position; color?: string }[];
+  outputs?: { id: string; label?: string; position?: Position; color?: string }[];
 }
 
 export function BaseNode({
@@ -79,6 +79,44 @@ export function BaseNode({
     inlineStyles.height = `${customStyle.height}px`;
   }
 
+  // Render parent Group Container Card cleanly
+  if (type === 'group') {
+    return (
+      <div
+        style={{
+          ...inlineStyles,
+          width: customStyle.width || '300px',
+          height: customStyle.height || '200px',
+        }}
+        className={`rounded-2xl border-2 border-dashed border-zinc-400 dark:border-zinc-700 bg-zinc-400/5 dark:bg-zinc-800/5 select-none transition-all ${
+          selected ? 'border-primary shadow-[0_0_15px_rgba(59,130,246,0.3)] ring-2 ring-primary' : ''
+        }`}
+      >
+        <div className="absolute top-2 left-3 flex items-center gap-1.5 px-2 py-0.5 rounded bg-muted/95 border border-border text-[10px] font-bold text-muted-foreground select-none">
+          <span>{data.label || 'Group / مجموعة'}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Group handles by their positions to distribute them correctly
+  const handlesBySide = {
+    [Position.Top]: [] as { id: string; type: 'target' | 'source'; color?: string; label?: string }[],
+    [Position.Bottom]: [] as { id: string; type: 'target' | 'source'; color?: string; label?: string }[],
+    [Position.Left]: [] as { id: string; type: 'target' | 'source'; color?: string; label?: string }[],
+    [Position.Right]: [] as { id: string; type: 'target' | 'source'; color?: string; label?: string }[],
+  };
+
+  inputs.forEach((h) => {
+    const pos = h.position || Position.Top;
+    handlesBySide[pos].push({ ...h, type: 'target' });
+  });
+
+  outputs.forEach((h) => {
+    const pos = h.position || Position.Bottom;
+    handlesBySide[pos].push({ ...h, type: 'source' });
+  });
+
   return (
     <div
       style={inlineStyles}
@@ -90,24 +128,51 @@ export function BaseNode({
           : ''
       }`}
     >
-      {/* Dynamic Incoming Input Handles along Top border */}
-      <div className="absolute left-0 right-0 top-0 h-0 flex items-center justify-center">
-        {inputs.map((handle, i) => (
-          <Handle
-            key={handle.id}
-            type="target"
-            position={Position.Top}
-            id={handle.id}
-            style={{
-              left: inputs.length === 1 ? '50%' : `${((i + 1) * 100) / (inputs.length + 1)}%`,
-            }}
-            className="w-3 h-3 bg-background border-2 border-border hover:bg-accent hover:border-accent hover:scale-125 transition-all cursor-crosshair rounded-full !top-[-6px] shadow-sm"
-            title={handle.label}
-          />
-        ))}
-      </div>
+      {/* Handles rendering for all 4 sides */}
+      {(Object.keys(handlesBySide) as Position[]).map((pos) => {
+        const sideHandles = handlesBySide[pos];
+        const isHorizontal = pos === Position.Top || pos === Position.Bottom;
+        
+        return sideHandles.map((h, index) => {
+          const style: React.CSSProperties = {
+            backgroundColor: h.color || (h.type === 'target' ? '#10b981' : '#ef4444'),
+            borderColor: 'var(--border)',
+            position: 'absolute',
+          };
 
-      {/* Node Accent Accent Left Bar */}
+          if (isHorizontal) {
+            style.left = sideHandles.length === 1 ? '50%' : `${((index + 1) * 100) / (sideHandles.length + 1)}%`;
+            style.transform = 'translateX(-50%)';
+            if (pos === Position.Top) {
+              style.top = '-6px';
+            } else {
+              style.bottom = '-6px';
+            }
+          } else {
+            style.top = sideHandles.length === 1 ? '50%' : `${((index + 1) * 100) / (sideHandles.length + 1)}%`;
+            style.transform = 'translateY(-50%)';
+            if (pos === Position.Left) {
+              style.left = '-6px';
+            } else {
+              style.right = '-6px';
+            }
+          }
+
+          return (
+            <Handle
+              key={h.id}
+              type={h.type}
+              position={pos}
+              id={h.id}
+              style={style}
+              className="w-3 h-3 border-2 hover:scale-125 transition-all cursor-crosshair rounded-full shadow-sm z-30"
+              title={h.label}
+            />
+          );
+        });
+      })}
+
+      {/* Node Accent Left Bar */}
       <div className={`absolute left-0 top-3.5 bottom-3.5 w-1.5 rounded-r-md ${accentBar}`} />
 
       {/* Inner Node Contents */}
@@ -161,23 +226,6 @@ export function BaseNode({
           </span>
           <span className="text-[9px] font-mono text-muted-foreground/60">{id.slice(0, 5)}</span>
         </div>
-      </div>
-
-      {/* Dynamic Outgoing Output Handles along Bottom border */}
-      <div className="absolute left-0 right-0 bottom-0 h-0 flex items-center justify-center">
-        {outputs.map((handle, i) => (
-          <Handle
-            key={handle.id}
-            type="source"
-            position={Position.Bottom}
-            id={handle.id}
-            style={{
-              left: outputs.length === 1 ? '50%' : `${((i + 1) * 100) / (outputs.length + 1)}%`,
-            }}
-            className="w-3 h-3 bg-background border-2 border-border hover:bg-accent hover:border-accent hover:scale-125 transition-all cursor-crosshair rounded-full !bottom-[-6px] shadow-sm"
-            title={handle.label}
-          />
-        ))}
       </div>
     </div>
   );

@@ -44,6 +44,14 @@ interface CustomNodeData {
     width?: number;
     height?: number;
   };
+  handleConfig?: {
+    inputCount?: number;
+    inputPosition?: 'top' | 'bottom' | 'left' | 'right';
+    inputColor?: string;
+    outputCount?: number;
+    outputPosition?: 'top' | 'bottom' | 'left' | 'right';
+    outputColor?: string;
+  };
   [key: string]: unknown;
 }
 
@@ -124,6 +132,7 @@ export function PropertiesPanel({
     addNode,
     deleteNode, 
     deleteEdge, 
+    updateEdge,
     panels, 
     togglePanel 
   } = useEditorStore();
@@ -795,6 +804,192 @@ export function PropertiesPanel({
               </div>
             </div>
 
+            {/* Handles Configuration */}
+            <div className="space-y-4 border-t border-border/40 pt-3">
+              <h4 className="text-xs font-bold font-sans flex items-center gap-1.5 text-accent uppercase tracking-wider">
+                <Sliders className="w-4 h-4" />
+                <span>{isRtl ? 'تكوين المقابض والاتصال' : 'Handles & Connection'}</span>
+              </h4>
+
+              {/* Input Handles Config */}
+              <div className="space-y-3 bg-muted/20 p-3 rounded-2xl border border-border/10">
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center justify-between">
+                  <span>{isRtl ? 'مقابض المدخلات' : 'Input Handles'}</span>
+                </Label>
+                
+                {/* Count */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] text-muted-foreground font-medium">
+                    <span>{isRtl ? 'العدد' : 'Count'} ({nodeData.handleConfig?.inputCount ?? 1})</span>
+                    <span>1 - 5</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    value={nodeData.handleConfig?.inputCount ?? 1}
+                    onChange={(e) => {
+                      if (!canEdit) return;
+                      const handleConfig = nodeData.handleConfig || {};
+                      updateNode(selectedNodeId!, {
+                        handleConfig: {
+                          ...handleConfig,
+                          inputCount: parseInt(e.target.value) || 1
+                        }
+                      });
+                    }}
+                    disabled={!canEdit}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-accent"
+                  />
+                </div>
+
+                {/* Position */}
+                <div className="space-y-1">
+                  <span className="text-[9px] text-muted-foreground font-semibold block">{isRtl ? 'الموقع' : 'Position'}</span>
+                  <Select
+                    value={nodeData.handleConfig?.inputPosition || 'top'}
+                    onValueChange={(val) => {
+                      if (!canEdit) return;
+                      const handleConfig = nodeData.handleConfig || {};
+                      updateNode(selectedNodeId!, {
+                        handleConfig: {
+                          ...handleConfig,
+                          inputPosition: val as any
+                        }
+                      });
+                    }}
+                    disabled={!canEdit}
+                  >
+                    <SelectTrigger className="h-7 rounded-lg border-border text-[10px] font-semibold bg-background py-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background border border-border rounded-xl">
+                      {[
+                        { value: 'top', label: isRtl ? 'أعلى' : 'Top' },
+                        { value: 'bottom', label: isRtl ? 'أسفل' : 'Bottom' },
+                        { value: 'left', label: isRtl ? 'يسار' : 'Left' },
+                        { value: 'right', label: isRtl ? 'يمين' : 'Right' }
+                      ].map((pos) => (
+                        <SelectItem key={pos.value} value={pos.value} className="cursor-pointer text-[10px]">
+                          {pos.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Color */}
+                <div className="flex items-center justify-between border-t border-border/20 pt-2">
+                  <span className="text-[9px] text-muted-foreground font-semibold">{isRtl ? 'اللون' : 'Color'}</span>
+                  <input
+                    type="color"
+                    value={nodeData.handleConfig?.inputColor || '#10b981'}
+                    onChange={(e) => {
+                      if (!canEdit) return;
+                      const handleConfig = nodeData.handleConfig || {};
+                      updateNode(selectedNodeId!, {
+                        handleConfig: {
+                          ...handleConfig,
+                          inputColor: e.target.value
+                        }
+                      });
+                    }}
+                    disabled={!canEdit}
+                    className="w-7 h-7 rounded-lg cursor-pointer border border-border/30 bg-transparent shrink-0"
+                  />
+                </div>
+              </div>
+
+              {/* Output Handles Config */}
+              <div className="space-y-3 bg-muted/20 p-3 rounded-2xl border border-border/10">
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center justify-between">
+                  <span>{isRtl ? 'مقابض المخرجات' : 'Output Handles'}</span>
+                </Label>
+                
+                {/* Count */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] text-muted-foreground font-medium">
+                    <span>{isRtl ? 'العدد' : 'Count'} ({nodeData.handleConfig?.outputCount ?? 1})</span>
+                    <span>1 - 5</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={5}
+                    value={nodeData.handleConfig?.outputCount ?? 1}
+                    onChange={(e) => {
+                      if (!canEdit) return;
+                      const handleConfig = nodeData.handleConfig || {};
+                      updateNode(selectedNodeId!, {
+                        handleConfig: {
+                          ...handleConfig,
+                          outputCount: parseInt(e.target.value) || 1
+                        }
+                      });
+                    }}
+                    disabled={!canEdit}
+                    className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-accent"
+                  />
+                </div>
+
+                {/* Position */}
+                <div className="space-y-1">
+                  <span className="text-[9px] text-muted-foreground font-semibold block">{isRtl ? 'الموقع' : 'Position'}</span>
+                  <Select
+                    value={nodeData.handleConfig?.outputPosition || 'bottom'}
+                    onValueChange={(val) => {
+                      if (!canEdit) return;
+                      const handleConfig = nodeData.handleConfig || {};
+                      updateNode(selectedNodeId!, {
+                        handleConfig: {
+                          ...handleConfig,
+                          outputPosition: val as any
+                        }
+                      });
+                    }}
+                    disabled={!canEdit}
+                  >
+                    <SelectTrigger className="h-7 rounded-lg border-border text-[10px] font-semibold bg-background py-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background border border-border rounded-xl">
+                      {[
+                        { value: 'top', label: isRtl ? 'أعلى' : 'Top' },
+                        { value: 'bottom', label: isRtl ? 'أسفل' : 'Bottom' },
+                        { value: 'left', label: isRtl ? 'يسار' : 'Left' },
+                        { value: 'right', label: isRtl ? 'يمين' : 'Right' }
+                      ].map((pos) => (
+                        <SelectItem key={pos.value} value={pos.value} className="cursor-pointer text-[10px]">
+                          {pos.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Color */}
+                <div className="flex items-center justify-between border-t border-border/20 pt-2">
+                  <span className="text-[9px] text-muted-foreground font-semibold">{isRtl ? 'اللون' : 'Color'}</span>
+                  <input
+                    type="color"
+                    value={nodeData.handleConfig?.outputColor || '#ef4444'}
+                    onChange={(e) => {
+                      if (!canEdit) return;
+                      const handleConfig = nodeData.handleConfig || {};
+                      updateNode(selectedNodeId!, {
+                        handleConfig: {
+                          ...handleConfig,
+                          outputColor: e.target.value
+                        }
+                      });
+                    }}
+                    disabled={!canEdit}
+                    className="w-7 h-7 rounded-lg cursor-pointer border border-border/30 bg-transparent shrink-0"
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* Actions: Duplicate / Delete Node */}
             {canEdit && (
               <div className="pt-4 border-t border-border flex gap-2">
@@ -833,7 +1028,120 @@ export function PropertiesPanel({
 
             <div className="text-xs font-light text-muted-foreground space-y-2">
               <p>{isRtl ? 'يربط هذا الخط مخرجات عقدة المصدر مباشرة بمدخلات عقدة الهدف.' : 'This line links the outputs of the source node directly to the inputs of the target node.'}</p>
-              <p>{isRtl ? 'النوع:' : 'Type:'} <span className="font-mono text-foreground font-semibold">{isRtl ? 'خط بيزييه' : 'Bezier Line'}</span></p>
+            </div>
+
+            {/* Custom Label */}
+            <div className="space-y-1.5">
+              <Label htmlFor="edgeLabel" className="text-xs font-semibold flex items-center gap-1.5">
+                <Type className="w-3.5 h-3.5 text-muted-foreground" />
+                <span>{isRtl ? 'ملصق الرابط' : 'Wire Label'}</span>
+              </Label>
+              <Input
+                id="edgeLabel"
+                value={String(selectedEdge.label || '')}
+                onChange={(e) => {
+                  if (canEdit) updateEdge(selectedEdge.id, { label: e.target.value || undefined });
+                }}
+                disabled={!canEdit}
+                placeholder={isRtl ? 'أدخل اسماً للاتصال...' : 'Label/name this connection...'}
+                className="rounded-xl border-border focus:ring-accent text-xs"
+              />
+            </div>
+
+            {/* Edge Type Selector */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">{isRtl ? 'نمط مسار الخط' : 'Connection Path Style'}</Label>
+              <Select
+                value={selectedEdge.type || 'default'}
+                onValueChange={(val) => {
+                  if (canEdit) updateEdge(selectedEdge.id, { type: val as any });
+                }}
+                disabled={!canEdit}
+              >
+                <SelectTrigger className="rounded-xl border-border text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background border border-border rounded-xl">
+                  {[
+                    { value: 'default', label: isRtl ? 'خط منحني (بيزييه)' : 'Bezier (Curved)' },
+                    { value: 'straight', label: isRtl ? 'خط مستقيم' : 'Straight' },
+                    { value: 'step', label: isRtl ? 'درج (زوايا قائمة)' : 'Step' },
+                    { value: 'smoothstep', label: isRtl ? 'درج ناعم' : 'Smooth Step' }
+                  ].map((path) => (
+                    <SelectItem key={path.value} value={path.value} className="cursor-pointer text-xs">
+                      {path.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Custom Edge Color and Stroke Width */}
+            <div className="space-y-3 bg-muted/20 p-3 rounded-2xl border border-border/10">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold">{isRtl ? 'لون الخط' : 'Wire Color'}</span>
+                <input
+                  type="color"
+                  value={selectedEdge.style?.stroke || '#52525b'}
+                  onChange={(e) => {
+                    if (canEdit) {
+                      const style = selectedEdge.style || {};
+                      updateEdge(selectedEdge.id, {
+                        style: {
+                          ...style,
+                          stroke: e.target.value
+                        }
+                      });
+                    }
+                  }}
+                  disabled={!canEdit}
+                  className="w-7 h-7 rounded-lg cursor-pointer border border-border/30 bg-transparent shrink-0"
+                />
+              </div>
+
+              {/* Stroke Width Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-muted-foreground font-medium">
+                  <span>{isRtl ? 'سمك الخط' : 'Line Width'} ({selectedEdge.style?.strokeWidth ?? 2}px)</span>
+                  <span>1 - 6</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={6}
+                  value={Number(selectedEdge.style?.strokeWidth ?? 2)}
+                  onChange={(e) => {
+                    if (canEdit) {
+                      const style = selectedEdge.style || {};
+                      updateEdge(selectedEdge.id, {
+                        style: {
+                          ...style,
+                          strokeWidth: parseInt(e.target.value) || 2
+                        }
+                      });
+                    }
+                  }}
+                  disabled={!canEdit}
+                  className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer accent-accent"
+                />
+              </div>
+            </div>
+
+            {/* Animated Flow Toggle */}
+            <div className="flex items-center justify-between bg-muted/20 p-3 rounded-2xl border border-border/10">
+              <div className="space-y-0.5">
+                <span className="text-xs font-semibold block">{isRtl ? 'حركة تدفق البيانات' : 'Flow Animation'}</span>
+                <span className="text-[9px] text-muted-foreground/60 block">{isRtl ? 'تفعيل نبض الجريان على الرابط' : 'Simulate data pulsing along connection'}</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={!!selectedEdge.animated}
+                onChange={(e) => {
+                  if (canEdit) updateEdge(selectedEdge.id, { animated: e.target.checked });
+                }}
+                disabled={!canEdit}
+                className="w-4 h-4 rounded-md border-border cursor-pointer accent-accent text-accent"
+              />
             </div>
 
             {/* Actions: Delete Edge */}

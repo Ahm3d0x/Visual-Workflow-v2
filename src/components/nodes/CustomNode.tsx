@@ -7,6 +7,7 @@ import {
   Shield, Cpu, Mail, Bell, Globe, User, Zap,
   Image as ImageIcon, Activity, Cloud, Code, Lock, Key
 } from 'lucide-react';
+import { Position } from '@xyflow/react';
 import { BaseNode } from './BaseNode';
 import { NODE_SCHEMAS } from '@/lib/nodeSchemas';
 
@@ -27,6 +28,14 @@ interface CustomNodeProps {
     customHandles?: {
       inputsCount?: number;
       outputsCount?: number;
+    };
+    handleConfig?: {
+      inputCount?: number;
+      inputPosition?: 'top' | 'bottom' | 'left' | 'right';
+      inputColor?: string;
+      outputCount?: number;
+      outputPosition?: 'top' | 'bottom' | 'left' | 'right';
+      outputColor?: string;
     };
     [key: string]: unknown;
   };
@@ -155,19 +164,28 @@ export function CustomNode({ id, type, data, selected }: CustomNodeProps) {
   let inputs = schema ? schema.inputs : [{ id: 'in', label: 'In' }];
   let outputs = schema ? schema.outputs : [{ id: 'out', label: 'Out' }];
 
-  if (type === 'custom_template' || data.customNode) {
-    const customHandles = data.customHandles || {};
-    const inputsCount = typeof customHandles.inputsCount === 'number' ? customHandles.inputsCount : 1;
-    const outputsCount = typeof customHandles.outputsCount === 'number' ? customHandles.outputsCount : 1;
+  if (data.handleConfig || type === 'custom_template' || data.customNode) {
+    const handleConfig = data.handleConfig || {};
+    const inputCount = typeof handleConfig.inputCount === 'number' ? handleConfig.inputCount : 1;
+    const inputPosition = handleConfig.inputPosition || 'top';
+    const inputColor = handleConfig.inputColor || '#10b981';
     
-    inputs = Array.from({ length: inputsCount }, (_, i) => ({
+    const outputCount = typeof handleConfig.outputCount === 'number' ? handleConfig.outputCount : 1;
+    const outputPosition = handleConfig.outputPosition || 'bottom';
+    const outputColor = handleConfig.outputColor || '#ef4444';
+
+    inputs = Array.from({ length: inputCount }, (_, i) => ({
       id: `in_${i}`,
       label: `Input ${i + 1}`,
+      position: inputPosition === 'bottom' ? Position.Bottom : inputPosition === 'left' ? Position.Left : inputPosition === 'right' ? Position.Right : Position.Top,
+      color: inputColor,
     }));
     
-    outputs = Array.from({ length: outputsCount }, (_, i) => ({
+    outputs = Array.from({ length: outputCount }, (_, i) => ({
       id: `out_${i}`,
       label: `Output ${i + 1}`,
+      position: outputPosition === 'top' ? Position.Top : outputPosition === 'left' ? Position.Left : outputPosition === 'right' ? Position.Right : Position.Bottom,
+      color: outputColor,
     }));
   }
 

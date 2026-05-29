@@ -26,8 +26,7 @@ export function CursorOverlay() {
             key={id}
             className="absolute transition-all duration-100 ease-out flex flex-col gap-1 items-start select-none will-change-transform"
             style={{
-              left: xOffset,
-              top: yOffset,
+              transform: `translate3d(${xOffset}px, ${yOffset}px, 0)`,
             }}
           >
             {/* High-fidelity Cursor Mouse Pointer SVG */}

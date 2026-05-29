@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from '@/i18n/routing';
 import { 
   ArrowLeft, ArrowRight, Loader2, Check, AlertCircle, 
-  Undo, Redo, Layout, Download, FileJson, Image as ImageIcon, FileText, ChevronDown, BrainCircuit, Share2
+  Undo, Redo, Layout, Download, FileJson, Image as ImageIcon, FileText, ChevronDown, BrainCircuit, Share2, Pencil
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { useTheme } from 'next-themes';
 import { getNodesBounds } from '@xyflow/react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface EditorToolbarProps {
   workflowId: string;
@@ -189,14 +190,22 @@ export function EditorToolbar({
               className="h-8 py-0.5 rounded-lg border-border font-bold text-sm focus:ring-accent max-w-[200px]"
             />
           ) : (
-            <h1
-              onClick={() => canEdit && setEditing(true)}
-              className={`text-base font-bold tracking-tight leading-tight ${
-                canEdit ? 'cursor-pointer hover:bg-muted/40 rounded-lg px-2 -ml-2 py-0.5 transition-colors' : ''
-              }`}
-            >
-              {name}
-            </h1>
+            <div className="flex items-center gap-1.5 group/title">
+              <h1
+                onClick={() => canEdit && setEditing(true)}
+                className={`text-base font-bold tracking-tight leading-tight ${
+                  canEdit ? 'cursor-pointer hover:bg-muted/40 rounded-lg px-2 py-0.5 transition-colors' : ''
+                }`}
+              >
+                {name}
+              </h1>
+              {canEdit && (
+                <Pencil
+                  onClick={() => setEditing(true)}
+                  className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground cursor-pointer opacity-50 group-hover/title:opacity-100 transition-opacity shrink-0"
+                />
+              )}
+            </div>
           )}
 
           {/* Auto-Save status badge */}
@@ -347,6 +356,11 @@ export function EditorToolbar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <div className="w-px h-5 bg-border" />
+
+        {/* Theme Switcher Toggle */}
+        <ThemeToggle />
       </div>
     </header>
   );

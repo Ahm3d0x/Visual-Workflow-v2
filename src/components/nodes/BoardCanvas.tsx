@@ -95,6 +95,10 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const [isDraggingObject, setIsDraggingObject] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showZoomMenu, setShowZoomMenu] = useState(false);
+  
+  // Real-time collaborative whiteboard drawings preview state
+  const [remoteDrawings, setRemoteDrawings] = useState<Record<string, BoardStroke>>({});
+  const [currentUserId, setCurrentUserId] = useState<string>('collaborator');
 
   /* ── Drag & Resize States/Handlers ── */
   const [size, setSize] = useState(() => {
@@ -192,6 +196,15 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     return { x, y };
   }, [view]);
 
+  // Load active user session metadata
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data?.session?.user?.id) {
+        setCurrentUserId(data.session.user.id);
+      }
+    });
+  }, [supabase]);
+
   /* ─── Realtime collaboration sub-channel ─── */
   useEffect(() => {
     const ch = supabase.channel(`board:${nodeId}`, {
@@ -207,8 +220,35 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       }
     });
 
+    ch.on('broadcast', { event: 'stroke_draw' }, ({ payload }) => {
+      if (!payload?.userId || !payload?.stroke) return;
+      setRemoteDrawings((prev) => ({
+        ...prev,
+        [payload.userId]: payload.stroke,
+      }));
+    });
+
+    ch.on('broadcast', { event: 'stroke_draw_end' }, ({ payload }) => {
+      if (!payload?.userId) return;
+      setRemoteDrawings((prev) => {
+        const next = { ...prev };
+        delete next[payload.userId];
+        return next;
+      });
+    });
+
     ch.on('broadcast', { event: 'stroke_add' }, ({ payload }) => {
       if (!payload?.stroke) return;
+      
+      // Cleanup remote drawings buffer for this user
+      if (payload.userId) {
+        setRemoteDrawings((prev) => {
+          const next = { ...prev };
+          delete next[payload.userId];
+          return next;
+        });
+      }
+
       isRemoteRef.current = true;
       setStrokes((prev) => {
         if (prev.some((s) => s.id === payload.stroke.id)) return prev;
@@ -220,6 +260,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     ch.on('broadcast', { event: 'strokes_clear' }, () => {
       isRemoteRef.current = true;
       setStrokes([]);
+      setRemoteDrawings({});
       isRemoteRef.current = false;
     });
 
@@ -397,7 +438,12 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     strokes.forEach((stroke) => {
       drawStroke(ctx, stroke, stroke.id === selectedStrokeId);
     });
-  }, [bgColor, strokes, selectedStrokeId, drawStroke]);
+
+    // Draw active remote in-progress drawings
+    Object.values(remoteDrawings).forEach((stroke) => {
+      drawStroke(ctx, stroke, false);
+    });
+  }, [bgColor, strokes, selectedStrokeId, drawStroke, remoteDrawings]);
 
   useLayoutEffect(() => {
     renderCanvas();
@@ -576,7 +622,27 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     setCurrentPen(newPts);
     renderOverlay(newPts);
     setPointer((p) => ({ ...p, x, y }));
-  }, [tool, isDraggingObject, selectedStrokeId, pointer, currentPen, toCanvasCoords, renderOverlay]);
+
+    // Broadcast current in-progress drawings preview to other collaborators
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'stroke_draw',
+        payload: {
+          userId: currentUserId,
+          stroke: {
+            id: 'temp_draw',
+            tool: tool,
+            points: newPts,
+            color,
+            width: strokeWidth,
+            fill: useFill,
+            fillColor: useFill ? fillColor : undefined,
+          }
+        }
+      });
+    }
+  }, [tool, isDraggingObject, selectedStrokeId, pointer, currentPen, toCanvasCoords, renderOverlay, currentUserId, color, strokeWidth, useFill, fillColor]);
 
   const onPointerUp = useCallback(() => {
     if (isDraggingObject) {
@@ -608,10 +674,13 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     setStrokes(newStrokes);
     persistStrokes(newStrokes);
 
-    // Broadcast new stroke
-    if (!isRemoteRef.current && channelRef.current?.state === 'joined') {
+    // Broadcast completed stroke and draw end event
+    if (channelRef.current?.state === 'joined') {
       channelRef.current.send({
-        type: 'broadcast', event: 'stroke_add', payload: { stroke: newStroke }
+        type: 'broadcast', event: 'stroke_add', payload: { stroke: newStroke, userId: currentUserId }
+      });
+      channelRef.current.send({
+        type: 'broadcast', event: 'stroke_draw_end', payload: { userId: currentUserId }
       });
     }
 
@@ -624,7 +693,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
 
     setCurrentPen([]);
     setPointer((p) => ({ ...p, down: false }));
-  }, [isDraggingObject, pointer.down, currentPen, tool, color, strokeWidth, useFill, fillColor, strokes, persistStrokes]);
+  }, [isDraggingObject, pointer.down, currentPen, tool, color, strokeWidth, useFill, fillColor, strokes, persistStrokes, currentUserId]);
 
   /* ─── Text commit ─── */
   const commitText = useCallback(() => {

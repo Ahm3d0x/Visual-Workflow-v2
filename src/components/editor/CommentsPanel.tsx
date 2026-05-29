@@ -310,6 +310,16 @@ export function CommentsPanel({ locale, userRole, workspaceId, workflowId, isInl
         </button>
       </div>
 
+      {/* Visual Guideline tip */}
+      <div className="mx-4 my-2.5 p-2.5 rounded-xl border border-dashed border-accent/20 bg-accent/5 flex items-start gap-2 select-none shrink-0">
+        <Sparkles className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
+        <p className="text-[10px] leading-relaxed text-muted-foreground font-light">
+          {isRtl 
+            ? 'تلميح: حدد أي عقدة لوحة عمل للتعليق عليها مباشرة، أو انقر على لوحة العمل الفارغة لنشر تعليق عام على كامل المخطط.'
+            : 'Tip: Select any node on the board to comment on it specifically, or click the empty canvas to leave a global feedback thread.'}
+        </p>
+      </div>
+ 
       {/* Selected Node back-navigator banner */}
       {selectedNodeId && (
         <div className="p-3 bg-muted/40 border-b border-border/60 flex items-center justify-between">
