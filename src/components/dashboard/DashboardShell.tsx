@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from '@/i18n/routing';
+import { useRouter, usePathname } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { signOut } from '@/actions/auth.actions';
 import { Button } from '@/components/ui/button';
@@ -60,6 +60,7 @@ interface DashboardShellProps {
 
 export function DashboardShell({ children, locale, profile, workspaces }: DashboardShellProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
 
   const [activeWorkspace, setActiveWorkspace] = useState(() => {
@@ -94,7 +95,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
     setActiveWorkspace(ws);
     const searchParams = new URLSearchParams(window.location.search);
     searchParams.set('w', ws.id);
-    router.push(`${window.location.pathname}?${searchParams.toString()}`);
+    router.push(`${pathname}?${searchParams.toString()}`);
   };
 
   const handleCreateWorkspaceSubmit = async (e: React.FormEvent) => {
