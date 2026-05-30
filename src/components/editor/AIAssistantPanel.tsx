@@ -564,6 +564,110 @@ function CreditsChip({ used, limit, isRtl }: { used: number; limit: number; isRt
   );
 }
 
+function getOptimizedWorkflowContext(
+  nodes: Node[],
+  edges: Edge[],
+  selectedNodeId: string | null,
+  maxNodes = 40
+) {
+  // If we have fewer than maxNodes, just map and return all of them
+  if (nodes.length <= maxNodes) {
+    return {
+      nodes: nodes.map(n => ({
+        id: n.id,
+        type: n.type,
+        data: { label: n.data?.label, description: n.data?.description },
+        position: n.position,
+      })),
+      edges: edges.map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle,
+      })),
+    };
+  }
+
+  // Otherwise, extract a subgraph
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+  const adjacencyList = new Map<string, string[]>();
+  
+  // Build bidirectional adjacency list for BFS
+  for (const edge of edges) {
+    if (!adjacencyList.has(edge.source)) adjacencyList.set(edge.source, []);
+    if (!adjacencyList.has(edge.target)) adjacencyList.set(edge.target, []);
+    adjacencyList.get(edge.source)!.push(edge.target);
+    adjacencyList.get(edge.target)!.push(edge.source);
+  }
+
+  const visited = new Set<string>();
+  const queue: string[] = [];
+
+  // 1. Prioritize selected node
+  if (selectedNodeId && nodeMap.has(selectedNodeId)) {
+    queue.push(selectedNodeId);
+    visited.add(selectedNodeId);
+  }
+
+  // 2. Also prioritize start nodes (triggers)
+  const startNodes = nodes.filter(n => ['start', 'input', 'webhook'].includes(n.type || ''));
+  for (const sn of startNodes) {
+    if (visited.size >= maxNodes) break;
+    if (!visited.has(sn.id)) {
+      queue.push(sn.id);
+      visited.add(sn.id);
+    }
+  }
+
+  // 3. BFS Traversal
+  let head = 0;
+  while (head < queue.length && visited.size < maxNodes) {
+    const currentId = queue[head++];
+    const neighbors = adjacencyList.get(currentId) || [];
+    for (const neighbor of neighbors) {
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        queue.push(neighbor);
+        if (visited.size >= maxNodes) break;
+      }
+    }
+  }
+
+  // 4. Fill remaining space if BFS didn't reach maxNodes
+  if (visited.size < maxNodes) {
+    for (const node of nodes) {
+      if (!visited.has(node.id)) {
+        visited.add(node.id);
+        if (visited.size >= maxNodes) break;
+      }
+    }
+  }
+
+  // Get the selected node list
+  const selectedNodes = nodes
+    .filter(n => visited.has(n.id))
+    .map(n => ({
+      id: n.id,
+      type: n.type,
+      data: { label: n.data?.label, description: n.data?.description },
+      position: n.position,
+    }));
+
+  // Filter edges to only include those between selected nodes
+  const selectedEdges = edges
+    .filter(e => visited.has(e.source) && visited.has(e.target))
+    .map(e => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle,
+    }));
+
+  return { nodes: selectedNodes, edges: selectedEdges };
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistantPanelProps) {
@@ -596,6 +700,14 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Auto-resize textarea as the user types
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+  }, [input]);
 
   const addMessage = useCallback((msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
     const newMsg: ChatMessage = { ...msg, id: generateId(), timestamp: new Date() };
@@ -638,6 +750,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
 
     setIsLoading(true);
     try {
+      const optimizedContext = getOptimizedWorkflowContext(nodes, edges, selectedNodeId, 40);
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -646,8 +759,8 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
           workflowId,
           workspaceId,
           complexity,
-          existingNodes: nodes.map(n => ({ id: n.id, type: n.type, data: { label: n.data?.label }, position: n.position })),
-          existingEdges: edges.map(e => ({ source: e.source, target: e.target, sourceHandle: e.sourceHandle })),
+          existingNodes: optimizedContext.nodes,
+          existingEdges: optimizedContext.edges,
         }),
       });
 
@@ -698,7 +811,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, workflowId, workspaceId, complexity, nodes, edges, addMessage, updateMessage, creditsUsed, isRtl]);
+  }, [isLoading, workflowId, workspaceId, complexity, nodes, edges, selectedNodeId, addMessage, updateMessage, creditsUsed, isRtl]);
 
   // ─── Analyze Action ──────────────────────────────────────────────────────
 
@@ -719,7 +832,23 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges, workflowId, workspaceId }),
+        body: JSON.stringify({
+          nodes: nodes.map(n => ({
+            id: n.id,
+            type: n.type,
+            data: { label: n.data?.label, description: n.data?.description },
+            position: n.position,
+          })),
+          edges: edges.map(e => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            sourceHandle: e.sourceHandle,
+            targetHandle: e.targetHandle,
+          })),
+          workflowId,
+          workspaceId,
+        }),
       });
 
       const data = await res.json();
@@ -787,7 +916,23 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       const res = await fetch('/api/ai/suggest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges, workflowId, workspaceId }),
+        body: JSON.stringify({
+          nodes: nodes.map(n => ({
+            id: n.id,
+            type: n.type,
+            data: { label: n.data?.label, description: n.data?.description },
+            position: n.position,
+          })),
+          edges: edges.map(e => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            sourceHandle: e.sourceHandle,
+            targetHandle: e.targetHandle,
+          })),
+          workflowId,
+          workspaceId,
+        }),
       });
 
       const data = await res.json();
@@ -872,8 +1017,12 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           node: { id: selectedNode.id, type: selectedNode.type, data: selectedNode.data, position: selectedNode.position },
-          allNodes: nodes.map(n => ({ id: n.id, type: n.type, data: { label: n.data?.label } })),
-          allEdges: edges.map(e => ({ source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle })),
+          allNodes: nodes
+            .filter(n => n.id === selectedNodeId || edges.some(e => (e.source === selectedNodeId && e.target === n.id) || (e.target === selectedNodeId && e.source === n.id)))
+            .map(n => ({ id: n.id, type: n.type, data: { label: n.data?.label, description: n.data?.description } })),
+          allEdges: edges
+            .filter(e => e.source === selectedNodeId || e.target === selectedNodeId)
+            .map(e => ({ id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle })),
           workflowId,
           workspaceId,
         }),
@@ -1011,6 +1160,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
 
     setIsLoading(true);
     try {
+      const optimizedContext = getOptimizedWorkflowContext(nodes, edges, selectedNodeId, 45);
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1019,8 +1169,8 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
           workflowId,
           workspaceId,
           complexity: 'complex',
-          existingNodes: nodes.map(n => ({ id: n.id, type: n.type, data: { label: n.data?.label }, position: n.position })),
-          existingEdges: edges.map(e => ({ source: e.source, target: e.target, sourceHandle: e.sourceHandle })),
+          existingNodes: optimizedContext.nodes,
+          existingEdges: optimizedContext.edges,
         }),
       });
 
@@ -1059,7 +1209,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, nodes, edges, workflowId, workspaceId, addMessage, updateMessage, creditsUsed, isRtl]);
+  }, [isLoading, nodes, edges, selectedNodeId, workflowId, workspaceId, addMessage, updateMessage, isRtl]);
 
   // ─── Apply Generated Workflow ────────────────────────────────────────────
 
@@ -1461,23 +1611,36 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       {/* ── Input Area ── */}
       <div className="px-3 pb-4 pt-1 shrink-0">
         <div className="flex gap-2 items-end">
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isRtl
-              ? 'مثال: إنشاء مسار عمل لمعالجة الطلبات مع موافقة ومعالجة أخطاء ومعالجة متوازية...'
-              : 'e.g. Create an order processing workflow with approvals, error handling, and parallel processing...'}
-            disabled={isLoading}
-            rows={3}
-            className={cn(
-              'flex-1 resize-none text-xs leading-relaxed rounded-xl',
-              'bg-white/4 border-white/8 text-zinc-300 placeholder:text-zinc-600 text-left rtl:text-right',
-              'focus:ring-1 focus:ring-purple-500/40 focus:border-purple-500/30',
-              'transition-all duration-200'
+          <div className="flex-1 relative">
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={isRtl
+                ? 'مثال: إنشاء مسار عمل لمعالجة الطلبات مع موافقة ومعالجة أخطاء ومعالجة متوازية...'
+                : 'e.g. Create an order processing workflow with approvals, error handling, and parallel processing...'}
+              disabled={isLoading}
+              rows={2}
+              maxLength={4000}
+              style={{ overflow: 'auto', maxHeight: 200 }}
+              className={cn(
+                'w-full resize-none text-xs leading-relaxed rounded-xl',
+                'bg-white/4 border-white/8 text-zinc-300 placeholder:text-zinc-600 text-left rtl:text-right',
+                'focus:ring-1 focus:ring-purple-500/40 focus:border-purple-500/30',
+                'transition-colors duration-200'
+              )}
+            />
+            {input.length > 0 && (
+              <span className={cn(
+                'absolute bottom-1.5 text-[9px] tabular-nums font-mono',
+                isRtl ? 'left-2' : 'right-2',
+                input.length > 3500 ? 'text-red-400' : input.length > 2000 ? 'text-amber-400' : 'text-zinc-600'
+              )}>
+                {input.length}/4000
+              </span>
             )}
-          />
+          </div>
           <Button
             size="icon"
             onClick={handleSubmit}

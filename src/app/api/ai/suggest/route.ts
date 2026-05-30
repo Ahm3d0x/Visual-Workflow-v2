@@ -81,8 +81,11 @@ CURRENT WORKFLOW PROFILE:
 - Has approval gates: ${hasApproval ? 'Yes' : 'No'}
 - API/Webhook nodes: ${apiCount}
 - Decision branches: ${branchCount}
-
 Analyze the workflow and provide 4-8 ACTIONABLE improvement suggestions. Each suggestion MUST include concrete nodes and edges to add.
+
+LARGE WORKFLOW CAPPING RULE (CRITICAL):
+- If the total node count is large (> 40 nodes), focus strictly on the most impactful optimizations (high-impact reliability, security, or parallelization).
+- Limit the returned suggestions to a maximum of 4 high-priority suggestions. This is essential to prevent long generations and timeouts on large workflows.
 
 ═══════════════════════════════════════════════════════
 SUGGESTION CATEGORIES TO CONSIDER:

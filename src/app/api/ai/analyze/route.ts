@@ -131,6 +131,10 @@ HEALTH SCORE CALCULATION:
 COMPLEXITY RATING based on:
 - Node count, unique types used, branching depth, parallel sections, error handling coverage
 
+LARGE WORKFLOW CAPPING RULE (CRITICAL):
+- If the total node count is large (> 40 nodes), focus strictly on the most critical structural errors (orphans, dead-ends) and high-priority resilience issues (unprotected API calls).
+- Do not list minor or repetitive info items. CAP the returned "issues" array at a maximum of 12 items. This is essential to prevent long generations and timeouts on large workflows.
+
 Context about this workflow:
 - Total nodes: ${nodes.length} | Total edges: ${edges?.length ?? 0}
 - Unique node types: ${uniqueNodeTypes.join(', ')}
