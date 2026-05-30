@@ -40,41 +40,112 @@ export async function POST(request: Request) {
       );
     }
 
+    // 3. Build detailed workflow context for smart suggestions
     const workflowSummary = {
       nodeCount: nodes?.length ?? 0,
       edgeCount: edges?.length ?? 0,
-      nodeTypes: (nodes || []).map((n: { type: string; data: { label?: string } }) => ({
+      nodes: (nodes || []).map((n: { id: string; type: string; position: { x: number; y: number }; data: { label?: string; description?: string } }) => ({
+        id: n.id,
         type: n.type,
         label: n.data?.label,
+        description: n.data?.description,
+        position: n.position,
+      })),
+      edges: (edges || []).map((e: { id: string; source: string; target: string; sourceHandle?: string; targetHandle?: string }) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle,
       })),
     };
 
-    const systemPrompt = `You are a senior workflow architect providing expert improvement suggestions for visual workflow diagrams.
+    // Compute workflow characteristics for the prompt
+    const nodeTypes = (nodes || []).map((n: { type: string }) => n.type);
+    const hasParallel = nodeTypes.includes('parallel');
+    const hasMerge = nodeTypes.includes('merge');
+    const hasErrorHandler = nodeTypes.includes('error_handler') || nodeTypes.includes('retry');
+    const hasAI = nodeTypes.some((t: string) => t.startsWith('ai_'));
+    const hasApproval = nodeTypes.includes('approval');
+    const apiCount = nodeTypes.filter((t: string) => t === 'api_request' || t === 'webhook').length;
+    const branchCount = nodeTypes.filter((t: string) => ['if_else', 'decision', 'switch'].includes(t)).length;
 
-Analyze the workflow structure and provide 3-5 actionable improvement suggestions.
+    const systemPrompt = `You are a senior workflow architect providing ACTIONABLE, one-click-applicable improvement suggestions for visual workflow diagrams.
 
-Consider:
-- Performance optimizations (parallel processing opportunities)
-- Error handling gaps (API calls without error branches)
-- User experience improvements (clearer labels, better flow)
-- Missing validations or data checks
-- Opportunities for automation or AI enhancement
-- Security considerations (approval gates for sensitive operations)
-- Scalability concerns (loops without exit conditions)
+CURRENT WORKFLOW PROFILE:
+- Nodes: ${workflowSummary.nodeCount} | Edges: ${workflowSummary.edgeCount}
+- Has parallel processing: ${hasParallel ? 'Yes' : 'No'}
+- Has merge nodes: ${hasMerge ? 'Yes' : 'No'}
+- Has error handling: ${hasErrorHandler ? 'Yes' : 'No'}
+- Has AI nodes: ${hasAI ? 'Yes' : 'No'}
+- Has approval gates: ${hasApproval ? 'Yes' : 'No'}
+- API/Webhook nodes: ${apiCount}
+- Decision branches: ${branchCount}
+
+Analyze the workflow and provide 4-8 ACTIONABLE improvement suggestions. Each suggestion MUST include concrete nodes and edges to add.
+
+═══════════════════════════════════════════════════════
+SUGGESTION CATEGORIES TO CONSIDER:
+═══════════════════════════════════════════════════════
+
+OPTIMIZATION:
+- Replace sequential independent tasks with parallel + merge pattern
+- Add caching before repeated API calls
+- Consolidate redundant notification steps
+
+SECURITY:
+- Add approval gates before sensitive operations (payments, deletions, publishing)
+- Add validation steps after user input
+- Add authentication checks before API calls
+
+RELIABILITY:
+- Add retry logic for API calls
+- Add error handlers for webhook receivers
+- Add timeout/delay nodes for rate limiting
+- Add fallback paths for critical operations
+
+UX:
+- Add notification steps (email/sms) for key milestones
+- Add form steps for manual data collection
+- Add checklist steps for compliance
+
+PERFORMANCE:
+- Identify parallelizable tasks
+- Add data filtering before heavy processing
+- Add caching with variable nodes
+
+AI ENHANCEMENT:
+- Add AI classification for routing decisions
+- Add AI extraction for processing unstructured data
+- Add AI summarization for report generation
+- Add AI validation for data quality checks
+
+For each suggestion, calculate where to place new nodes based on existing node positions. Place new nodes near the relevant existing nodes with appropriate offsets.
 
 Respond ONLY with a JSON array (no markdown):
 [
   {
-    "type": "optimization",
+    "type": "reliability",
     "priority": "high",
-    "title": "Add parallel processing",
-    "description": "The email and SMS notification steps could run in parallel using a Parallel node to reduce total execution time by ~50%.",
-    "affected_node_type": "email"
+    "title": "Add Retry Logic for API Call",
+    "description": "The REST API request node 'Fetch User Data' has no retry mechanism. If the API fails temporarily (network timeout, rate limit), the entire workflow fails. Adding a retry block with 3 attempts and exponential backoff will make this 10x more resilient.",
+    "affected_node_id": "node_5",
+    "affected_node_type": "api_request",
+    "nodes_to_add": [
+      {"id": "sug_retry_1", "type": "retry", "position": {"x": 700, "y": 500}, "data": {"label": "Retry API Call", "description": "Retry up to 3 times with exponential backoff"}}
+    ],
+    "edges_to_add": [
+      {"id": "sug_edge_1", "source": "node_5", "target": "sug_retry_1", "sourceHandle": "error", "targetHandle": "in"},
+      {"id": "sug_edge_2", "source": "sug_retry_1", "target": "node_5", "sourceHandle": "out", "targetHandle": "in"}
+    ],
+    "edges_to_remove": []
   }
 ]
 
 Types: "optimization" | "security" | "reliability" | "ux" | "performance"
-Priorities: "high" | "medium" | "low"`;
+Priorities: "high" | "medium" | "low"
+
+IMPORTANT: All node IDs in nodes_to_add must start with "sug_" prefix. All edge IDs must start with "sug_edge_". Position new nodes intelligently near the affected area.`;
 
     // 3. Call Gemini
     const geminiKey = process.env.GEMINI_API_KEY;
@@ -83,7 +154,6 @@ Priorities: "high" | "medium" | "low"`;
     }
 
     const genAI = new GoogleGenerativeAI(geminiKey);
-    // Use gemini-2.5-flash for rapid, highly intelligent structural improvement advice
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       generationConfig: {
@@ -93,7 +163,7 @@ Priorities: "high" | "medium" | "low"`;
 
     const completion = await model.generateContent({
       contents: [
-        { role: 'user', parts: [{ text: `${systemPrompt}\n\nWorkflow Summary:\n${JSON.stringify(workflowSummary)}` }] }
+        { role: 'user', parts: [{ text: `${systemPrompt}\n\nWorkflow Data:\n${JSON.stringify(workflowSummary)}` }] }
       ]
     });
 
