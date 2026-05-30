@@ -35,7 +35,6 @@ import {
 import { useEditorStore } from '@/stores/editorStore';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import type { Node, Edge } from '@xyflow/react';
 
@@ -668,6 +667,53 @@ function getOptimizedWorkflowContext(
   return { nodes: selectedNodes, edges: selectedEdges };
 }
 
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
+function sanitizeGraphIds(newNodes: Node[], newEdges: Edge[]) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const idMap = new Map<string, string>();
+
+  // 1. Map node IDs
+  const sanitizedNodes = newNodes.map((n) => {
+    let newId = n.id;
+    if (!uuidRegex.test(n.id)) {
+      newId = generateUUID();
+      idMap.set(n.id, newId);
+    }
+    return {
+      ...n,
+      id: newId,
+    };
+  });
+
+  // 2. Map edge IDs and connection references
+  const sanitizedEdges = newEdges.map((e) => {
+    let newId = e.id;
+    if (!uuidRegex.test(e.id)) {
+      newId = generateUUID();
+    }
+    const source = idMap.get(e.source) || e.source;
+    const target = idMap.get(e.target) || e.target;
+    return {
+      ...e,
+      id: newId,
+      source,
+      target,
+    };
+  });
+
+  return { nodes: sanitizedNodes, edges: sanitizedEdges };
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistantPanelProps) {
@@ -694,12 +740,20 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages or loading state change
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    const scrollToBottom = () => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({
+          top: scrollRef.current.scrollHeight,
+          behavior: 'smooth',
+        });
+      }
+    };
+    scrollToBottom();
+    const timer = setTimeout(scrollToBottom, 80);
+    return () => clearTimeout(timer);
+  }, [messages, isLoading]);
 
   // Auto-resize textarea as the user types
   useEffect(() => {
@@ -724,11 +778,12 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
   // ─── Helper: Apply nodes and edges to canvas ──────────────────────────────
 
   const applyNodesToCanvas = useCallback((newNodes: Node[], newEdges: Edge[]) => {
-    if (newNodes.length > 0) {
-      setNodes([...nodes, ...newNodes]);
+    const { nodes: sanitizedNodes, edges: sanitizedEdges } = sanitizeGraphIds(newNodes, newEdges);
+    if (sanitizedNodes.length > 0) {
+      setNodes([...nodes, ...sanitizedNodes]);
     }
-    if (newEdges.length > 0) {
-      setEdges([...edges, ...newEdges]);
+    if (sanitizedEdges.length > 0) {
+      setEdges([...edges, ...sanitizedEdges]);
     }
   }, [nodes, edges, setNodes, setEdges]);
 
@@ -1214,6 +1269,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
   // ─── Apply Generated Workflow ────────────────────────────────────────────
 
   const handleApplyWorkflow = useCallback((genNodes: Node[], genEdges: Edge[], replace: boolean) => {
+    const { nodes: sanitizedNodes, edges: sanitizedEdges } = sanitizeGraphIds(genNodes, genEdges);
     if (replace) {
       const confirmed = window.confirm(
         isRtl
@@ -1221,30 +1277,25 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
           : 'This will replace your current canvas with the generated workflow. Are you sure?'
       );
       if (!confirmed) return;
-      setNodes(genNodes);
-      setEdges(genEdges);
+      setNodes(sanitizedNodes);
+      setEdges(sanitizedEdges);
     } else {
       // Insert alongside: offset new nodes
       const offsetX = nodes.length > 0 ? 600 : 0;
-      const offsetNodes = genNodes.map((n) => ({
+      const offsetNodes = sanitizedNodes.map((n) => ({
         ...n,
-        id: n.id.startsWith('ai_') ? n.id : `ai_${n.id}`,
         position: { x: n.position.x + offsetX, y: n.position.y },
       }));
-      const offsetEdges = genEdges.map((e) => ({
-        ...e,
-        id: e.id.startsWith('ai_') ? e.id : `ai_${e.id}`,
-        source: e.source.startsWith('ai_') ? e.source : `ai_${e.source}`,
-        target: e.target.startsWith('ai_') ? e.target : `ai_${e.target}`,
-      }));
       setNodes([...nodes, ...offsetNodes]);
-      setEdges([...edges, ...offsetEdges]);
+      setEdges([...edges, ...sanitizedEdges]);
     }
   }, [nodes, edges, setNodes, setEdges, isRtl]);
 
   // ─── Apply Expansion ────────────────────────────────────────────────────
 
   const handleApplyExpansion = useCallback((expandedNodes: Node[], expandedEdges: Edge[], originalNodeId: string) => {
+    const { nodes: sanitizedNodes, edges: sanitizedEdges } = sanitizeGraphIds(expandedNodes, expandedEdges);
+    
     // Remove the original node
     deleteNode(originalNodeId);
 
@@ -1254,47 +1305,48 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
 
     // Add the expanded sub-flow nodes
     const currentNodes = nodes.filter(n => n.id !== originalNodeId);
-    setNodes([...currentNodes, ...expandedNodes]);
+    setNodes([...currentNodes, ...sanitizedNodes]);
 
     // Build new edges: expanded internal edges + reconnections
     const currentEdges = edges.filter(e => e.source !== originalNodeId && e.target !== originalNodeId);
     const reconnectEdges: Edge[] = [];
 
     // Connect incoming edges to the first expanded node
-    if (expandedNodes.length > 0) {
-      const firstNode = expandedNodes[0];
+    if (sanitizedNodes.length > 0) {
+      const firstNode = sanitizedNodes[0];
       for (const ie of incomingEdges) {
         reconnectEdges.push({
           ...ie,
-          id: `recon_${ie.id}`,
+          id: generateUUID(),
           target: firstNode.id,
           targetHandle: 'in',
         });
       }
 
       // Connect last expanded node(s) to outgoing edges
-      const lastNode = expandedNodes[expandedNodes.length - 1];
+      const lastNode = sanitizedNodes[sanitizedNodes.length - 1];
       for (const oe of outgoingEdges) {
         reconnectEdges.push({
           ...oe,
-          id: `recon_${oe.id}`,
+          id: generateUUID(),
           source: lastNode.id,
           sourceHandle: 'out',
         });
       }
     }
 
-    setEdges([...currentEdges, ...expandedEdges, ...reconnectEdges]);
+    setEdges([...currentEdges, ...sanitizedEdges, ...reconnectEdges]);
   }, [nodes, edges, setNodes, setEdges, deleteNode]);
 
   // ─── Apply Auto-Connect ─────────────────────────────────────────────────
 
   const handleApplyAutoConnect = useCallback((newEdges: Edge[], nodesToAdd: Node[]) => {
-    if (nodesToAdd && nodesToAdd.length > 0) {
-      setNodes([...nodes, ...nodesToAdd]);
+    const { nodes: sanitizedNodes, edges: sanitizedEdges } = sanitizeGraphIds(nodesToAdd || [], newEdges || []);
+    if (sanitizedNodes.length > 0) {
+      setNodes([...nodes, ...sanitizedNodes]);
     }
-    if (newEdges && newEdges.length > 0) {
-      setEdges([...edges, ...newEdges]);
+    if (sanitizedEdges.length > 0) {
+      setEdges([...edges, ...sanitizedEdges]);
     }
   }, [nodes, edges, setNodes, setEdges]);
 
@@ -1454,7 +1506,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       </div>
 
       {/* ── Message History ── */}
-      <ScrollArea className="flex-1 px-3" ref={scrollRef as React.RefObject<HTMLDivElement>}>
+      <div ref={scrollRef} className="flex-1 px-3 overflow-y-auto custom-scrollbar">
         <div className="space-y-4 pb-2">
           {messages.map((msg) => (
             <div
@@ -1591,7 +1643,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
             </div>
           ))}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* ── Divider ── */}
       <div className="shrink-0 px-3">
