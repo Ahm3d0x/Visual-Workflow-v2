@@ -189,14 +189,38 @@ export default async function LandingPage({
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-border bg-background py-8 text-center text-sm text-muted-foreground transition-colors duration-300">
-        <p>
-          {isAr
-            ? '© 2026 جميع الحقوق محفوظة لمنصة سير العمل المرئي SaaS.'
-            : '© 2026 Visual Workflow SaaS. All rights reserved.'}
-        </p>
+      {/* Premium Footer */}
+      <footer className="border-t border-border bg-zinc-950 py-12 text-sm text-muted-foreground transition-colors duration-300 w-full">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="bg-primary text-primary-foreground p-1.5 rounded-lg flex items-center justify-center">
+              <Workflow className="w-4 h-4" />
+            </div>
+            <span className="font-sans font-bold text-sm tracking-tight bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
+              {isAr ? 'منصة سير العمل المرئي' : 'Visual Workflow SaaS'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-6 text-xs font-medium">
+            <Link href={`/${locale}/help`} className="hover:text-foreground hover:no-underline transition-colors">
+              {isAr ? 'مركز المساعدة ودليل العقد' : 'Help & Documentation'}
+            </Link>
+            <Link href={`/${locale}/terms`} className="hover:text-foreground hover:no-underline transition-colors">
+              {isAr ? 'شروط الخدمة' : 'Terms of Service'}
+            </Link>
+            <Link href={`/${locale}/privacy`} className="hover:text-foreground hover:no-underline transition-colors">
+              {isAr ? 'سياسة الخصوصية' : 'Privacy Policy'}
+            </Link>
+          </div>
+
+          <p className="text-xs text-zinc-500 font-light">
+            {isAr
+              ? '© 2026 جميع الحقوق محفوظة لمنصة سير العمل المرئي SaaS.'
+              : '© 2026 Visual Workflow SaaS. All rights reserved.'}
+          </p>
+        </div>
       </footer>
     </div>
   );
 }
+
