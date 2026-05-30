@@ -347,54 +347,93 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   }, [nodeId, updateNode, bgColor]);
 
   // Synchronize picker state to selected stroke properties on selection
-  useEffect(() => {
-    if (!selectedStrokeId) return;
-    const target = strokes.find((s) => s.id === selectedStrokeId);
-    if (target) {
-      if (target.color) setColor(target.color);
-      if (target.width) setStrokeWidth(target.width);
-      if (target.fill !== undefined) setUseFill(target.fill);
-      if (target.fillColor) setFillColor(target.fillColor);
-    }
-  }, [selectedStrokeId]);
-
-  // Reactively apply picker modifications to the selected shape's properties
-  useEffect(() => {
-    if (!selectedStrokeId) return;
-    const target = strokes.find((s) => s.id === selectedStrokeId);
-    if (!target) return;
-
-    const hasColorChanged = target.color !== color;
-    const hasWidthChanged = target.width !== strokeWidth;
-    const hasFillChanged = target.fill !== useFill;
-    const hasFillColorChanged = useFill && target.fillColor !== fillColor;
-
-    if (hasColorChanged || hasWidthChanged || hasFillChanged || hasFillColorChanged) {
-      const updatedStrokes = strokes.map((s) => {
-        if (s.id !== selectedStrokeId) return s;
-        return {
-          ...s,
-          color,
-          width: strokeWidth,
-          fill: useFill,
-          fillColor: useFill ? fillColor : undefined,
-        };
-      });
-
-      setStrokes(updatedStrokes);
-      persistStrokes(updatedStrokes);
-
-      // Broadcast update to all collaborators
-      const updatedStroke = updatedStrokes.find((s) => s.id === selectedStrokeId);
-      if (updatedStroke && channelRef.current?.state === 'joined') {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'stroke_add',
-          payload: { stroke: updatedStroke, userId: currentUserId }
+  const handleBrushColorChange = useCallback((newColor: string) => {
+    setColor(newColor);
+    if (selectedStrokeId) {
+      setStrokes((prev) => {
+        const next = prev.map((s) => {
+          if (s.id !== selectedStrokeId) return s;
+          const updated = { ...s, color: newColor };
+          if (channelRef.current?.state === 'joined') {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'stroke_add',
+              payload: { stroke: updated, userId: currentUserId }
+            });
+          }
+          return updated;
         });
-      }
+        persistStrokes(next);
+        return next;
+      });
     }
-  }, [color, strokeWidth, useFill, fillColor, selectedStrokeId, strokes, persistStrokes, currentUserId]);
+  }, [selectedStrokeId, currentUserId, persistStrokes]);
+
+  const handleStrokeWidthChange = useCallback((newWidth: number) => {
+    setStrokeWidth(newWidth);
+    if (selectedStrokeId) {
+      setStrokes((prev) => {
+        const next = prev.map((s) => {
+          if (s.id !== selectedStrokeId) return s;
+          const updated = { ...s, width: newWidth };
+          if (channelRef.current?.state === 'joined') {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'stroke_add',
+              payload: { stroke: updated, userId: currentUserId }
+            });
+          }
+          return updated;
+        });
+        persistStrokes(next);
+        return next;
+      });
+    }
+  }, [selectedStrokeId, currentUserId, persistStrokes]);
+
+  const handleUseFillChange = useCallback((newUseFill: boolean) => {
+    setUseFill(newUseFill);
+    if (selectedStrokeId) {
+      setStrokes((prev) => {
+        const next = prev.map((s) => {
+          if (s.id !== selectedStrokeId) return s;
+          const updated = { ...s, fill: newUseFill, fillColor: newUseFill ? fillColor : undefined };
+          if (channelRef.current?.state === 'joined') {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'stroke_add',
+              payload: { stroke: updated, userId: currentUserId }
+            });
+          }
+          return updated;
+        });
+        persistStrokes(next);
+        return next;
+      });
+    }
+  }, [selectedStrokeId, currentUserId, fillColor, persistStrokes]);
+
+  const handleFillColorChange = useCallback((newFillColor: string) => {
+    setFillColor(newFillColor);
+    if (selectedStrokeId) {
+      setStrokes((prev) => {
+        const next = prev.map((s) => {
+          if (s.id !== selectedStrokeId) return s;
+          const updated = { ...s, fill: true, fillColor: newFillColor };
+          if (channelRef.current?.state === 'joined') {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'stroke_add',
+              payload: { stroke: updated, userId: currentUserId }
+            });
+          }
+          return updated;
+        });
+        persistStrokes(next);
+        return next;
+      });
+    }
+  }, [selectedStrokeId, currentUserId, persistStrokes]);
 
   /* ─── Draw stroke helper (defined before renderCanvas so it can be called) ─── */
   const drawStroke = useCallback(function drawStrokeImpl(ctx: CanvasRenderingContext2D, stroke: BoardStroke, isSelected = false) {
@@ -679,6 +718,11 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       if (hit) {
         setSelectedStrokeId(hit.id);
         setIsDraggingObject(true);
+        // Sync picker state immediately on selection
+        if (hit.color) setColor(hit.color);
+        if (hit.width) setStrokeWidth(hit.width);
+        if (hit.fill !== undefined) setUseFill(hit.fill);
+        if (hit.fillColor) setFillColor(hit.fillColor);
       } else {
         setSelectedStrokeId(null);
       }
@@ -1225,7 +1269,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
                   {PALETTES.map((c) => (
                     <button
                       key={c}
-                      onClick={() => { setColor(c); setShowPalette(false); }}
+                      onClick={() => { handleBrushColorChange(c); setShowPalette(false); }}
                       className="w-8 h-8 rounded-lg border-2 transition-all hover:scale-110 cursor-pointer"
                       style={{ backgroundColor: c, borderColor: color === c ? '#6366f1' : 'transparent' }}
                     />
@@ -1236,7 +1280,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
                   <input
                     type="color"
                     value={color}
-                    onChange={(e) => setColor(e.target.value)}
+                    onChange={(e) => handleBrushColorChange(e.target.value)}
                     className="w-8 h-8 rounded-lg border border-zinc-700 cursor-pointer bg-transparent"
                   />
                 </div>
@@ -1246,7 +1290,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
 
           {/* Circular Quick Color Toggles matching the screenshot */}
           <button
-            onClick={() => setColor('#ffffff')}
+            onClick={() => handleBrushColorChange('#ffffff')}
             className={`w-10 h-10 rounded-full border-2 transition-all cursor-pointer flex items-center justify-center relative hover:scale-105 bg-white border-zinc-700
               ${color === '#ffffff' ? 'ring-2 ring-offset-2 ring-fuchsia-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
             title="Set White Brush Color"
@@ -1255,7 +1299,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           </button>
 
           <button
-            onClick={() => setColor('#18181b')}
+            onClick={() => handleBrushColorChange('#18181b')}
             className={`w-10 h-10 rounded-full border-2 transition-all cursor-pointer flex items-center justify-center relative hover:scale-105 bg-zinc-950 border-zinc-700
               ${color === '#18181b' ? 'ring-2 ring-offset-2 ring-fuchsia-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
             title="Set Dark Brush Color"
@@ -1267,7 +1311,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           {['rect', 'circle', 'triangle'].includes(tool) && (
             <>
               <button
-                onClick={() => setUseFill(!useFill)}
+                onClick={() => handleUseFillChange(!useFill)}
                 title="Toggle Fill"
                 className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer
                   ${useFill ? 'bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/40' : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200'}`}
@@ -1278,7 +1322,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
                 <input
                   type="color"
                   value={fillColor}
-                  onChange={(e) => setFillColor(e.target.value)}
+                  onChange={(e) => handleFillColorChange(e.target.value)}
                   className="w-8 h-8 rounded-lg border border-zinc-700 cursor-pointer bg-transparent mx-1"
                   title="Fill Color"
                 />
@@ -1423,7 +1467,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               {STROKE_WIDTHS.map((w) => (
                 <button
                   key={w}
-                  onClick={() => setStrokeWidth(w)}
+                  onClick={() => handleStrokeWidthChange(w)}
                   className={`h-8 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center
                     ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
                 >
@@ -1436,7 +1480,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               min={1}
               max={32}
               value={strokeWidth}
-              onChange={(e) => setStrokeWidth(Number(e.target.value))}
+              onChange={(e) => handleStrokeWidthChange(Number(e.target.value))}
               className="w-full mt-2 h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
             />
             {/* Preview line */}
@@ -1468,7 +1512,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               {PALETTES.map((c) => (
                 <button
                   key={c}
-                  onClick={() => setColor(c)}
+                  onClick={() => handleBrushColorChange(c)}
                   className="w-8 h-8 rounded-lg border-2 transition-all hover:scale-110 cursor-pointer"
                   style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
                 />
@@ -1477,7 +1521,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
             <div className="flex items-center gap-2 mt-2">
               <span className="text-[9px] text-zinc-500">Custom</span>
               <input type="color" value={color}
-                onChange={(e) => setColor(e.target.value)}
+                onChange={(e) => handleBrushColorChange(e.target.value)}
                 className="flex-1 h-7 rounded-lg border border-zinc-700 cursor-pointer bg-transparent"
               />
             </div>
