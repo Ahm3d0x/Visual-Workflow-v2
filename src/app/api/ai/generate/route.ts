@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { checkPlanLimit } from '@/lib/planLimits';
 import { NODE_SCHEMAS } from '@/lib/nodeSchemas';
 
@@ -22,8 +23,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // Create admin client to bypass RLS for billing and logging
+    const supabaseAdmin = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
     // 2. Credits check
-    const creditCheck = await checkPlanLimit(supabase, workspaceId, 'ai_credits');
+    const creditCheck = await checkPlanLimit(supabaseAdmin, workspaceId, 'ai_credits');
     if (creditCheck.current + GENERATE_COST > creditCheck.limit) {
       return NextResponse.json(
         {
@@ -140,7 +147,7 @@ DO NOT include any markdown code blocks, explanation, or HTML formatting. Return
       status: 'success',
     };
 
-    await (supabase.from('ai_requests') as unknown as {
+    await (supabaseAdmin.from('ai_requests') as unknown as {
       insert: (data: typeof aiRequestData) => Promise<{ error: { message: string } | null }>;
     }).insert(aiRequestData);
 

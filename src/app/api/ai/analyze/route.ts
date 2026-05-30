@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { checkPlanLimit } from '@/lib/planLimits';
 
 const ANALYZE_COST = 5;
@@ -32,8 +33,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ issues: [], message: 'Canvas is empty — add nodes to analyze.' });
     }
 
+    // Create admin client to bypass RLS for billing and logging
+    const supabaseAdmin = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
     // 2. Credits check
-    const creditCheck = await checkPlanLimit(supabase, workspaceId, 'ai_credits');
+    const creditCheck = await checkPlanLimit(supabaseAdmin, workspaceId, 'ai_credits');
     if (creditCheck.current + ANALYZE_COST > creditCheck.limit) {
       return NextResponse.json(
         {
@@ -130,7 +137,7 @@ If no issues found, return an empty array: []`;
       status: 'success',
     };
 
-    await (supabase.from('ai_requests') as unknown as {
+    await (supabaseAdmin.from('ai_requests') as unknown as {
       insert: (data: typeof aiRequestData) => Promise<{ error: { message: string } | null }>;
     }).insert(aiRequestData);
 
