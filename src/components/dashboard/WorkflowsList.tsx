@@ -6,6 +6,7 @@ import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
+import { useDialogStore } from '@/stores/dialogStore';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -156,19 +157,32 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setWorkflows((prev) => [data as any, ...prev]);
-      alert(isRtl ? 'تم تكرار سير العمل بنجاح!' : 'Workflow successfully duplicated!');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم تكرار سير العمل بنجاح!' : 'Workflow successfully duplicated!',
+        'success'
+      );
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm(isRtl ? 'هل أنت متأكد أنك تريد حذف مخطط سير العمل هذا نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.' : 'Are you sure you want to permanently delete this workflow? This action is irreversible.')) return;
+    const title = isRtl ? 'حذف سير العمل' : 'Delete Workflow';
+    const message = isRtl ? 'هل أنت متأكد أنك تريد حذف مخطط سير العمل هذا نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.' : 'Are you sure you want to permanently delete this workflow? This action is irreversible.';
+    
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText: isRtl ? 'حذف نهائي' : 'Delete Permanently',
+      cancelText: isRtl ? 'إلغاء' : 'Cancel'
+    });
+    if (!confirmed) return;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase.from('workflows') as any).delete().eq('id', id);
 
     if (!error) {
       setWorkflows((prev) => prev.filter((w) => w.id !== id));
-      alert(isRtl ? 'تم حذف مخطط سير العمل.' : 'Workflow deleted.');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم حذف مخطط سير العمل.' : 'Workflow deleted.',
+        'success'
+      );
     }
   };
 
@@ -195,7 +209,10 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
         .single();
 
       if (wfError || !newWf) {
-        alert((isRtl ? 'فشل تكرار هيكل سير العمل: ' : 'Failed to duplicate workflow structure: ') + wfError?.message);
+        useDialogStore.getState().showAlert(
+          isRtl ? 'خطأ' : 'Error',
+          (isRtl ? 'فشل تكرار هيكل سير العمل: ' : 'Failed to duplicate workflow structure: ') + wfError?.message
+        );
         setPortingLoading(false);
         return;
       }
@@ -258,7 +275,10 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
         setWorkflows((prev) => [newWf as any, ...prev]);
       }
 
-      alert(isRtl ? 'تم نسخ سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully copied to target workspace!');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم نسخ سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully copied to target workspace!',
+        'success'
+      );
     } else {
       // Move workflow: Update workspace_id
       const { error: moveError } = await (supabase
@@ -267,11 +287,17 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
         .eq('id', selectedWf.id);
 
       if (moveError) {
-        alert((isRtl ? 'فشل نقل سير العمل: ' : 'Failed to transfer workflow: ') + moveError.message);
+        useDialogStore.getState().showAlert(
+          isRtl ? 'خطأ' : 'Error',
+          (isRtl ? 'فشل نقل سير العمل: ' : 'Failed to transfer workflow: ') + moveError.message
+        );
       } else {
         // Remove from current local state list
         setWorkflows((prev) => prev.filter((w) => w.id !== selectedWf.id));
-        alert(isRtl ? 'تم نقل سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully transferred to target workspace!');
+        useDialogStore.getState().showNotification(
+          isRtl ? 'تم نقل سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully transferred to target workspace!',
+          'success'
+        );
       }
     }
 

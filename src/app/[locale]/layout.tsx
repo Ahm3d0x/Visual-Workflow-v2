@@ -2,6 +2,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { ThemeProvider } from 'next-themes';
 import { Inter, Tajawal } from 'next/font/google';
+import { DialogAndNotificationContainer } from '@/components/ui/DialogAndNotificationContainer';
 import '../globals.css';
 
 const inter = Inter({
@@ -23,7 +24,7 @@ export default async function LocaleLayout({
 }: {
   children: React.ReactNode;
   params: Promise<{ locale: string }>;
-}) {
+ }) {
   const { locale } = await params;
   const messages = await getMessages();
 
@@ -38,6 +39,7 @@ export default async function LocaleLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <NextIntlClientProvider messages={messages}>
             {children}
+            <DialogAndNotificationContainer locale={locale} />
           </NextIntlClientProvider>
         </ThemeProvider>
       </body>

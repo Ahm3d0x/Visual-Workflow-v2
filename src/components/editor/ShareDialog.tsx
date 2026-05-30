@@ -11,6 +11,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { useDialogStore } from '@/stores/dialogStore';
 import Link from 'next/link';
 import {
   getWorkflowShares,
@@ -212,7 +213,12 @@ export function ShareDialog({
 
   // Revoke link
   const handleRevokeLink = useCallback(async (shareId: string) => {
-    const confirmed = window.confirm(isRtl ? 'هل تريد إلغاء رابط المشاركة العام هذا؟ سيفقد أي شخص لديه هذا الرابط حق الوصول.' : 'Revoke this public share link? Anyone with this link will lose access.');
+    const title = isRtl ? 'إلغاء رابط المشاركة' : 'Revoke Share Link';
+    const message = isRtl ? 'هل تريد إلغاء رابط المشاركة العام هذا؟ سيفقد أي شخص لديه هذا الرابط حق الوصول.' : 'Revoke this public share link? Anyone with this link will lose access.';
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText: isRtl ? 'إلغاء الرابط' : 'Revoke Link',
+      cancelText: isRtl ? 'إلغاء' : 'Cancel'
+    });
     if (!confirmed) return;
     startTransition(async () => {
       await revokeShareLink(shareId, workspaceId);

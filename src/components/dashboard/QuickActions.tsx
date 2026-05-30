@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { useDialogStore } from '@/stores/dialogStore';
 import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
@@ -175,7 +176,11 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
       .single() as any);
 
     if (error) {
-      alert('Failed to create workflow: ' + error.message);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ في إنشاء سير العمل' : 'Workflow Creation Error',
+        (isRtl ? 'فشل إنشاء سير العمل: ' : 'Failed to create workflow: ') + error.message,
+        isRtl ? 'حسناً' : 'OK'
+      );
       setWfLoading(false);
     } else if (data) {
       // Insert mock preset nodes
@@ -205,7 +210,11 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
       const importData = JSON.parse(text);
 
       if (!importData.nodes || !Array.isArray(importData.nodes)) {
-        alert(isRtl ? 'ملف JSON غير صالح: مصفوفة العقد مفقودة.' : 'Invalid JSON file: nodes array is missing.');
+        useDialogStore.getState().showAlert(
+          isRtl ? 'ملف غير صالح' : 'Invalid File',
+          isRtl ? 'ملف JSON غير صالح: مصفوفة العقد مفقودة.' : 'Invalid JSON file: nodes array is missing.',
+          isRtl ? 'حسناً' : 'OK'
+        );
         return;
       }
 
@@ -227,7 +236,11 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
         .single() as any);
 
       if (wfError || !workflow) {
-        alert('Failed to create imported workflow: ' + wfError?.message);
+        useDialogStore.getState().showAlert(
+          isRtl ? 'خطأ في الاستيراد' : 'Import Error',
+          (isRtl ? 'فشل إنشاء سير العمل المستورد: ' : 'Failed to create imported workflow: ') + wfError?.message,
+          isRtl ? 'حسناً' : 'OK'
+        );
         setWfLoading(false);
         return;
       }
@@ -252,7 +265,11 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
         .insert(nodesToInsert);
 
       if (nodesError) {
-        alert('Failed to import nodes: ' + nodesError.message);
+        useDialogStore.getState().showAlert(
+          isRtl ? 'خطأ في استيراد العقد' : 'Node Import Error',
+          (isRtl ? 'فشل استيراد العقد: ' : 'Failed to import nodes: ') + nodesError.message,
+          isRtl ? 'حسناً' : 'OK'
+        );
         setWfLoading(false);
         return;
       }
@@ -290,7 +307,11 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
       if (e.target) e.target.value = '';
       router.push(`/workflows/${workflow.id}`);
     } catch (err) {
-      alert((isRtl ? 'حدث خطأ أثناء قراءة الملف: ' : 'Error reading file: ') + (err as Error).message);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ في قراءة الملف' : 'File Read Error',
+        (isRtl ? 'حدث خطأ أثناء قراءة الملف: ' : 'Error reading file: ') + (err as Error).message,
+        isRtl ? 'حسناً' : 'OK'
+      );
       setWfLoading(false);
     }
   };
@@ -315,7 +336,11 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
       .single() as any);
 
     if (error || !data) {
-      alert('Failed to create workflow from template: ' + error?.message);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ في إنشاء القالب' : 'Template Creation Error',
+        (isRtl ? 'فشل إنشاء سير العمل من القالب: ' : 'Failed to create workflow from template: ') + error?.message,
+        isRtl ? 'حسناً' : 'OK'
+      );
       setWfLoading(false);
       return;
     }
@@ -339,7 +364,11 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
       .insert(nodesToInsert);
 
     if (nodesError) {
-      alert('Failed to import template nodes: ' + nodesError.message);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ في استيراد عقد القالب' : 'Template Node Import Error',
+        (isRtl ? 'فشل استيراد عقد القالب: ' : 'Failed to import template nodes: ') + nodesError.message,
+        isRtl ? 'حسناً' : 'OK'
+      );
       setWfLoading(false);
       return;
     }

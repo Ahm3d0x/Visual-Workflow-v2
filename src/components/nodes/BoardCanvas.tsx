@@ -12,6 +12,7 @@ import {
 import { useEditorStore } from '@/stores/editorStore';
 import { createClient } from '@/lib/supabase/client';
 import { type BoardStroke } from './BoardNode';
+import { useDialogStore } from '@/stores/dialogStore';
 
 /* ─────────────────────── Types ─────────────────────── */
 type Tool = 'select' | 'pen' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser';
@@ -936,8 +937,13 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   }, [redoStack, strokes, persistStrokes]);
 
   /* ─── Clear all ─── */
-  const handleClearAll = useCallback(() => {
-    if (!confirm('Clear all drawings on this board?')) return;
+  const handleClearAll = useCallback(async () => {
+    const confirmed = await useDialogStore.getState().showConfirm(
+      'Clear Board',
+      'Are you sure you want to clear all drawings on this board?',
+      { confirmText: 'Clear', cancelText: 'Cancel' }
+    );
+    if (!confirmed) return;
     setUndoStack((prev) => [...prev, strokes]);
     setRedoStack([]);
     setStrokes([]);

@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/select';
 import { createClient } from '@/lib/supabase/client';
 import { NODE_SCHEMAS, type FieldSchema } from '@/lib/nodeSchemas';
+import { useDialogStore } from '@/stores/dialogStore';
 
 interface CustomNodeData {
   label?: string;
@@ -349,13 +350,21 @@ export function PropertiesPanel({
 
   const handleTransferOwnership = async (targetUserId: string, targetName: string) => {
     if (userRole !== 'owner' || !workspaceId) {
-      alert(isRtl ? 'فقط مالك مساحة العمل يمكنه نقل الملكية.' : 'Only the workspace owner can transfer ownership.');
+      useDialogStore.getState().showAlert(
+        isRtl ? 'نقل الملكية' : 'Transfer Ownership',
+        isRtl ? 'فقط مالك مساحة العمل يمكنه نقل الملكية.' : 'Only the workspace owner can transfer ownership.'
+      );
       return;
     }
+    const title = isRtl ? 'نقل الملكية' : 'Transfer Ownership';
     const message = isRtl
       ? `تحذير: هل أنت متأكد أنك تريد نقل ملكية مساحة العمل هذه إلى ${targetName}؟\n\nستتم ترقيتك إلى "مسؤول" وسيصبح هو المالك الوحيد لمساحة العمل. هذا الإجراء لا يمكن التراجع عنه.`
       : `WARNING: Are you sure you want to transfer ownership of this workspace to ${targetName}?\n\nYou will be downgraded to 'admin' and they will become the new sole 'owner' of this workspace. This action is irreversible.`;
-    if (!confirm(message)) return;
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText: isRtl ? 'نقل الملكية' : 'Transfer Ownership',
+      cancelText: isRtl ? 'إلغاء' : 'Cancel'
+    });
+    if (!confirmed) return;
 
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -385,12 +394,18 @@ export function PropertiesPanel({
 
       if (selfError) throw selfError;
 
-      alert(isRtl ? 'تم نقل الملكية بنجاح! ستتم إعادة تحميل مساحة العمل.' : 'Ownership successfully transferred! The workspace will reload.');
+      await useDialogStore.getState().showAlert(
+        isRtl ? 'نجاح' : 'Success',
+        isRtl ? 'تم نقل الملكية بنجاح! ستتم إعادة تحميل مساحة العمل.' : 'Ownership successfully transferred! The workspace will reload.'
+      );
       if (typeof window !== 'undefined') {
         window.location.reload();
       }
     } catch (err: any) {
-      alert((isRtl ? 'فشل نقل الملكية: ' : 'Failed to transfer ownership: ') + (err.message || err));
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ' : 'Error',
+        (isRtl ? 'فشل نقل الملكية: ' : 'Failed to transfer ownership: ') + (err.message || err)
+      );
       console.error('Transfer ownership failed:', err);
     }
   };
@@ -405,16 +420,29 @@ export function PropertiesPanel({
     
     if (!error) {
       setMembers((prev) => prev.map((m) => m.user_id === targetUserId ? { ...m, role: newRole } : m));
-      alert(isRtl ? 'تم تحديث دور المتعاون بنجاح!' : 'Collaborator role successfully updated!');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم تحديث دور المتعاون بنجاح!' : 'Collaborator role successfully updated!',
+        'success'
+      );
     }
   };
 
   const handleRemoveMember = async (targetUserId: string) => {
     if (userRole !== 'owner' || !workspaceId) {
-      alert(isRtl ? 'فقط مالكو مساحة العمل يمكنهم إلغاء الوصول.' : 'Only workspace owners can revoke access.');
+      useDialogStore.getState().showAlert(
+        isRtl ? 'إلغاء الوصول' : 'Revoke Access',
+        isRtl ? 'فقط مالكو مساحة العمل يمكنهم إلغاء الوصول.' : 'Only workspace owners can revoke access.'
+      );
       return;
     }
-    if (!confirm(isRtl ? 'هل أنت متأكد أنك تريد إلغاء الوصول لهذا المتعاون؟' : 'Are you sure you want to revoke access for this collaborator?')) return;
+    const title = isRtl ? 'إلغاء الوصول' : 'Revoke Access';
+    const message = isRtl ? 'هل أنت متأكد أنك تريد إلغاء الوصول لهذا المتعاون؟' : 'Are you sure you want to revoke access for this collaborator?';
+    
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText: isRtl ? 'إلغاء الوصول' : 'Revoke Access',
+      cancelText: isRtl ? 'إلغاء' : 'Cancel'
+    });
+    if (!confirmed) return;
     
     const { error } = await (supabase.from('workspace_members') as any)
       .delete()
@@ -423,7 +451,10 @@ export function PropertiesPanel({
     
     if (!error) {
       setMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
-      alert(isRtl ? 'تم إلغاء وصول المتعاون بنجاح.' : 'Collaborator access successfully revoked.');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم إلغاء وصول المتعاون بنجاح.' : 'Collaborator access successfully revoked.',
+        'success'
+      );
     }
   };
 

@@ -22,6 +22,7 @@ import dagre from 'dagre';
 
 import { useEditorStore, EditorComment, PolarHandle } from '@/stores/editorStore';
 import { useDebouncedCallback } from '@/hooks/useDebounce';
+import { useDialogStore } from '@/stores/dialogStore';
 import { createClient } from '@/lib/supabase/client';
 import { EditorToolbar } from './EditorToolbar';
 import { LibrarySidebar } from './LibrarySidebar';
@@ -199,9 +200,12 @@ function EditorInner({
     if (!permissions.canEdit) return;
     const selectedNodes = nodes.filter((n) => n.selected && n.type !== 'group');
     if (selectedNodes.length < 2) {
-      alert(locale === 'ar' 
-        ? 'الرجاء اختيار عقدتين على الأقل في لوحة العمل لتجميعهم معاً.' 
-        : 'Please select at least 2 nodes to group them.');
+      useDialogStore.getState().showAlert(
+        locale === 'ar' ? 'تجميع العقد' : 'Group Nodes',
+        locale === 'ar' 
+          ? 'الرجاء اختيار عقدتين على الأقل في لوحة العمل لتجميعهم معاً.' 
+          : 'Please select at least 2 nodes to group them.'
+      );
       return;
     }
 
@@ -271,12 +275,17 @@ function EditorInner({
     zoomTo(1, { duration: 500 });
   }, [zoomTo]);
 
-  const handleClearCanvas = useCallback(() => {
+  const handleClearCanvas = useCallback(async () => {
     if (!permissions.canEdit) return;
+    const title = locale === 'ar' ? 'مسح لوحة العمل' : 'Clear Canvas';
     const confirmClear = locale === 'ar' 
       ? 'هل أنت متأكد أنك تريد مسح جميع العقد والروابط من لوحة العمل بالكامل؟'
       : 'Are you sure you want to clear all nodes and edges from the canvas? This action cannot be undone.';
-    if (!confirm(confirmClear)) return;
+    const confirmed = await useDialogStore.getState().showConfirm(title, confirmClear, {
+      confirmText: locale === 'ar' ? 'مسح الكل' : 'Clear All',
+      cancelText: locale === 'ar' ? 'إلغاء' : 'Cancel'
+    });
+    if (!confirmed) return;
     
     setNodes([]);
     setEdges([]);

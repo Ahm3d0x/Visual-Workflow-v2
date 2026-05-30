@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { createClient } from '@/lib/supabase/client';
 import { CustomElementDesigner } from './CustomElementDesigner';
 import { PLAN_LIMITS } from '@/lib/planLimits';
+import { useDialogStore } from '@/stores/dialogStore';
 
 interface LibrarySidebarProps {
   locale: string;
@@ -210,11 +211,11 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
       const limit = PLAN_LIMITS[activePlan]?.max_favorites ?? 5;
       if (favorites.length >= limit) {
         setShowUpgradeBanner(true);
-        if (isRtl) {
-          alert(`تم الوصول للحد الأقصى: يمكنك الحصول على ما يصل إلى ${limit} من العناصر المفضلة في باقتك الحالية (${activePlan}). يرجى ترقية باقتك في قسم الفواتير لفتح المزيد.`);
-        } else {
-          alert(`Limit Reached: You can only have up to ${limit} favorites on your current ${activePlan} plan. Please upgrade your plan in the Billing section to unlock more favorites.`);
-        }
+        const title = isRtl ? 'حماية باقة الاشتراك' : 'Subscription Guard';
+        const msg = isRtl
+          ? `تم الوصول للحد الأقصى: يمكنك الحصول على ما يصل إلى ${limit} من العناصر المفضلة في باقتك الحالية (${activePlan}). يرجى ترقية باقتك في قسم الفواتير لفتح المزيد.`
+          : `Limit Reached: You can only have up to ${limit} favorites on your current ${activePlan} plan. Please upgrade your plan in the Billing section to unlock more favorites.`;
+        useDialogStore.getState().showAlert(title, msg);
         return;
       }
 

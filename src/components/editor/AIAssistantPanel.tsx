@@ -37,6 +37,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { useReactFlow, type Node, type Edge } from '@xyflow/react';
+import { useDialogStore } from '@/stores/dialogStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1277,14 +1278,17 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
 
   // ─── Apply Generated Workflow ────────────────────────────────────────────
 
-  const handleApplyWorkflow = useCallback((genNodes: Node[], genEdges: Edge[], replace: boolean) => {
+  const handleApplyWorkflow = useCallback(async (genNodes: Node[], genEdges: Edge[], replace: boolean) => {
     const { nodes: sanitizedNodes, edges: sanitizedEdges } = sanitizeGraphIds(genNodes, genEdges);
     if (replace) {
-      const confirmed = window.confirm(
-        isRtl
-          ? 'سيؤدي هذا إلى استبدال اللوحة الحالية بمسار العمل المولد. هل أنت متأكد؟'
-          : 'This will replace your current canvas with the generated workflow. Are you sure?'
-      );
+      const title = isRtl ? 'تطبيق مسار العمل' : 'Apply Workflow';
+      const message = isRtl
+        ? 'سيؤدي هذا إلى استبدال اللوحة الحالية بمسار العمل المولد. هل أنت متأكد؟'
+        : 'This will replace your current canvas with the generated workflow. Are you sure?';
+      const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+        confirmText: isRtl ? 'تطبيق واستبدال' : 'Apply & Replace',
+        cancelText: isRtl ? 'إلغاء' : 'Cancel'
+      });
       if (!confirmed) return;
       setNodes(sanitizedNodes);
       setEdges(sanitizedEdges);
@@ -1305,7 +1309,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       } catch (err) {
         console.warn('fitView failed:', err);
       }
-    }, 100);
+    }, 250);
   }, [nodes, edges, setNodes, setEdges, setHasUnsavedChanges, fitView, isRtl]);
 
   // ─── Apply Expansion ────────────────────────────────────────────────────

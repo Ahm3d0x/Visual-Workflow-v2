@@ -27,6 +27,7 @@ import {
   deleteWorkspaceAction
 } from '@/actions/workspace.actions';
 import { createClient } from '@/lib/supabase/client';
+import { useDialogStore } from '@/stores/dialogStore';
 
 interface Member {
   role: 'owner' | 'admin' | 'editor' | 'commenter' | 'viewer';
@@ -185,9 +186,15 @@ export function WorkspaceSettings({
     setCustomizationLoading(false);
 
     if (res.error) {
-      alert((isRtl ? 'فشل تحديث التخصيص: ' : 'Failed to update customization: ') + res.error);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ' : 'Error',
+        (isRtl ? 'فشل تحديث التخصيص: ' : 'Failed to update customization: ') + res.error
+      );
     } else {
-      alert(isRtl ? 'تم تحديث تخصيص مساحة العمل بنجاح!' : 'Workspace customization successfully updated!');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم تحديث تخصيص مساحة العمل بنجاح!' : 'Workspace customization successfully updated!',
+        'success'
+      );
       router.refresh();
     }
   };
@@ -208,9 +215,15 @@ export function WorkspaceSettings({
     setPreferencesLoading(false);
 
     if (res.error) {
-      alert((isRtl ? 'فشل حفظ التفضيلات: ' : 'Failed to save preferences: ') + res.error);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ' : 'Error',
+        (isRtl ? 'فشل حفظ التفضيلات: ' : 'Failed to save preferences: ') + res.error
+      );
     } else {
-      alert(isRtl ? 'تم حفظ تفضيلات اللوحة بنجاح!' : 'Canvas preferences successfully saved!');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم حفظ تفضيلات اللوحة بنجاح!' : 'Canvas preferences successfully saved!',
+        'success'
+      );
       router.refresh();
     }
   };
@@ -228,9 +241,15 @@ export function WorkspaceSettings({
     setIntegrationsLoading(false);
 
     if (res.error) {
-      alert((isRtl ? 'فشل حفظ الإعدادات: ' : 'Failed to save settings: ') + res.error);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ' : 'Error',
+        (isRtl ? 'فشل حفظ الإعدادات: ' : 'Failed to save settings: ') + res.error
+      );
     } else {
-      alert(isRtl ? 'تم تحديث إعدادات الذكاء الاصطناعي والربط بنجاح!' : 'AI & Integration settings successfully updated!');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم تحديث إعدادات الذكاء الاصطناعي والربط بنجاح!' : 'AI & Integration settings successfully updated!',
+        'success'
+      );
       router.refresh();
     }
   };
@@ -238,7 +257,10 @@ export function WorkspaceSettings({
   const handleDeleteWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
     if (deleteConfirmText !== initialWorkspace.name) {
-      alert(isRtl ? 'اسم مساحة العمل غير مطابِق!' : 'Workspace name does not match!');
+      useDialogStore.getState().showAlert(
+        isRtl ? 'اسم غير مطابِق' : 'Mismatch Name',
+        isRtl ? 'اسم مساحة العمل غير مطابِق!' : 'Workspace name does not match!'
+      );
       return;
     }
 
@@ -247,9 +269,15 @@ export function WorkspaceSettings({
     setDeleteLoading(false);
 
     if (res.error) {
-      alert((isRtl ? 'فشل حذف مساحة العمل: ' : 'Failed to delete workspace: ') + res.error);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ' : 'Error',
+        (isRtl ? 'فشل حذف مساحة العمل: ' : 'Failed to delete workspace: ') + res.error
+      );
     } else {
-      alert(isRtl ? 'تم حذف مساحة العمل بنجاح!' : 'Workspace successfully deleted!');
+      await useDialogStore.getState().showAlert(
+        isRtl ? 'نجاح' : 'Success',
+        isRtl ? 'تم حذف مساحة العمل بنجاح!' : 'Workspace successfully deleted!'
+      );
       window.location.href = `/${locale}/dashboard`;
     }
   };
@@ -267,13 +295,22 @@ export function WorkspaceSettings({
     setLinkLoading(false);
 
     if (res.error) {
-      if (res.error === 'PLAN_LIMIT_REACHED') {
-        alert(isRtl ? 'تم الوصول للحد الأقصى للباقة! قم بترقية باقتك لتفعيل المزيد من روابط الدعوة.' : 'Plan Limit Reached! Upgrade your plan to activate more invite links.');
+      if (res.error === 'PLAN_LIMIT_LIMIT_REACHED' || res.error === 'PLAN_LIMIT_REACHED') {
+        useDialogStore.getState().showAlert(
+          isRtl ? 'حماية باقة الاشتراك' : 'Subscription Guard',
+          isRtl ? 'تم الوصول للحد الأقصى للباقة! قم بترقية باقتك لتفعيل المزيد من روابط الدعوة.' : 'Plan Limit Reached! Upgrade your plan to activate more invite links.'
+        );
       } else {
-        alert((isRtl ? 'فشل إنشاء رابط الدعوة: ' : 'Failed to create invitation link: ') + res.error);
+        useDialogStore.getState().showAlert(
+          isRtl ? 'خطأ' : 'Error',
+          (isRtl ? 'فشل إنشاء رابط الدعوة: ' : 'Failed to create invitation link: ') + res.error
+        );
       }
     } else {
-      alert(isRtl ? 'تم إنشاء رابط دعوة مساحة العمل بنجاح!' : 'Workspace invitation link generated successfully!');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم إنشاء رابط دعوة مساحة العمل بنجاح!' : 'Workspace invitation link generated successfully!',
+        'success'
+      );
       setLinkTitle('');
       router.refresh();
       window.location.reload();
@@ -281,14 +318,27 @@ export function WorkspaceSettings({
   };
 
   const handleRevokeLink = async (linkId: string) => {
-    if (!confirm(isRtl ? 'هل تريد إلغاء هذا الرابط؟ سيتم حظر أي شخص يحاول الانضمام باستخدامه.' : 'Revoke this link? Anyone who tries to join using this token will be blocked.')) return;
+    const title = isRtl ? 'إلغاء رابط الدعوة' : 'Revoke Invite Link';
+    const message = isRtl ? 'هل تريد إلغاء هذا الرابط؟ سيتم حظر أي شخص يحاول الانضمام باستخدامه.' : 'Revoke this link? Anyone who tries to join using this token will be blocked.';
+    
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText: isRtl ? 'إلغاء الرابط' : 'Revoke Link',
+      cancelText: isRtl ? 'إلغاء' : 'Cancel'
+    });
+    if (!confirmed) return;
 
     const res = await revokeWorkspaceShareLink(linkId, initialWorkspace.id);
     if (res.error) {
-      alert((isRtl ? 'فشل الإلغاء: ' : 'Failed to revoke: ') + res.error);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ' : 'Error',
+        (isRtl ? 'فشل الإلغاء: ' : 'Failed to revoke: ') + res.error
+      );
     } else {
       setLinks((prev) => prev.filter((l) => l.id !== linkId));
-      alert(isRtl ? 'تم إلغاء رابط الدعوة.' : 'Invitation link revoked.');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم إلغاء رابط الدعوة.' : 'Invitation link revoked.',
+        'success'
+      );
     }
   };
 
@@ -308,17 +358,31 @@ export function WorkspaceSettings({
       .eq('user_id', targetUserId);
 
     if (error) {
-      alert((isRtl ? 'فشل تحديث الدور: ' : 'Failed to update role: ') + error.message);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ' : 'Error',
+        (isRtl ? 'فشل تحديث الدور: ' : 'Failed to update role: ') + error.message
+      );
     } else {
       setMembers((prev) =>
         prev.map((m) => (m.profiles?.id === targetUserId ? { ...m, role: nextRole } : m))
+      );
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم تحديث دور المتعاون بنجاح!' : 'Collaborator role successfully updated!',
+        'success'
       );
     }
     setMemberLoading(null);
   };
 
   const handleRemoveMember = async (targetUserId: string) => {
-    if (!confirm(isRtl ? 'هل أنت متأكد أنك تريد إزالة هذا العضو من مساحة العمل؟' : 'Are you sure you want to remove this member from the workspace?')) return;
+    const title = isRtl ? 'إزالة عضو' : 'Remove Member';
+    const message = isRtl ? 'هل أنت متأكد أنك تريد إزالة هذا العضو من مساحة العمل؟' : 'Are you sure you want to remove this member from the workspace?';
+    
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText: isRtl ? 'إزالة' : 'Remove',
+      cancelText: isRtl ? 'إلغاء' : 'Cancel'
+    });
+    if (!confirmed) return;
 
     setMemberLoading(targetUserId);
     const { error } = await (supabase
@@ -328,10 +392,16 @@ export function WorkspaceSettings({
       .eq('user_id', targetUserId);
 
     if (error) {
-      alert((isRtl ? 'فشل إزالة العضو: ' : 'Failed to remove member: ') + error.message);
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ' : 'Error',
+        (isRtl ? 'فشل إزالة العضو: ' : 'Failed to remove member: ') + error.message
+      );
     } else {
       setMembers((prev) => prev.filter((m) => m.profiles?.id !== targetUserId));
-      alert(isRtl ? 'تمت إزالة العضو بنجاح.' : 'Member removed successfully.');
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تمت إزالة العضو بنجاح.' : 'Member removed successfully.',
+        'success'
+      );
     }
     setMemberLoading(null);
   };

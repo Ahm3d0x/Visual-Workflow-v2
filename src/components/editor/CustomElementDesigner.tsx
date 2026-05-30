@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
 import { PLAN_LIMITS } from '@/lib/planLimits';
+import { useDialogStore } from '@/stores/dialogStore';
 
 interface CustomElementDesignerProps {
   workspaceId: string;
@@ -122,7 +123,10 @@ export function CustomElementDesigner({
     // 1. Check strict subscription plan-limit checks
     const limit = PLAN_LIMITS[activePlan]?.max_custom_elements ?? 2;
     if (customTemplatesCount >= limit) {
-      alert(`You have reached the maximum number of custom elements (${limit}) for the ${activePlan} tier. Please upgrade to add more!`);
+      useDialogStore.getState().showAlert(
+        'Plan Limit Reached',
+        `You have reached the maximum number of custom elements (${limit}) for the ${activePlan} tier. Please upgrade to add more!`
+      );
       return;
     }
 
@@ -169,7 +173,7 @@ export function CustomElementDesigner({
 
       if (error) throw new Error(error.message);
 
-      alert('Custom element successfully saved!');
+      useDialogStore.getState().showNotification('Custom element successfully saved!', 'success');
       setOpen(false);
       onSaved();
       
@@ -179,7 +183,7 @@ export function CustomElementDesigner({
       setCategory('basic');
       setStep(1);
     } catch (err) {
-      alert('Failed to save element: ' + (err as Error).message);
+      useDialogStore.getState().showAlert('Failed to Save Element', (err as Error).message);
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition, useEffect } from 'react';
+import { useDialogStore } from '@/stores/dialogStore';
 import { useRouter, usePathname } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 import { signOut } from '@/actions/auth.actions';
@@ -116,9 +117,19 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
 
     if (res.error) {
       if (res.error === 'PLAN_LIMIT_REACHED') {
-        alert(`Plan limit reached! Your plan allows up to ${res.data?.limit} workspaces. Please upgrade to create more.`);
+        useDialogStore.getState().showAlert(
+          isRtl ? 'تم الوصول إلى الحد الأقصى للخطة' : 'Plan Limit Reached',
+          isRtl 
+            ? `لقد وصلت إلى الحد الأقصى للخطة! تسمح خطتك بإنشاء ما يصل إلى ${res.data?.limit} مساحات عمل. يرجى الترقية لإنشاء المزيد.` 
+            : `Plan limit reached! Your plan allows up to ${res.data?.limit} workspaces. Please upgrade to create more.`,
+          isRtl ? 'حسناً' : 'OK'
+        );
       } else {
-        alert('Failed to create workspace: ' + res.error);
+        useDialogStore.getState().showAlert(
+          isRtl ? 'خطأ في إنشاء مساحة العمل' : 'Workspace Creation Error',
+          (isRtl ? 'فشل إنشاء مساحة العمل: ' : 'Failed to create workspace: ') + res.error,
+          isRtl ? 'حسناً' : 'OK'
+        );
       }
     } else if (res.data?.workspaceId) {
       setNewWsName('');

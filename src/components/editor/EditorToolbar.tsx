@@ -20,6 +20,7 @@ import { jsPDF } from 'jspdf';
 import { useTheme } from 'next-themes';
 import { getNodesBounds } from '@xyflow/react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { useDialogStore } from '@/stores/dialogStore';
 
 interface EditorToolbarProps {
   workflowId: string;
@@ -94,7 +95,7 @@ export function EditorToolbar({
 
   const handleExportPng = async () => {
     if (nodes.length === 0) {
-      alert(isRtl ? 'لا يمكن تصدير لوحة فارغة.' : 'Cannot export an empty canvas.');
+      useDialogStore.getState().showNotification(isRtl ? 'لا يمكن تصدير لوحة فارغة.' : 'Cannot export an empty canvas.', 'error');
       return;
     }
     setExporting(true);
@@ -121,7 +122,7 @@ export function EditorToolbar({
       link.href = dataUrl;
       link.click();
     } catch (err) {
-      alert((isRtl ? 'فشل تصدير الصورة: ' : 'Failed to export image: ') + (err as Error).message);
+      useDialogStore.getState().showNotification((isRtl ? 'فشل تصدير الصورة: ' : 'Failed to export image: ') + (err as Error).message, 'error');
     } finally {
       setExporting(false);
     }
@@ -129,7 +130,7 @@ export function EditorToolbar({
 
   const handleExportPdf = async () => {
     if (nodes.length === 0) {
-      alert(isRtl ? 'لا يمكن تصدير لوحة فارغة.' : 'Cannot export empty canvas.');
+      useDialogStore.getState().showNotification(isRtl ? 'لا يمكن تصدير لوحة فارغة.' : 'Cannot export empty canvas.', 'error');
       return;
     }
     setExporting(true);
@@ -160,7 +161,7 @@ export function EditorToolbar({
       pdf.addImage(dataUrl, 'PNG', 0, 0, bounds.width + 200, bounds.height + 200);
       pdf.save(`${name.replace(/\s+/g, '_')}_report.pdf`);
     } catch (err) {
-      alert((isRtl ? 'فشل تصدير ملف PDF: ' : 'Failed to export PDF: ') + (err as Error).message);
+      useDialogStore.getState().showNotification((isRtl ? 'فشل تصدير ملف PDF: ' : 'Failed to export PDF: ') + (err as Error).message, 'error');
     } finally {
       setExporting(false);
     }
