@@ -34,6 +34,7 @@ export const nodeTypes = {
   webhook: CustomNode,
   email: CustomNode,
   sms: CustomNode,
+  slack: CustomNode,
   database: CustomNode,
   file_upload: CustomNode,
   google_sheets: CustomNode,

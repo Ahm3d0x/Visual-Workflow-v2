@@ -36,7 +36,7 @@ import { useEditorStore } from '@/stores/editorStore';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import type { Node, Edge } from '@xyflow/react';
+import { useReactFlow, type Node, type Edge } from '@xyflow/react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -718,7 +718,8 @@ function sanitizeGraphIds(newNodes: Node[], newEdges: Edge[]) {
 
 export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistantPanelProps) {
   const isRtl = locale === 'ar';
-  const { panels, nodes, edges, setNodes, setEdges, selectedNodeId, deleteNode } = useEditorStore();
+  const { panels, nodes, edges, setNodes, setEdges, selectedNodeId, deleteNode, setHasUnsavedChanges } = useEditorStore();
+  const { fitView } = useReactFlow();
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -785,7 +786,15 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
     if (sanitizedEdges.length > 0) {
       setEdges([...edges, ...sanitizedEdges]);
     }
-  }, [nodes, edges, setNodes, setEdges]);
+    setHasUnsavedChanges(true);
+    setTimeout(() => {
+      try {
+        fitView({ duration: 800 });
+      } catch (err) {
+        console.warn('fitView failed:', err);
+      }
+    }, 100);
+  }, [nodes, edges, setNodes, setEdges, setHasUnsavedChanges, fitView]);
 
   // ─── Generate Action ─────────────────────────────────────────────────────
 
@@ -1289,7 +1298,15 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       setNodes([...nodes, ...offsetNodes]);
       setEdges([...edges, ...sanitizedEdges]);
     }
-  }, [nodes, edges, setNodes, setEdges, isRtl]);
+    setHasUnsavedChanges(true);
+    setTimeout(() => {
+      try {
+        fitView({ duration: 800 });
+      } catch (err) {
+        console.warn('fitView failed:', err);
+      }
+    }, 100);
+  }, [nodes, edges, setNodes, setEdges, setHasUnsavedChanges, fitView, isRtl]);
 
   // ─── Apply Expansion ────────────────────────────────────────────────────
 
@@ -1336,7 +1353,15 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
     }
 
     setEdges([...currentEdges, ...sanitizedEdges, ...reconnectEdges]);
-  }, [nodes, edges, setNodes, setEdges, deleteNode]);
+    setHasUnsavedChanges(true);
+    setTimeout(() => {
+      try {
+        fitView({ duration: 800 });
+      } catch (err) {
+        console.warn('fitView failed:', err);
+      }
+    }, 100);
+  }, [nodes, edges, setNodes, setEdges, deleteNode, setHasUnsavedChanges, fitView]);
 
   // ─── Apply Auto-Connect ─────────────────────────────────────────────────
 
@@ -1348,7 +1373,15 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
     if (sanitizedEdges.length > 0) {
       setEdges([...edges, ...sanitizedEdges]);
     }
-  }, [nodes, edges, setNodes, setEdges]);
+    setHasUnsavedChanges(true);
+    setTimeout(() => {
+      try {
+        fitView({ duration: 800 });
+      } catch (err) {
+        console.warn('fitView failed:', err);
+      }
+    }, 100);
+  }, [nodes, edges, setNodes, setEdges, setHasUnsavedChanges, fitView]);
 
   // ─── Submit handler ──────────────────────────────────────────────────────
 
