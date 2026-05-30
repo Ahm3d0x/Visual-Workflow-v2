@@ -3,7 +3,8 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { 
   Lock, Unlock, RotateCcw, Maximize, Trash2, MousePointerSquareDashed, FolderPlus,
-  Play, GitBranch, Database, Mail, Sparkles, StopCircle, X
+  Play, GitBranch, Database, Mail, Sparkles, StopCircle, X,
+  Copy, Clipboard, Settings, Layers
 } from 'lucide-react';
 import {
   ReactFlow,
@@ -69,7 +70,7 @@ function EditorInner({
 }: EditorClientProps) {
   const supabase = createClient();
   const { isMobile } = useWindowSize();
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getNodes, getEdges } = useReactFlow();
 
   const {
     nodes,
@@ -107,6 +108,19 @@ function EditorInner({
 
   // Phase 12: Share dialog state
   const [showShareDialog, setShowShareDialog] = useState(false);
+
+  // Context Menu & Clipboard state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId?: string;
+    edgeId?: string;
+  } | null>(null);
+  const [copiedNode, setCopiedNode] = useState<{
+    type: string;
+    data: Record<string, any>;
+    style?: React.CSSProperties;
+  } | null>(null);
 
   // Quick Connect / Drag-to-Create States
   const [connectStartParams, setConnectStartParams] = useState<{
@@ -780,7 +794,140 @@ function EditorInner({
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
     setSelectedEdge(null);
+    setContextMenu(null);
   }, [setSelectedNode, setSelectedEdge]);
+
+  // Context Menu Handlers
+  const onNodeContextMenu = useCallback(
+    (e: MouseEvent | React.MouseEvent, node: Node) => {
+      e.preventDefault();
+      setSelectedNode(node.id);
+      setSelectedEdge(null);
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        nodeId: node.id,
+      });
+    },
+    [setSelectedNode, setSelectedEdge]
+  );
+
+  const onEdgeContextMenu = useCallback(
+    (e: MouseEvent | React.MouseEvent, edge: Edge) => {
+      e.preventDefault();
+      setSelectedEdge(edge.id);
+      setSelectedNode(null);
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        edgeId: edge.id,
+      });
+    },
+    [setSelectedNode, setSelectedEdge]
+  );
+
+  const onPaneContextMenu = useCallback(
+    (e: MouseEvent | React.MouseEvent) => {
+      e.preventDefault();
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+      });
+    },
+    []
+  );
+
+  // Close context menu on left click anywhere on document
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleCloseMenu = () => setContextMenu(null);
+    window.addEventListener('click', handleCloseMenu);
+    return () => window.removeEventListener('click', handleCloseMenu);
+  }, [contextMenu]);
+
+  // Fast Clipboard Actions
+  const handleCopyNode = useCallback((nodeId: string) => {
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    setCopiedNode({
+      type: node.type || 'default',
+      data: JSON.parse(JSON.stringify(node.data || {})),
+      style: node.style,
+    });
+    setContextMenu(null);
+    useDialogStore.getState().showNotification(
+      locale === 'ar' ? 'تم نسخ العقدة إلى الحافظة' : 'Node copied to clipboard',
+      'success',
+      2000
+    );
+  }, [nodes, locale]);
+
+  const handlePasteNode = useCallback(() => {
+    if (!copiedNode || !contextMenu || !permissions.canEdit) return;
+    pushToUndo();
+    
+    const flowPos = screenToFlowPosition({
+      x: contextMenu.x,
+      y: contextMenu.y,
+    });
+
+    const newNodeId = crypto.randomUUID();
+    const pastedNode: Node = {
+      id: newNodeId,
+      type: copiedNode.type,
+      position: flowPos,
+      data: {
+        ...copiedNode.data,
+        label: (copiedNode.data.label || '') + (locale === 'ar' ? ' (نسخة)' : ' (Copy)'),
+      },
+      style: copiedNode.style,
+    };
+
+    setNodes([...nodes, pastedNode]);
+    setHasUnsavedChanges(true);
+    realtime.broadcastNodeChange('INSERT', pastedNode);
+    setContextMenu(null);
+  }, [copiedNode, contextMenu, nodes, setNodes, pushToUndo, setHasUnsavedChanges, screenToFlowPosition, permissions.canEdit, realtime, locale]);
+
+  const handleDuplicateNodeDirect = useCallback((nodeId: string) => {
+    if (!permissions.canEdit) return;
+    const node = nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+    pushToUndo();
+    
+    const clonedNode: Node = {
+      ...node,
+      id: crypto.randomUUID(),
+      position: {
+        x: node.position.x + 50,
+        y: node.position.y + 50,
+      },
+      selected: false,
+    };
+
+    setNodes([...nodes, clonedNode]);
+    setHasUnsavedChanges(true);
+    realtime.broadcastNodeChange('INSERT', clonedNode);
+    setContextMenu(null);
+  }, [nodes, setNodes, pushToUndo, setHasUnsavedChanges, permissions.canEdit, realtime]);
+
+  const handleDeleteNodeDirect = useCallback((nodeId: string) => {
+    if (!permissions.canEdit) return;
+    pushToUndo();
+    deleteNode(nodeId);
+    realtime.broadcastNodeChange('DELETE', undefined, nodeId);
+    setSelectedNode(null);
+    setContextMenu(null);
+  }, [deleteNode, realtime, permissions.canEdit, pushToUndo, setSelectedNode]);
+
+  const handleDeleteEdgeDirect = useCallback((edgeId: string) => {
+    if (!permissions.canEdit) return;
+    pushToUndo();
+    deleteEdge(edgeId);
+    realtime.broadcastEdgeChange('DELETE', undefined, edgeId);
+    setSelectedEdge(null);
+    setContextMenu(null);
+  }, [deleteEdge, realtime, permissions.canEdit, pushToUndo, setSelectedEdge]);
 
   // 8. Keyboard Shortcuts Event Listeners
   useEffect(() => {
@@ -792,12 +939,34 @@ function EditorInner({
 
       // Delete Node / Edge
       if ((e.key === 'Delete' || e.key === 'Backspace') && isEditable) {
-        if (selectedNodeId) {
-          deleteNode(selectedNodeId);
-          realtime.broadcastNodeChange('DELETE', undefined, selectedNodeId);
-        } else if (selectedEdgeId) {
-          deleteEdge(selectedEdgeId);
-          realtime.broadcastEdgeChange('DELETE', undefined, selectedEdgeId);
+        const selectedNodes = getNodes().filter((n) => n.selected);
+        const selectedEdges = getEdges().filter((e) => e.selected);
+
+        if (selectedNodes.length > 0 || selectedEdges.length > 0) {
+          pushToUndo();
+          selectedNodes.forEach((node) => {
+            deleteNode(node.id);
+            realtime.broadcastNodeChange('DELETE', undefined, node.id);
+          });
+          selectedEdges.forEach((edge) => {
+            deleteEdge(edge.id);
+            realtime.broadcastEdgeChange('DELETE', undefined, edge.id);
+          });
+          setSelectedNode(null);
+          setSelectedEdge(null);
+        } else {
+          // Fallback to active state
+          if (selectedNodeId) {
+            pushToUndo();
+            deleteNode(selectedNodeId);
+            realtime.broadcastNodeChange('DELETE', undefined, selectedNodeId);
+            setSelectedNode(null);
+          } else if (selectedEdgeId) {
+            pushToUndo();
+            deleteEdge(selectedEdgeId);
+            realtime.broadcastEdgeChange('DELETE', undefined, selectedEdgeId);
+            setSelectedEdge(null);
+          }
         }
       }
 
@@ -836,7 +1005,7 @@ function EditorInner({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedNodeId, selectedEdgeId, undo, redo, deleteNode, deleteEdge, setSelectedNode, setSelectedEdge, permissions.canEdit, handleManualSave, realtime, isEditable]);
+  }, [selectedNodeId, selectedEdgeId, undo, redo, deleteNode, deleteEdge, setSelectedNode, setSelectedEdge, permissions.canEdit, handleManualSave, realtime, isEditable, getNodes, getEdges, pushToUndo]);
 
   if (isMobile) {
     return (
@@ -937,6 +1106,9 @@ function EditorInner({
             onNodeClick={onNodeClick}
             onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
+            onNodeContextMenu={onNodeContextMenu}
+            onEdgeContextMenu={onEdgeContextMenu}
+            onPaneContextMenu={onPaneContextMenu}
             nodeTypes={nodeTypes}
             snapToGrid={true}
             snapGrid={[15, 15]}
@@ -1175,6 +1347,125 @@ function EditorInner({
           canShareLinks={canShareLinks}
           onClose={() => setShowShareDialog(false)}
         />
+      )}
+
+      {/* Floating Glassmorphic Context Menu */}
+      {contextMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 230),
+            top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 250),
+            zIndex: 999,
+          }}
+          className="w-56 bg-zinc-950/90 border border-zinc-800/80 rounded-2xl shadow-2xl p-1.5 font-sans flex flex-col gap-0.5 animate-fadeIn backdrop-blur-md"
+          dir={locale === 'ar' ? 'rtl' : 'ltr'}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {contextMenu.nodeId && (
+            <>
+              <button
+                onClick={() => {
+                  setSelectedNode(contextMenu.nodeId!);
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              >
+                <Settings className="w-4 h-4 text-zinc-400" />
+                <span>{locale === 'ar' ? 'الخصائص' : 'Properties'}</span>
+              </button>
+
+              <button
+                onClick={() => handleCopyNode(contextMenu.nodeId!)}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              >
+                <Copy className="w-4 h-4 text-zinc-400" />
+                <span>{locale === 'ar' ? 'نسخ العقدة' : 'Copy Node'}</span>
+              </button>
+
+              <button
+                onClick={() => handleDuplicateNodeDirect(contextMenu.nodeId!)}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+                disabled={!permissions.canEdit}
+              >
+                <Layers className="w-4 h-4 text-zinc-400" />
+                <span>{locale === 'ar' ? 'تكرار العقدة' : 'Duplicate Node'}</span>
+              </button>
+
+              <div className="h-px bg-zinc-800/80 my-1" />
+
+              <button
+                onClick={() => handleDeleteNodeDirect(contextMenu.nodeId!)}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+                disabled={!permissions.canEdit}
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{locale === 'ar' ? 'حذف العقدة' : 'Delete Node'}</span>
+              </button>
+            </>
+          )}
+
+          {contextMenu.edgeId && (
+            <button
+              onClick={() => handleDeleteEdgeDirect(contextMenu.edgeId!)}
+              className="w-full text-start px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              disabled={!permissions.canEdit}
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{locale === 'ar' ? 'حذف الرابط' : 'Delete Edge'}</span>
+            </button>
+          )}
+
+          {!contextMenu.nodeId && !contextMenu.edgeId && (
+            <>
+              <button
+                onClick={handlePasteNode}
+                disabled={!copiedNode || !permissions.canEdit}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              >
+                <Clipboard className="w-4 h-4 text-zinc-400" />
+                <span>{locale === 'ar' ? 'لصق العقدة هنا' : 'Paste Node Here'}</span>
+              </button>
+
+              <div className="h-px bg-zinc-800/80 my-1" />
+
+              <button
+                onClick={() => {
+                  fitView({ duration: 500 });
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              >
+                <Maximize className="w-4 h-4 text-zinc-400" />
+                <span>{locale === 'ar' ? 'ملائمة الشاشة' : 'Fit View'}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  zoomTo(1, { duration: 500 });
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              >
+                <RotateCcw className="w-4 h-4 text-zinc-400" />
+                <span>{locale === 'ar' ? 'إعادة تعيين التقريب' : 'Reset Zoom'}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleClearCanvas();
+                  setContextMenu(null);
+                }}
+                disabled={!permissions.canEdit}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{locale === 'ar' ? 'مسح لوحة العمل' : 'Clear Canvas'}</span>
+              </button>
+            </>
+          )}
+        </div>
       )}
     </div>
   );
