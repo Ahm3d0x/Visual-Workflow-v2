@@ -28,6 +28,7 @@ import {
   Menu,
   Plus,
   Loader2,
+  HelpCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createWorkspace } from '@/actions/workspace.actions';
@@ -133,6 +134,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
       { name: isRtl ? 'إعدادات مساحة العمل' : 'Workspace settings', href: `/${locale}/settings/workspace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Settings }
     ] : []),
     { name: isRtl ? 'الخطط والاشتراكات' : 'Billing & Plans', href: `/${locale}/billing${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: CreditCard },
+    { name: isRtl ? 'دليل المساعدة' : 'Help & Documentation', href: `/${locale}/help`, icon: HelpCircle },
   ];
 
   return (
