@@ -925,11 +925,11 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
                 onClick={() => setActiveArticleId(article.id)}
                 className={`w-full text-left rtl:text-right p-4 rounded-2xl border transition-all duration-300 cursor-pointer flex items-start gap-4 hover:shadow-xs select-none ${
                   isActive 
-                    ? 'bg-linear-to-r from-zinc-900 to-zinc-900/40 border-primary/50 ring-2 ring-primary/10 shadow-sm' 
-                    : 'bg-zinc-900/20 border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/50'
+                    ? 'bg-accent/15 border-primary/50 ring-2 ring-primary/10 shadow-sm' 
+                    : 'bg-card/50 border-border hover:border-accent hover:bg-card/85'
                 }`}
               >
-                <div className={`p-2.5 rounded-xl shrink-0 ${isActive ? 'bg-primary/20 text-primary' : 'bg-zinc-950 text-zinc-500 border border-zinc-800'}`}>
+                <div className={`p-2.5 rounded-xl shrink-0 ${isActive ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground border border-border'}`}>
                   {article.iconName === 'Layers' && <Layers className="w-5 h-5" />}
                   {article.iconName === 'Zap' && <Zap className="w-5 h-5" />}
                   {article.iconName === 'Users' && <Users className="w-5 h-5" />}
@@ -944,7 +944,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
         </div>
 
         {/* Right Active Article details */}
-        <Card className="lg:col-span-2 bg-zinc-900/35 border-border/80 rounded-3xl backdrop-blur-xs p-6 relative overflow-hidden">
+        <Card className="lg:col-span-2 bg-card border border-border rounded-3xl backdrop-blur-xs p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full filter blur-2xl pointer-events-none" />
           <div className="space-y-6">
             <div className="flex items-center gap-3">
@@ -967,10 +967,10 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
               <div className="space-y-3">
                 {(isRtl ? activeArticle.ar.steps : activeArticle.en.steps).map((step, idx) => (
                   <div key={idx} className="flex gap-3 items-start text-sm">
-                     <span className="w-6 h-6 rounded-full bg-zinc-950 border border-zinc-800 text-[10px] font-bold text-primary flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                     <span className="w-6 h-6 rounded-full bg-muted border border-border text-[10px] font-bold text-primary flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
                       {idx + 1}
                     </span>
-                    <p className="text-zinc-300 font-light pt-0.5">{step}</p>
+                    <p className="text-foreground/90 font-light pt-0.5">{step}</p>
                   </div>
                 ))}
               </div>
@@ -1000,7 +1000,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={isRtl ? 'ابحث عن عقدة (مثال: اللوحة، قرار)...' : 'Search nodes (e.g. Whiteboard, API)...'}
-              className="ps-10 rounded-2xl border-border/80 bg-zinc-900/30 py-5 focus:ring-primary shadow-xs font-sans text-xs"
+              className="ps-10 rounded-2xl border-border bg-card py-5 focus:ring-primary shadow-xs font-sans text-xs"
             />
           </div>
         </div>
@@ -1014,7 +1014,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
               className={`px-4.5 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-all ${
                 selectedCategory === c.id
                   ? 'bg-primary text-primary-foreground shadow-md shadow-primary/20 scale-102 font-extrabold'
-                  : 'bg-zinc-900/30 border border-zinc-900 text-muted-foreground hover:bg-zinc-900/60 hover:text-white'
+                  : 'bg-card border border-border text-muted-foreground hover:bg-accent/15 hover:text-foreground'
               }`}
             >
               {isRtl ? c.ar : c.en}
@@ -1044,7 +1044,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
                 <button
                   key={node.type}
                   onClick={() => setSelectedNode(node)}
-                  className="w-full text-left rtl:text-right rounded-3xl border border-border/60 bg-zinc-900/20 hover:bg-zinc-900/40 p-5 cursor-pointer shadow-xs select-none hover:shadow-md hover:border-primary/40 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group h-full"
+                  className="w-full text-left rtl:text-right rounded-3xl border border-border bg-card hover:bg-card/90 p-5 cursor-pointer shadow-xs select-none hover:shadow-md hover:border-primary/40 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group h-full"
                 >
                   <div className="space-y-4 w-full">
                     {/* Header */}
@@ -1052,7 +1052,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
                       <Badge className="bg-zinc-950/60 text-muted-foreground font-semibold text-[10px] capitalize border border-border/40 px-2 py-0.5 rounded-md">
                         {categoryLabel}
                       </Badge>
-                      <div className="w-8 h-8 rounded-lg bg-zinc-950 border border-zinc-800 flex items-center justify-center group-hover:border-primary/30 transition-colors">
+                      <div className="w-8 h-8 rounded-lg bg-muted border border-border flex items-center justify-center group-hover:border-primary/30 transition-colors">
                         <NodeIcon name={node.iconName} className={`w-4 h-4 ${getIconColor(node.iconName)}`} />
                       </div>
                     </div>
@@ -1092,7 +1092,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="p-4 rounded-2xl bg-zinc-900/20 border border-border/50 space-y-2">
+            <div className="p-4 rounded-2xl bg-card border border-border space-y-2">
               <Eye className="w-5 h-5 text-sky-400" />
               <h4 className="font-bold text-xs">{isRtl ? 'تباين عالي للمظهر' : 'High-Contrast Themes'}</h4>
               <p className="text-[10px] font-light text-muted-foreground">
@@ -1135,7 +1135,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
         </div>
 
         {/* Right Column: Keyboard Shortcuts Cheatsheet Table */}
-        <Card className="bg-zinc-900/35 border-border/80 rounded-3xl backdrop-blur-xs p-6 space-y-5">
+        <Card className="bg-card border border-border rounded-3xl backdrop-blur-xs p-6 space-y-5">
           <div className="flex items-center gap-2">
             <Keyboard className="w-5 h-5 text-primary" />
             <h3 className="font-extrabold text-sm text-foreground">
@@ -1143,11 +1143,11 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
             </h3>
           </div>
           
-          <div className="divide-y divide-border border border-border/60 rounded-2xl overflow-hidden bg-zinc-950/20">
+          <div className="divide-y divide-border border border-border rounded-2xl overflow-hidden bg-muted/20">
             {SHORTCUTS.map((s, idx) => (
               <div key={idx} className="flex justify-between items-center p-3 text-xs gap-3">
                 <span className="text-zinc-300 font-light text-left rtl:text-right">{isRtl ? s.ar : s.en}</span>
-                <kbd className="px-2.5 py-1 text-[10px] font-mono font-bold bg-zinc-950 border border-zinc-800 text-primary rounded-md shadow-xs shrink-0 select-all">
+                <kbd className="px-2.5 py-1 text-[10px] font-mono font-bold bg-muted border border-border text-primary rounded-md shadow-xs shrink-0 select-all">
                   {s.key}
                 </kbd>
               </div>
@@ -1160,7 +1160,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
       {selectedNode && (
         <div className="fixed inset-0 z-9999 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn" onClick={() => setSelectedNode(null)}>
           <Card 
-            className="max-w-xl w-full bg-zinc-900 border-border/90 rounded-3xl shadow-2xl relative p-6 space-y-6 text-left rtl:text-right overflow-y-auto max-h-[90vh]" 
+            className="max-w-xl w-full bg-card border border-border rounded-3xl shadow-2xl relative p-6 space-y-6 text-left rtl:text-right overflow-y-auto max-h-[90vh]" 
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header info */}
@@ -1173,7 +1173,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
                   {isRtl ? selectedNode.ar.label : selectedNode.en.label}
                 </CardTitle>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-zinc-950 border border-zinc-800 flex items-center justify-center text-primary shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center text-primary shrink-0">
                 <NodeIcon name={selectedNode.iconName} className={`w-5 h-5 ${getIconColor(selectedNode.iconName)}`} />
               </div>
             </div>
@@ -1183,7 +1183,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
               <h5 className="text-[10px] uppercase font-extrabold tracking-wider text-muted-foreground/80">
                 {isRtl ? 'الوصف ووظيفة العقدة' : 'Node Function Description'}
               </h5>
-              <p className="text-xs font-light text-zinc-300 leading-relaxed">
+              <p className="text-xs font-light text-foreground/90 leading-relaxed">
                 {isRtl ? selectedNode.ar.description : selectedNode.en.description}
               </p>
             </div>
@@ -1195,7 +1195,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
               </h5>
               <div className="flex flex-wrap gap-1.5">
                 {(isRtl ? selectedNode.ar.properties : selectedNode.en.properties).map((prop, idx) => (
-                  <Badge key={idx} variant="outline" className="bg-zinc-950 border-zinc-800 text-zinc-400 text-[10px] font-medium px-2.5 py-1 rounded-lg">
+                  <Badge key={idx} variant="outline" className="bg-muted border-border text-muted-foreground text-[10px] font-medium px-2.5 py-1 rounded-lg">
                     {prop}
                   </Badge>
                 ))}
@@ -1207,7 +1207,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
               <h5 className="text-[10px] uppercase font-extrabold tracking-wider text-primary mb-1">
                 {isRtl ? 'نقاط القوة والاستفادة القصوى' : 'Best Practice & Maximizing Benefits'}
               </h5>
-              <p className="text-xs font-light text-zinc-300 leading-relaxed">
+              <p className="text-xs font-light text-foreground/90 leading-relaxed">
                 {isRtl ? selectedNode.ar.benefits : selectedNode.en.benefits}
               </p>
             </div>
@@ -1218,7 +1218,7 @@ export default function HelpPage({ params }: { params: Promise<{ locale: string 
                 <Info className="w-3.5 h-3.5 text-zinc-500" />
                 {isRtl ? 'إرشادات الوصول المخصصة للعقدة' : 'Specific Accessibility Directives'}
               </h5>
-              <p className="text-xs font-light text-zinc-400">
+              <p className="text-xs font-light text-muted-foreground">
                 {isRtl ? selectedNode.ar.accessibility : selectedNode.en.accessibility}
               </p>
             </div>

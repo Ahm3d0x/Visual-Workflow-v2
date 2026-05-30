@@ -213,7 +213,7 @@ export default function TermsPage({ params }: { params: Promise<{ locale: string
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={isRtl ? 'ابحث في الشروط والأحكام...' : 'Search terms documents...'}
-              className="ps-10 rounded-2xl border-border/80 bg-zinc-900/30 py-5 focus:ring-primary shadow-xs font-sans text-xs"
+              className="ps-10 rounded-2xl border-border bg-card py-5 focus:ring-primary shadow-xs font-sans text-xs"
             />
           </div>
 
@@ -234,11 +234,11 @@ export default function TermsPage({ params }: { params: Promise<{ locale: string
                   onClick={() => setActiveSectionId(section.id)}
                   className={`w-full text-left rtl:text-right p-4.5 rounded-2xl border transition-all duration-300 cursor-pointer flex items-center gap-4 hover:shadow-xs select-none ${
                     isActive 
-                      ? 'bg-linear-to-r from-zinc-900 to-zinc-900/40 border-primary/50 ring-2 ring-primary/10 shadow-sm' 
-                      : 'bg-zinc-900/20 border-zinc-900 hover:border-zinc-800 hover:bg-zinc-900/50'
+                      ? 'bg-accent/15 border-primary/50 ring-2 ring-primary/10 shadow-sm' 
+                      : 'bg-card/50 border-border hover:border-accent hover:bg-card/85'
                   }`}
                 >
-                  <div className={`p-2.5 rounded-xl shrink-0 ${isActive ? 'bg-primary/20 text-primary' : 'bg-zinc-950 text-zinc-500 border border-zinc-800'}`}>
+                  <div className={`p-2.5 rounded-xl shrink-0 ${isActive ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground border border-border'}`}>
                     {section.iconName === 'Key' && <Key className="w-4 h-4" />}
                     {section.iconName === 'Activity' && <Activity className="w-4 h-4" />}
                     {section.iconName === 'CreditCard' && <CreditCard className="w-4 h-4" />}
@@ -255,7 +255,7 @@ export default function TermsPage({ params }: { params: Promise<{ locale: string
         </div>
 
         {/* Right detailed policy presentation card */}
-        <Card className="lg:col-span-2 bg-zinc-900/35 border-border/80 rounded-3xl backdrop-blur-xs p-6 relative overflow-hidden">
+        <Card className="lg:col-span-2 bg-card border border-border rounded-3xl backdrop-blur-xs p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full filter blur-2xl pointer-events-none" />
           <div className="space-y-6">
             
@@ -279,10 +279,10 @@ export default function TermsPage({ params }: { params: Promise<{ locale: string
               <div className="space-y-4">
                 {(isRtl ? activeSection.ar.details : activeSection.en.details).map((detail, idx) => (
                   <div key={idx} className="flex gap-3.5 items-start text-xs leading-relaxed">
-                    <span className="w-5.5 h-5.5 rounded-lg bg-zinc-950 border border-zinc-800 text-[9px] font-bold text-primary flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                    <span className="w-5.5 h-5.5 rounded-lg bg-muted border border-border text-[9px] font-bold text-primary flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
                       {idx + 1}
                     </span>
-                    <p className="text-zinc-300 font-light pt-0.5">{detail}</p>
+                    <p className="text-foreground/90 font-light pt-0.5">{detail}</p>
                   </div>
                 ))}
               </div>

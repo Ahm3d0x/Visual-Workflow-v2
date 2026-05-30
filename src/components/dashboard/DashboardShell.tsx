@@ -291,7 +291,10 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                       <p className="font-light text-xs text-muted-foreground truncate">{profile.email}</p>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator className="bg-border" />
-                    <DropdownMenuItem className="cursor-pointer gap-2 rounded-lg m-1 font-medium">
+                    <DropdownMenuItem
+                      onClick={() => router.push('/settings/profile')}
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
+                    >
                       <User className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الملف الشخصي' : 'Profile'}
                     </DropdownMenuItem>
                     {activeWorkspace && activeWorkspace.role === 'owner' && (

@@ -117,3 +117,63 @@ export async function updatePassword(password: string) {
     return { error: err instanceof Error ? err.message : 'An unexpected error occurred' };
   }
 }
+
+export async function updateProfile(fullName: string, avatarUrl: string | null) {
+  try {
+    const supabase = await createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { error: 'Not authenticated' };
+    }
+
+    interface ProfilesUpdateResult {
+      data: {
+        id: string;
+        email: string;
+        full_name: string | null;
+        avatar_url: string | null;
+        created_at: string;
+      } | null;
+      error: { message: string } | null;
+    }
+
+    interface ProfilesClient {
+      update: (d: { full_name: string; avatar_url: string | null }) => {
+        eq: (k: string, v: string) => {
+          select: () => {
+            single: () => Promise<ProfilesUpdateResult>;
+          };
+        };
+      };
+    }
+
+    const { data, error } = await (supabase
+      .from('profiles') as unknown as ProfilesClient)
+      .update({
+        full_name: fullName,
+        avatar_url: avatarUrl,
+      })
+      .eq('id', user.id)
+      .select()
+      .single();
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Also update auth.users metadata so client sessions are in sync if needed
+    await supabase.auth.updateUser({
+      data: {
+        full_name: fullName,
+        avatar_url: avatarUrl,
+      }
+    } as unknown as never);
+
+    revalidatePath('/', 'layout');
+    return { success: true, data };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'An unexpected error occurred' };
+  }
+}
+
