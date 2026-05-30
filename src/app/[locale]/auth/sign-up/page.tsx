@@ -203,6 +203,24 @@ export default function SignUpPage({
                   t('sign_up')
                 )}
               </Button>
+
+              <p className="text-[10px] text-zinc-500 font-light text-center mt-2 leading-normal">
+                {locale === 'ar' ? (
+                  <>
+                    بالنقر فوق التسجيل، فإنك توافق على{' '}
+                    <Link href={`/${locale}/terms`} className="text-accent hover:underline font-semibold">شروط الخدمة</Link>{' '}
+                    و{' '}
+                    <Link href={`/${locale}/privacy`} className="text-accent hover:underline font-semibold">سياسة الخصوصية</Link>.
+                  </>
+                ) : (
+                  <>
+                    By clicking Sign Up, you agree to our{' '}
+                    <Link href={`/${locale}/terms`} className="text-accent hover:underline font-semibold">Terms of Service</Link>{' '}
+                    and{' '}
+                    <Link href={`/${locale}/privacy`} className="text-accent hover:underline font-semibold">Privacy Policy</Link>.
+                  </>
+                )}
+              </p>
             </form>
 
             <div className="relative py-2">
@@ -235,6 +253,16 @@ export default function SignUpPage({
                 className="font-semibold text-accent hover:underline"
               >
                 Sign In
+              </Link>
+            </div>
+
+            <div className="text-center text-[11px] font-light text-zinc-500 mt-6 pt-4 border-t border-border flex justify-center gap-4">
+              <Link href={`/${locale}/terms`} className="hover:text-foreground hover:underline transition-colors">
+                {locale === 'ar' ? 'شروط الخدمة' : 'Terms of Service'}
+              </Link>
+              <span>•</span>
+              <Link href={`/${locale}/privacy`} className="hover:text-foreground hover:underline transition-colors">
+                {locale === 'ar' ? 'سياسة الخصوصية' : 'Privacy Policy'}
               </Link>
             </div>
           </CardContent>

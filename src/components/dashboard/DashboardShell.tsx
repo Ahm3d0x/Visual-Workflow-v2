@@ -29,6 +29,7 @@ import {
   Plus,
   Loader2,
   HelpCircle,
+  Shield,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createWorkspace } from '@/actions/workspace.actions';
@@ -303,8 +304,21 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                     )}
                     <DropdownMenuSeparator className="bg-border" />
                     <DropdownMenuItem
+                      onClick={() => router.push(`/${locale}/terms`)}
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs"
+                    >
+                      <Shield className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'شروط الخدمة' : 'Terms of Service'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => router.push(`/${locale}/privacy`)}
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs"
+                    >
+                      <Shield className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'سياسة الخصوصية' : 'Privacy Policy'}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-border" />
+                    <DropdownMenuItem
                       onClick={handleSignOut}
-                      className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive"
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive text-xs"
                     >
                       <LogOut className="w-4 h-4" /> {isRtl ? 'تسجيل الخروج' : 'Sign Out'}
                     </DropdownMenuItem>

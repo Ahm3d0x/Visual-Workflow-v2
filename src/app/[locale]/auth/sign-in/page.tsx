@@ -203,6 +203,16 @@ export default function SignInPage({
                 Create Account
               </Link>
             </div>
+
+            <div className="text-center text-[11px] font-light text-zinc-500 mt-6 pt-4 border-t border-border flex justify-center gap-4">
+              <Link href={`/${locale}/terms`} className="hover:text-foreground hover:underline transition-colors">
+                {locale === 'ar' ? 'شروط الخدمة' : 'Terms of Service'}
+              </Link>
+              <span>•</span>
+              <Link href={`/${locale}/privacy`} className="hover:text-foreground hover:underline transition-colors">
+                {locale === 'ar' ? 'سياسة الخصوصية' : 'Privacy Policy'}
+              </Link>
+            </div>
           </CardContent>
         </Card>
       </div>
