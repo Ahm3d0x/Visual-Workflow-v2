@@ -327,7 +327,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       if (!res.ok || data.error) {
         updateMessage(loadingId, {
           loading: false,
-          content: data.message || (isRtl ? 'فشل توليد مسار العمل. يرجى المحاولة مرة أخرى.' : 'Failed to generate workflow. Please try again.'),
+          content: data.details || data.message || (isRtl ? 'فشل توليد مسار العمل. يرجى المحاولة مرة أخرى.' : 'Failed to generate workflow. Please try again.'),
         });
         return;
       }
@@ -383,7 +383,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       if (!res.ok || data.error) {
         updateMessage(loadingId, {
           loading: false,
-          content: data.message || (isRtl ? 'فشل التحليل. يرجى المحاولة مرة أخرى.' : 'Analysis failed. Please try again.'),
+          content: data.details || data.message || (isRtl ? 'فشل التحليل. يرجى المحاولة مرة أخرى.' : 'Analysis failed. Please try again.'),
         });
         return;
       }
@@ -442,7 +442,7 @@ export function AIAssistantPanel({ workflowId, workspaceId, locale }: AIAssistan
       if (!res.ok || data.error) {
         updateMessage(loadingId, {
           loading: false,
-          content: data.message || (isRtl ? 'تعذر توليد الاقتراحات. يرجى المحاولة مرة أخرى.' : 'Could not generate suggestions. Please try again.'),
+          content: data.details || data.message || (isRtl ? 'تعذر توليد الاقتراحات. يرجى المحاولة مرة أخرى.' : 'Could not generate suggestions. Please try again.'),
         });
         return;
       }
