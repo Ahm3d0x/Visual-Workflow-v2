@@ -17,7 +17,7 @@ import {
 import { 
   Shield, Trash2, Loader2, ChevronDown, Check, 
   Copy, Link2, UserPlus, Palette, Plus, Sliders, Cpu,
-  AlertTriangle, Globe, Eye, Info, Database
+  AlertTriangle, Database
 } from 'lucide-react';
 import { 
   updateWorkspaceCustomization, 
@@ -770,7 +770,7 @@ export function WorkspaceSettings({
                               <DropdownMenu>
                                 <DropdownMenuTrigger
                                   disabled={memberLoading === member.profiles.id}
-                                  className="inline-flex items-center justify-center rounded-xl border border-border bg-background hover:bg-muted px-3 h-9 gap-1 cursor-pointer font-bold text-xs transition-colors focus:outline-hidden disabled:opacity-50 disabled:pointer-events-none shadow-xs font-medium"
+                                  className="inline-flex items-center justify-center rounded-xl border border-border bg-background hover:bg-muted px-3 h-9 gap-1 cursor-pointer text-xs transition-colors focus:outline-hidden disabled:opacity-50 disabled:pointer-events-none shadow-xs font-medium"
                                 >
                                   <span>{isRtl ? 'تغيير الدور' : 'Change Role'}</span>
                                   <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />

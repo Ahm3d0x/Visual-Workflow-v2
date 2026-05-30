@@ -6,6 +6,16 @@ import { NextResponse, type NextRequest } from 'next/server';
 const intlMiddleware = createMiddleware(routing);
 
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // Self-heal duplicate locale prefixes (e.g. /ar/ar/settings -> /ar/settings)
+  const duplicateLocalePattern = /^\/(en|ar)\/(en|ar)(\/|$)/;
+  if (duplicateLocalePattern.test(pathname)) {
+    const cleanPath = pathname.replace(/^\/(en|ar)\/(en|ar)(\/|$)/, '/$1$3');
+    const redirectUrl = new URL(cleanPath + request.nextUrl.search, request.url);
+    return NextResponse.redirect(redirectUrl);
+  }
+
   // 1. Run next-intl middleware first to get the response containing locale redirects/cookies
   const response = intlMiddleware(request);
 
@@ -32,8 +42,6 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const pathname = request.nextUrl.pathname;
 
   // Clean pathname by removing the locale prefix (e.g. /en/dashboard -> /dashboard)
   const localePrefixPattern = /^\/(en|ar)(\/|$)/;
