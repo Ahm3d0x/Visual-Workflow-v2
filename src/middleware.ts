@@ -5,7 +5,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 const intlMiddleware = createMiddleware(routing);
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
   // Self-heal duplicate locale prefixes (e.g. /ar/ar/settings -> /ar/settings)
