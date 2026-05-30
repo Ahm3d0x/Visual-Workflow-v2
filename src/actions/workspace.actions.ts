@@ -317,3 +317,84 @@ export async function joinWorkspaceByShareToken(token: string): Promise<Workspac
   revalidatePath('/dashboard');
   return { success: true, data: { workspaceId: activeLink.workspace_id, name: activeLink.workspaces?.name } };
 }
+
+// ─── Update Advanced Workspace Settings ──────────────────────────────────────
+
+export async function updateWorkspaceSettingsAction(
+  workspaceId: string,
+  settings: any
+): Promise<WorkspaceActionResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Unauthorized' };
+
+  // 1. Verify user is owner of the workspace
+  const { data: member } = await (supabase
+    .from('workspace_members') as any)
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!member || (member as any).role !== 'owner') {
+    return { error: 'Insufficient permissions. Only workspace owners can modify advanced operational settings.' };
+  }
+
+  // 2. Perform settings updates
+  const { error } = await (supabase
+    .from('workspaces') as any)
+    .update({ settings })
+    .eq('id', workspaceId);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath('/dashboard');
+  revalidatePath(`/settings/workspace`);
+  return { success: true };
+}
+
+// ─── Delete Workspace Securely ────────────────────────────────────────────────
+
+export async function deleteWorkspaceAction(workspaceId: string): Promise<WorkspaceActionResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: 'Unauthorized' };
+
+  // 1. Verify user is owner
+  const { data: member } = await (supabase
+    .from('workspace_members') as any)
+    .select('role')
+    .eq('workspace_id', workspaceId)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!member || (member as any).role !== 'owner') {
+    return { error: 'Only the Workspace Owner can delete this workspace.' };
+  }
+
+  // 2. Prevent deleting the user's last remaining workspace to avoid orphaned states
+  const { data: ownedWorkspaces } = await (supabase
+    .from('workspaces') as any)
+    .select('id')
+    .eq('owner_id', user.id);
+
+  if (ownedWorkspaces && ownedWorkspaces.length <= 1) {
+    return { error: 'You must own at least one workspace. Create a new workspace before deleting your last one.' };
+  }
+
+  // 3. Delete workspace (cascade deletes memberships, links, and subscriptions via supabase foreign key cascades)
+  const { error } = await (supabase
+    .from('workspaces') as any)
+    .delete()
+    .eq('id', workspaceId);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath('/dashboard');
+  return { success: true };
+}
+

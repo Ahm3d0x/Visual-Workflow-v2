@@ -296,7 +296,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                     </DropdownMenuItem>
                     {activeWorkspace && activeWorkspace.role === 'owner' && (
                       <DropdownMenuItem
-                        onClick={() => router.push(`/${locale}/settings/workspace?w=${activeWorkspace.id}`)}
+                        onClick={() => router.push(`/settings/workspace?w=${activeWorkspace.id}`)}
                         className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
                       >
                         <Settings className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الإعدادات' : 'Settings'}
@@ -304,13 +304,13 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                     )}
                     <DropdownMenuSeparator className="bg-border" />
                     <DropdownMenuItem
-                      onClick={() => router.push(`/${locale}/terms`)}
+                      onClick={() => router.push('/terms')}
                       className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs"
                     >
                       <Shield className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'شروط الخدمة' : 'Terms of Service'}
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => router.push(`/${locale}/privacy`)}
+                      onClick={() => router.push('/privacy')}
                       className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs"
                     >
                       <Shield className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'سياسة الخصوصية' : 'Privacy Policy'}
