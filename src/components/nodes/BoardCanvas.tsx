@@ -1667,7 +1667,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       <div className="flex-1 flex overflow-hidden">
         {/* ── LEFT TOOLS PALETTE ── */}
         <div 
-          className="w-14 shrink-0 bg-zinc-900/90 backdrop-blur-md border-r border-zinc-800/80 flex flex-col items-center py-3 gap-1.5 z-20 overflow-y-auto"
+          className="w-14 h-full shrink-0 bg-zinc-900/90 backdrop-blur-md border-r border-zinc-800/80 flex flex-col items-center py-3 gap-1.5 z-20 overflow-y-auto"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {tools.map((t) => (
@@ -1730,20 +1730,20 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           {/* Circular Quick Color Toggles matching the screenshot */}
           <button
             onClick={() => handleBrushColorChange('#ffffff')}
-            className={`w-10 h-10 rounded-full border-2 transition-all cursor-pointer flex items-center justify-center relative hover:scale-105 bg-white border-zinc-700
-              ${color === '#ffffff' ? 'ring-2 ring-offset-2 ring-fuchsia-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
+            className={`w-10 h-10 rounded-xl border border-zinc-800 transition-all cursor-pointer flex items-center justify-center relative hover:scale-105 bg-zinc-900/50
+              ${color === '#ffffff' ? 'ring-2 ring-fuchsia-500 ring-offset-1 scale-105' : 'hover:bg-zinc-800/85'}`}
             title="Set White Brush Color"
           >
-            <div className="w-4 h-4 rounded-full bg-zinc-300 border border-zinc-400" />
+            <div className="w-4.5 h-4.5 rounded-full bg-white shadow-xs" style={{ border: color === '#ffffff' ? 'none' : '1px solid rgba(255,255,255,0.15)' }} />
           </button>
 
           <button
             onClick={() => handleBrushColorChange('#18181b')}
-            className={`w-10 h-10 rounded-full border-2 transition-all cursor-pointer flex items-center justify-center relative hover:scale-105 bg-zinc-950 border-zinc-700
-              ${color === '#18181b' ? 'ring-2 ring-offset-2 ring-fuchsia-500 scale-105' : 'opacity-80 hover:opacity-100'}`}
+            className={`w-10 h-10 rounded-xl border border-zinc-800 transition-all cursor-pointer flex items-center justify-center relative hover:scale-105 bg-zinc-900/50
+              ${color === '#18181b' ? 'ring-2 ring-fuchsia-500 ring-offset-1 scale-105' : 'hover:bg-zinc-800/85'}`}
             title="Set Dark Brush Color"
           >
-            <div className="w-4 h-4 rounded-full bg-zinc-800 border border-zinc-700" />
+            <div className="w-4.5 h-4.5 rounded-full bg-zinc-950 border border-zinc-800 shadow-xs" />
           </button>
 
           {/* Fill toggle & fill color */}
