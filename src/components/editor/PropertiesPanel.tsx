@@ -5,7 +5,8 @@ import { useEditorStore } from '@/stores/editorStore';
 import { 
   X, Info, Trash2, Settings, Type, AlignLeft, 
   ChevronLeft, ChevronRight, Sparkles, Sliders, User, 
-  Zap, RefreshCw, Trash, Image as ImageIcon, Copy, Plus
+  Zap, RefreshCw, Trash, Image as ImageIcon, Copy, Plus,
+  Volume2, Grid, GitBranch
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -135,7 +136,9 @@ export function PropertiesPanel({
     deleteEdge, 
     updateEdge,
     panels, 
-    togglePanel 
+    togglePanel,
+    preferences,
+    setPreference
   } = useEditorStore();
 
   const isOpen = panels.properties;
@@ -1456,6 +1459,151 @@ export function PropertiesPanel({
                         </button>
                       );
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* Preferences Toggles */}
+              {preferences && setPreference && (
+                <div className="space-y-3 pt-3 border-t border-border/40">
+                  <Label className="text-[10px] uppercase font-bold text-muted-foreground">
+                    {isRtl ? 'تفضيلات مساحة العمل' : 'Workspace Preferences'}
+                  </Label>
+                  <div className="space-y-2">
+                    {/* SFX sound toggle */}
+                    <div className="flex items-center justify-between p-2 rounded-xl border border-border/60 bg-background/30 hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <Volume2 className="w-4 h-4 text-zinc-400" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-foreground">
+                            {isRtl ? 'المؤثرات الصوتية' : 'Audio SFX'}
+                          </span>
+                          <span className="text-[9px] text-muted-foreground leading-none mt-0.5">
+                            {isRtl ? 'أصوات نقر وتفاعل حية' : 'Tactile clicking sounds'}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setPreference('soundSfx', !preferences.soundSfx)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          preferences.soundSfx ? 'bg-accent' : 'bg-zinc-800'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            preferences.soundSfx ? (isRtl ? '-translate-x-4' : 'translate-x-4') : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Quick-Wheel toggle */}
+                    <div className="flex items-center justify-between p-2 rounded-xl border border-border/60 bg-background/30 hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-zinc-400" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-foreground">
+                            {isRtl ? 'عجلة الرسم السريع' : 'Quick Node Wheel'}
+                          </span>
+                          <span className="text-[9px] text-muted-foreground leading-none mt-0.5">
+                            {isRtl ? 'النقر المزدوج لإنشاء عقد' : 'Double-click wheel creator'}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setPreference('quickWheel', !preferences.quickWheel)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          preferences.quickWheel ? 'bg-accent' : 'bg-zinc-800'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            preferences.quickWheel ? (isRtl ? '-translate-x-4' : 'translate-x-4') : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Grid Snapping toggle */}
+                    <div className="flex items-center justify-between p-2 rounded-xl border border-border/60 bg-background/30 hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <Grid className="w-4 h-4 text-zinc-400" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-foreground">
+                            {isRtl ? 'محاذاة تلقائية للشبكة' : 'Grid Snapping'}
+                          </span>
+                          <span className="text-[9px] text-muted-foreground leading-none mt-0.5">
+                            {isRtl ? 'محاذاة العقد عند السحب' : 'Snap nodes to grid lines'}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setPreference('gridSnapping', !preferences.gridSnapping)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          preferences.gridSnapping ? 'bg-accent' : 'bg-zinc-800'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            preferences.gridSnapping ? (isRtl ? '-translate-x-4' : 'translate-x-4') : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Animated Edge Flows toggle */}
+                    <div className="flex items-center justify-between p-2 rounded-xl border border-border/60 bg-background/30 hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-zinc-400" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-foreground">
+                            {isRtl ? 'حركة خطوط الربط' : 'Animated Edges'}
+                          </span>
+                          <span className="text-[9px] text-muted-foreground leading-none mt-0.5">
+                            {isRtl ? 'نبضات حركة حية للبيانات' : 'Flowing connection particles'}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setPreference('animatedEdges', !preferences.animatedEdges)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          preferences.animatedEdges ? 'bg-accent' : 'bg-zinc-800'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            preferences.animatedEdges ? (isRtl ? '-translate-x-4' : 'translate-x-4') : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Orthogonal Curved Routing toggle */}
+                    <div className="flex items-center justify-between p-2 rounded-xl border border-border/60 bg-background/30 hover:bg-muted/10 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <GitBranch className="w-4 h-4 text-zinc-400" />
+                        <div className="flex flex-col">
+                          <span className="text-xs font-semibold text-foreground">
+                            {isRtl ? 'المسارات المتعامدة' : 'Orthogonal Routing'}
+                          </span>
+                          <span className="text-[9px] text-muted-foreground leading-none mt-0.5">
+                            {isRtl ? 'خطوط قائمة منحنية' : '90-degree curved step lines'}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setPreference('orthogonalRouting', !preferences.orthogonalRouting)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                          preferences.orthogonalRouting ? 'bg-accent' : 'bg-zinc-800'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                            preferences.orthogonalRouting ? (isRtl ? '-translate-x-4' : 'translate-x-4') : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

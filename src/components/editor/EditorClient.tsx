@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback, useState, useRef } from 'react';
+import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { 
   Lock, Unlock, RotateCcw, Maximize, Trash2, MousePointerSquareDashed, FolderPlus,
   Play, GitBranch, Database, Mail, Sparkles, StopCircle, X,
@@ -30,6 +30,7 @@ import { LibrarySidebar } from './LibrarySidebar';
 import { PropertiesPanel } from './PropertiesPanel';
 import { StatusPanel } from './StatusPanel';
 import { nodeTypes } from '../nodes/nodeTypes';
+import { playClickSound, playSnapSound, playPopSound, playSweepSound } from '@/lib/audioSfx';
 
 // Phase 9 Collaborations and Permissions imports
 import { useRealtime } from '@/hooks/useRealtime';
@@ -98,7 +99,23 @@ function EditorInner({
     addComment,
     pendingConnection,
     setPendingConnection,
+    togglePanel,
+    preferences,
   } = useEditorStore();
+
+  // Dynamically map edge types and animations based on user settings
+  const renderedEdges = useMemo(() => {
+    return edges.map((e) => {
+      // If the edge already has a custom type override, respect it unless it is default/unset
+      const typeOverride = e.type && e.type !== 'default' ? e.type : (preferences?.orthogonalRouting ? 'smoothstep' : 'straight');
+      return {
+        ...e,
+        type: typeOverride,
+        animated: preferences?.animatedEdges ?? true,
+        className: preferences?.animatedEdges ? 'premium-flow-edge' : '',
+      };
+    });
+  }, [edges, preferences?.orthogonalRouting, preferences?.animatedEdges]);
 
   // Box Selection Mode and Grouping States
   const [selectionModeActive, setSelectionModeActive] = useState(false);
@@ -116,11 +133,30 @@ function EditorInner({
     nodeId?: string;
     edgeId?: string;
   } | null>(null);
-  const [copiedNode, setCopiedNode] = useState<{
-    type: string;
-    data: Record<string, any>;
-    style?: React.CSSProperties;
+  const [nodeWheel, setNodeWheel] = useState<{
+    x: number;
+    y: number;
+    clientX: number;
+    clientY: number;
   } | null>(null);
+  const [copiedElements, setCopiedElements] = useState<{
+    nodes: Node[];
+    edges: Edge[];
+  } | null>(null);
+
+  // Mouse tracker for keyboard paste shortcuts
+  const mousePosRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      mousePosRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  const lastPastePosRef = useRef<{ x: number; y: number } | null>(null);
+  const consecutivePasteCountRef = useRef<number>(0);
 
   // Quick Connect / Drag-to-Create States
   const [connectStartParams, setConnectStartParams] = useState<{
@@ -212,73 +248,142 @@ function EditorInner({
   // Selection grouping handler
   const handleGroupSelectedNodes = useCallback(() => {
     if (!permissions.canEdit) return;
-    const selectedNodes = nodes.filter((n) => n.selected && n.type !== 'group');
+    const selectedNodes = getNodes().filter((n) => n.selected);
     if (selectedNodes.length < 2) {
-      useDialogStore.getState().showAlert(
-        locale === 'ar' ? 'تجميع العقد' : 'Group Nodes',
-        locale === 'ar' 
-          ? 'الرجاء اختيار عقدتين على الأقل في لوحة العمل لتجميعهم معاً.' 
-          : 'Please select at least 2 nodes to group them.'
+      useDialogStore.getState().showNotification(
+        locale === 'ar'
+          ? 'يرجى تحديد عقدتين على الأقل للتجميع (اضغط Shift مع التحديد)'
+          : 'Please select at least 2 nodes to group (hold Shift to select)',
+        'info',
+        3000
       );
       return;
     }
 
-    pushToUndo();
-    
-    // Calculate bounding box
+    // Determine the bounding box of selected child nodes
     let minX = Infinity;
-    let maxX = -Infinity;
     let minY = Infinity;
+    let maxX = -Infinity;
     let maxY = -Infinity;
 
-    selectedNodes.forEach((n) => {
-      const customStyle = (n.data?.customStyle || {}) as Record<string, unknown>;
-      const width = (n.style?.width as number) || (customStyle.width as number) || 220;
-      const height = (n.style?.height as number) || (customStyle.height as number) || 90;
-      
-      minX = Math.min(minX, n.position.x);
-      maxX = Math.max(maxX, n.position.x + width);
-      minY = Math.min(minY, n.position.y);
-      maxY = Math.max(maxY, n.position.y + height);
+    selectedNodes.forEach((node) => {
+      const pos = node.position;
+      const w = node.measured?.width || 220; // safe default fallback
+      const h = node.measured?.height || 85;  // safe default fallback
+      minX = Math.min(minX, pos.x);
+      minY = Math.min(minY, pos.y);
+      maxX = Math.max(maxX, pos.x + w);
+      maxY = Math.max(maxY, pos.y + h);
     });
 
-    const padding = 35;
+    if (minX === Infinity || minY === Infinity) return;
+
+    // Fuchsia group dimensions with beautiful padding offset
+    const padding = 45;
     const groupX = minX - padding;
-    const groupY = minY - padding;
+    const groupY = minY - padding - 30; // Extra top room for fuchsia group name label header
     const groupW = (maxX - minX) + (padding * 2);
-    const groupH = (maxY - minY) + (padding * 2);
+    const groupH = (maxY - minY) + (padding * 2) + 30;
+
+    pushToUndo();
 
     const groupId = crypto.randomUUID();
     const groupNode: Node = {
       id: groupId,
       type: 'group',
       position: { x: groupX, y: groupY },
-      data: { 
-        label: locale === 'ar' ? 'مجموعة جديدة' : 'New Group',
+      data: {
+        label: locale === 'ar' ? 'مجموعة جديدة' : 'New Group Selection',
+        customStyle: {
+          width: groupW,
+          height: groupH,
+        },
       },
-      style: { width: groupW, height: groupH },
     };
 
-    const updatedNodes = nodes.map((n) => {
-      const isSelectedChild = selectedNodes.some((sn) => sn.id === n.id);
-      if (isSelectedChild) {
+    // Transform child nodes positions relative to parent group coordinates
+    const updatedNodes = nodes.map((node) => {
+      if (node.selected && node.id !== groupId) {
         return {
-          ...n,
+          ...node,
           parentId: groupId,
           extent: 'parent' as const,
           position: {
-            x: n.position.x - groupX,
-            y: n.position.y - groupY,
+            x: node.position.x - groupX,
+            y: node.position.y - groupY,
           },
           selected: false,
         };
       }
-      return n;
+      return node;
     });
 
     setNodes([groupNode, ...updatedNodes]);
     setHasUnsavedChanges(true);
-    realtime.broadcastNodeChange('UPDATE');
+
+    // Sync state over Supabase realtime socket
+    realtime.broadcastNodeChange('INSERT', groupNode);
+    updatedNodes.forEach((n) => {
+      if (n.parentId === groupId) {
+        realtime.broadcastNodeChange('UPDATE', n);
+      }
+    });
+
+    useDialogStore.getState().showNotification(
+      locale === 'ar' ? 'تم إنشاء المجموعة بنجاح' : 'Nodes successfully grouped',
+      'success',
+      2000
+    );
+    playClickSound();
+  }, [getNodes, nodes, setNodes, pushToUndo, setHasUnsavedChanges, permissions.canEdit, realtime, locale]);
+
+  const handleUngroupNode = useCallback((groupId: string) => {
+    if (!permissions.canEdit) return;
+    const groupNode = nodes.find((n) => n.id === groupId);
+    if (!groupNode) return;
+
+    pushToUndo();
+
+    const groupX = groupNode.position.x;
+    const groupY = groupNode.position.y;
+
+    // Gather children and map their coordinates from relative parent coordinates back to absolute coordinates
+    const updatedNodes = nodes
+      .filter((n) => n.id !== groupId) // Remove parent group envelope
+      .map((n) => {
+        if (n.parentId === groupId) {
+          const absoluteNode = {
+            ...n,
+            parentId: undefined,
+            extent: undefined,
+            position: {
+              x: groupX + n.position.x,
+              y: groupY + n.position.y,
+            },
+          };
+          return absoluteNode;
+        }
+        return n;
+      });
+
+    setNodes(updatedNodes);
+    setHasUnsavedChanges(true);
+
+    // Broadcast deletions and updates
+    realtime.broadcastNodeChange('DELETE', undefined, groupId);
+    updatedNodes.forEach((n) => {
+      if (n.parentId === undefined && nodes.find((orig) => orig.id === n.id)?.parentId === groupId) {
+        realtime.broadcastNodeChange('UPDATE', n);
+      }
+    });
+
+    useDialogStore.getState().showNotification(
+      locale === 'ar' ? 'تم تفكيك المجموعة بنجاح' : 'Group successfully dissolved',
+      'success',
+      2000
+    );
+    playPopSound();
+    setContextMenu(null);
   }, [nodes, setNodes, pushToUndo, setHasUnsavedChanges, permissions.canEdit, realtime, locale]);
 
   const handleFitView = useCallback(() => {
@@ -305,7 +410,10 @@ function EditorInner({
     setEdges([]);
     setHasUnsavedChanges(true);
     realtime.broadcastNodeChange('UPDATE');
+    playSweepSound();
   }, [setNodes, setEdges, setHasUnsavedChanges, permissions.canEdit, realtime, locale]);
+
+
 
   useEffect(() => {
     setNodes(initialNodes);
@@ -738,6 +846,7 @@ function EditorInner({
         ...connection,
       };
       realtime.broadcastEdgeChange('INSERT', newEdge as Edge);
+      playSnapSound();
     } else {
       const connection = {
         source: newNodeId,
@@ -752,6 +861,7 @@ function EditorInner({
         ...connection,
       };
       realtime.broadcastEdgeChange('INSERT', newEdge as Edge);
+      playSnapSound();
     }
 
     setQuickConnectOpen(false);
@@ -791,25 +901,108 @@ function EditorInner({
     [setSelectedEdge]
   );
 
-  const onPaneClick = useCallback(() => {
+  const onPaneClick = useCallback((e: React.MouseEvent) => {
     setSelectedNode(null);
     setSelectedEdge(null);
     setContextMenu(null);
-  }, [setSelectedNode, setSelectedEdge]);
+    setNodeWheel(null);
+
+    // Double-click detection via event detail pointer
+    if (e && e.detail === 2) {
+      if (!preferences?.quickWheel) return;
+      if (!permissions.canEdit) return;
+
+      e.preventDefault();
+      
+      setNodeWheel({
+        x: e.clientX,
+        y: e.clientY,
+        clientX: e.clientX,
+        clientY: e.clientY,
+      });
+    }
+  }, [setSelectedNode, setSelectedEdge, permissions.canEdit, preferences]);
+
+  const handleQuickSpawnNode = useCallback(
+    (type: string) => {
+      if (!nodeWheel) return;
+      
+      pushToUndo();
+      
+      const position = screenToFlowPosition({
+        x: nodeWheel.clientX,
+        y: nodeWheel.clientY,
+      });
+      
+      const nodeId = crypto.randomUUID();
+      const nodeLabel = 
+        type === 'process' ? (locale === 'ar' ? 'خطوة عملية' : 'Process Step') :
+        type === 'decision' ? (locale === 'ar' ? 'تفرع قرار' : 'Decision Branch') :
+        type === 'integration' ? (locale === 'ar' ? 'طلب API' : 'API Request') :
+        (locale === 'ar' ? 'ملاحظة' : 'Note');
+
+      const newNode: Node = {
+        id: nodeId,
+        type: type,
+        position,
+        data: {
+          label: nodeLabel,
+          description: '',
+        },
+      };
+
+      addNode(newNode);
+      realtime.broadcastNodeChange('INSERT', newNode);
+
+      // Play Cherry MX click sound!
+      playClickSound();
+
+      setNodeWheel(null);
+    },
+    [nodeWheel, screenToFlowPosition, locale, addNode, realtime, pushToUndo]
+  );
+
+  const handleConnect = useCallback(
+    (conn: any) => {
+      onConnect(conn);
+      setConnectStartParams(null);
+      
+      const newEdge = {
+        id: crypto.randomUUID(),
+        source: conn.source,
+        target: conn.target,
+        sourceHandle: conn.sourceHandle,
+        targetHandle: conn.targetHandle,
+      };
+      realtime.broadcastEdgeChange('INSERT', newEdge as Edge);
+      
+      playSnapSound();
+    },
+    [onConnect, realtime]
+  );
 
   // Context Menu Handlers
   const onNodeContextMenu = useCallback(
     (e: MouseEvent | React.MouseEvent, node: Node) => {
       e.preventDefault();
-      setSelectedNode(node.id);
-      setSelectedEdge(null);
+      if (!node.selected) {
+        // If the right-clicked node is not part of the active selection, make it the sole selection
+        setNodes(
+          getNodes().map((n) => ({
+            ...n,
+            selected: n.id === node.id,
+          }))
+        );
+        setSelectedNode(node.id);
+        setSelectedEdge(null);
+      }
       setContextMenu({
         x: e.clientX,
         y: e.clientY,
         nodeId: node.id,
       });
     },
-    [setSelectedNode, setSelectedEdge]
+    [setSelectedNode, setSelectedEdge, setNodes, getNodes]
   );
 
   const onEdgeContextMenu = useCallback(
@@ -846,48 +1039,138 @@ function EditorInner({
   }, [contextMenu]);
 
   // Fast Clipboard Actions
-  const handleCopyNode = useCallback((nodeId: string) => {
-    const node = nodes.find((n) => n.id === nodeId);
-    if (!node) return;
-    setCopiedNode({
-      type: node.type || 'default',
-      data: JSON.parse(JSON.stringify(node.data || {})),
-      style: node.style,
+  const handleCopySelection = useCallback(() => {
+    const selectedNodes = getNodes().filter((n) => n.selected);
+    if (selectedNodes.length === 0) {
+      if (contextMenu?.nodeId) {
+        const targetNode = nodes.find((n) => n.id === contextMenu.nodeId);
+        if (targetNode) {
+          setCopiedElements({
+            nodes: [JSON.parse(JSON.stringify(targetNode))],
+            edges: [],
+          });
+          useDialogStore.getState().showNotification(
+            locale === 'ar' ? 'تم نسخ العقدة إلى الحافظة' : 'Node copied to clipboard',
+            'success',
+            2000
+          );
+        }
+      }
+      setContextMenu(null);
+      return;
+    }
+
+    const selectedNodeIds = new Set(selectedNodes.map((n) => n.id));
+    const connectingEdges = getEdges().filter(
+      (e) => selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+    );
+
+    setCopiedElements({
+      nodes: JSON.parse(JSON.stringify(selectedNodes)),
+      edges: JSON.parse(JSON.stringify(connectingEdges)),
     });
+
     setContextMenu(null);
     useDialogStore.getState().showNotification(
-      locale === 'ar' ? 'تم نسخ العقدة إلى الحافظة' : 'Node copied to clipboard',
+      locale === 'ar' 
+        ? `تم نسخ التحديد (${selectedNodes.length} عقدة و ${connectingEdges.length} رابط)` 
+        : `Selection copied (${selectedNodes.length} nodes, ${connectingEdges.length} edges)`,
       'success',
       2000
     );
-  }, [nodes, locale]);
+  }, [getNodes, getEdges, contextMenu, nodes, locale]);
 
-  const handlePasteNode = useCallback(() => {
-    if (!copiedNode || !contextMenu || !permissions.canEdit) return;
+  const performPasteSelection = useCallback((clientX: number, clientY: number) => {
+    if (!copiedElements || copiedElements.nodes.length === 0 || !permissions.canEdit) return;
     pushToUndo();
-    
+
     const flowPos = screenToFlowPosition({
-      x: contextMenu.x,
-      y: contextMenu.y,
+      x: clientX,
+      y: clientY,
     });
 
-    const newNodeId = crypto.randomUUID();
-    const pastedNode: Node = {
-      id: newNodeId,
-      type: copiedNode.type,
-      position: flowPos,
-      data: {
-        ...copiedNode.data,
-        label: (copiedNode.data.label || '') + (locale === 'ar' ? ' (نسخة)' : ' (Copy)'),
-      },
-      style: copiedNode.style,
-    };
+    // Smart Cascading Paste Offset: shift consecutive pastes by +30px to prevent direct overlaps
+    const isSamePosition = lastPastePosRef.current &&
+      lastPastePosRef.current.x === clientX &&
+      lastPastePosRef.current.y === clientY;
 
-    setNodes([...nodes, pastedNode]);
+    if (isSamePosition) {
+      consecutivePasteCountRef.current += 1;
+    } else {
+      consecutivePasteCountRef.current = 0;
+      lastPastePosRef.current = { x: clientX, y: clientY };
+    }
+
+    const cascadeOffset = consecutivePasteCountRef.current * 30;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    copiedElements.nodes.forEach((n) => {
+      minX = Math.min(minX, n.position.x);
+      minY = Math.min(minY, n.position.y);
+    });
+
+    if (minX === Infinity || minY === Infinity) {
+      minX = 0;
+      minY = 0;
+    }
+
+    const oldToNewIdMap: Record<string, string> = {};
+    const newNodes = copiedElements.nodes.map((n) => {
+      const newId = crypto.randomUUID();
+      oldToNewIdMap[n.id] = newId;
+
+      const relX = n.position.x - minX;
+      const relY = n.position.y - minY;
+
+      return {
+        ...n,
+        id: newId,
+        position: {
+          x: flowPos.x + relX + cascadeOffset,
+          y: flowPos.y + relY + cascadeOffset,
+        },
+        data: {
+          ...n.data,
+          label: n.data.label + (locale === 'ar' ? ' (نسخة)' : ' (Copy)'),
+        },
+        selected: true,
+      };
+    });
+
+    const newEdges = copiedElements.edges
+      .filter((e) => oldToNewIdMap[e.source] && oldToNewIdMap[e.target])
+      .map((e) => ({
+        ...e,
+        id: crypto.randomUUID(),
+        source: oldToNewIdMap[e.source],
+        target: oldToNewIdMap[e.target],
+        selected: true,
+      }));
+
+    const deselectedNodes = nodes.map((n) => ({ ...n, selected: false }));
+    const deselectedEdges = edges.map((e) => ({ ...e, selected: false }));
+
+    setNodes([...deselectedNodes, ...newNodes]);
+    setEdges([...deselectedEdges, ...newEdges]);
     setHasUnsavedChanges(true);
-    realtime.broadcastNodeChange('INSERT', pastedNode);
+
+    newNodes.forEach((node) => realtime.broadcastNodeChange('INSERT', node));
+    newEdges.forEach((edge) => realtime.broadcastEdgeChange('INSERT', edge));
+
+    useDialogStore.getState().showNotification(
+      locale === 'ar' ? 'تم لصق التحديد' : 'Selection pasted',
+      'success',
+      1500
+    );
+    playClickSound();
+  }, [copiedElements, nodes, edges, setNodes, setEdges, pushToUndo, setHasUnsavedChanges, screenToFlowPosition, permissions.canEdit, realtime, locale]);
+
+  const handlePasteSelection = useCallback(() => {
+    if (!contextMenu) return;
+    performPasteSelection(contextMenu.x, contextMenu.y);
     setContextMenu(null);
-  }, [copiedNode, contextMenu, nodes, setNodes, pushToUndo, setHasUnsavedChanges, screenToFlowPosition, permissions.canEdit, realtime, locale]);
+  }, [contextMenu, performPasteSelection]);
 
   const handleDuplicateNodeDirect = useCallback((nodeId: string) => {
     if (!permissions.canEdit) return;
@@ -911,14 +1194,53 @@ function EditorInner({
     setContextMenu(null);
   }, [nodes, setNodes, pushToUndo, setHasUnsavedChanges, permissions.canEdit, realtime]);
 
-  const handleDeleteNodeDirect = useCallback((nodeId: string) => {
+  const handleDeleteSelection = useCallback(() => {
     if (!permissions.canEdit) return;
+
+    const selectedNodes = getNodes().filter((n) => n.selected);
+    const selectedEdges = getEdges().filter((e) => e.selected);
+
+    if (selectedNodes.length === 0 && selectedEdges.length === 0) {
+      if (contextMenu?.nodeId) {
+        pushToUndo();
+        deleteNode(contextMenu.nodeId);
+        realtime.broadcastNodeChange('DELETE', undefined, contextMenu.nodeId);
+        setSelectedNode(null);
+        playPopSound();
+      } else if (contextMenu?.edgeId) {
+        pushToUndo();
+        deleteEdge(contextMenu.edgeId);
+        realtime.broadcastEdgeChange('DELETE', undefined, contextMenu.edgeId);
+        setSelectedEdge(null);
+        playPopSound();
+      }
+      setContextMenu(null);
+      return;
+    }
+
     pushToUndo();
-    deleteNode(nodeId);
-    realtime.broadcastNodeChange('DELETE', undefined, nodeId);
+    
+    selectedNodes.forEach((node) => {
+      deleteNode(node.id);
+      realtime.broadcastNodeChange('DELETE', undefined, node.id);
+    });
+
+    selectedEdges.forEach((edge) => {
+      deleteEdge(edge.id);
+      realtime.broadcastEdgeChange('DELETE', undefined, edge.id);
+    });
+
     setSelectedNode(null);
+    setSelectedEdge(null);
     setContextMenu(null);
-  }, [deleteNode, realtime, permissions.canEdit, pushToUndo, setSelectedNode]);
+    playPopSound();
+    
+    useDialogStore.getState().showNotification(
+      locale === 'ar' ? 'تم حذف التحديد' : 'Selection deleted',
+      'success',
+      2000
+    );
+  }, [getNodes, getEdges, contextMenu, deleteNode, deleteEdge, permissions.canEdit, realtime, setSelectedNode, setSelectedEdge, locale, pushToUndo]);
 
   const handleDeleteEdgeDirect = useCallback((edgeId: string) => {
     if (!permissions.canEdit) return;
@@ -927,6 +1249,7 @@ function EditorInner({
     realtime.broadcastEdgeChange('DELETE', undefined, edgeId);
     setSelectedEdge(null);
     setContextMenu(null);
+    playPopSound();
   }, [deleteEdge, realtime, permissions.canEdit, pushToUndo, setSelectedEdge]);
 
   // 8. Keyboard Shortcuts Event Listeners
@@ -937,7 +1260,7 @@ function EditorInner({
       );
       if (isInputFocused) return;
 
-      // Delete Node / Edge
+      // Delete Selection (Delete or Backspace)
       if ((e.key === 'Delete' || e.key === 'Backspace') && isEditable) {
         const selectedNodes = getNodes().filter((n) => n.selected);
         const selectedEdges = getEdges().filter((e) => e.selected);
@@ -967,6 +1290,101 @@ function EditorInner({
             realtime.broadcastEdgeChange('DELETE', undefined, selectedEdgeId);
             setSelectedEdge(null);
           }
+        }
+      }
+
+      // Copy Selection (Ctrl + C)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        const selectedNodes = getNodes().filter((n) => n.selected);
+        if (selectedNodes.length > 0) {
+          const selectedNodeIds = new Set(selectedNodes.map((n) => n.id));
+          const connectingEdges = getEdges().filter(
+            (e) => selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+          );
+
+          setCopiedElements({
+            nodes: JSON.parse(JSON.stringify(selectedNodes)),
+            edges: JSON.parse(JSON.stringify(connectingEdges)),
+          });
+
+          useDialogStore.getState().showNotification(
+            locale === 'ar' 
+              ? `تم نسخ التحديد (${selectedNodes.length} عقدة و ${connectingEdges.length} رابط)` 
+              : `Selection copied (${selectedNodes.length} nodes, ${connectingEdges.length} edges)`,
+            'success',
+            2000
+          );
+        }
+      }
+
+      // Smart Grouping (Ctrl + G)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g' && isEditable) {
+        e.preventDefault();
+        handleGroupSelectedNodes();
+      }
+
+      // Paste Selection (Ctrl + V)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && isEditable) {
+        e.preventDefault();
+        performPasteSelection(mousePosRef.current.x, mousePosRef.current.y);
+      }
+
+      // Duplicate Selection (Ctrl + D)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && isEditable) {
+        e.preventDefault();
+        const selectedNodes = getNodes().filter((n) => n.selected);
+        if (selectedNodes.length > 0) {
+          pushToUndo();
+          const selectedNodeIds = new Set(selectedNodes.map((n) => n.id));
+          const connectingEdges = getEdges().filter(
+            (e) => selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+          );
+
+          const oldToNewIdMap: Record<string, string> = {};
+          const duplicatedNodes = selectedNodes.map((n) => {
+            const newId = crypto.randomUUID();
+            oldToNewIdMap[n.id] = newId;
+            return {
+              ...n,
+              id: newId,
+              position: {
+                x: n.position.x + 50,
+                y: n.position.y + 50,
+              },
+              data: {
+                ...n.data,
+                label: n.data.label + (locale === 'ar' ? ' (نسخة)' : ' (Copy)'),
+              },
+              selected: true,
+            };
+          });
+
+          const duplicatedEdges = connectingEdges
+            .filter((e) => oldToNewIdMap[e.source] && oldToNewIdMap[e.target])
+            .map((e) => ({
+              ...e,
+              id: crypto.randomUUID(),
+              source: oldToNewIdMap[e.source],
+              target: oldToNewIdMap[e.target],
+              selected: true,
+            }));
+
+          const deselectedNodes = nodes.map((n) => ({ ...n, selected: false }));
+          const deselectedEdges = edges.map((e) => ({ ...e, selected: false }));
+
+          setNodes([...deselectedNodes, ...duplicatedNodes]);
+          setEdges([...deselectedEdges, ...duplicatedEdges]);
+          setHasUnsavedChanges(true);
+
+          duplicatedNodes.forEach((node) => realtime.broadcastNodeChange('INSERT', node));
+          duplicatedEdges.forEach((edge) => realtime.broadcastEdgeChange('INSERT', edge));
+          
+          useDialogStore.getState().showNotification(
+            locale === 'ar' ? 'تم تكرار التحديد' : 'Selection duplicated',
+            'success',
+            1500
+          );
         }
       }
 
@@ -1005,7 +1423,7 @@ function EditorInner({
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedNodeId, selectedEdgeId, undo, redo, deleteNode, deleteEdge, setSelectedNode, setSelectedEdge, permissions.canEdit, handleManualSave, realtime, isEditable, getNodes, getEdges, pushToUndo]);
+  }, [selectedNodeId, selectedEdgeId, undo, redo, deleteNode, deleteEdge, setSelectedNode, setSelectedEdge, permissions.canEdit, handleManualSave, realtime, isEditable, getNodes, getEdges, pushToUndo, performPasteSelection, locale, nodes, edges, setNodes, setEdges, setHasUnsavedChanges, handleGroupSelectedNodes]);
 
   if (isMobile) {
     return (
@@ -1070,7 +1488,7 @@ function EditorInner({
         >
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={renderedEdges}
             onNodesChange={permissions.canEdit ? onNodesChange : undefined}
             onEdgesChange={permissions.canEdit ? onEdgesChange : undefined}
             onNodeDrag={
@@ -1080,23 +1498,7 @@ function EditorInner({
                   }
                 : undefined
             }
-            onConnect={
-              permissions.canEdit 
-                ? (conn) => {
-                    onConnect(conn);
-                    setConnectStartParams(null);
-                    // Broadcast new edge creation immediately
-                    const newEdge = {
-                      id: crypto.randomUUID(),
-                      source: conn.source,
-                      target: conn.target,
-                      sourceHandle: conn.sourceHandle,
-                      targetHandle: conn.targetHandle,
-                    };
-                    realtime.broadcastEdgeChange('INSERT', newEdge as Edge);
-                  }
-                : undefined
-            }
+            onConnect={permissions.canEdit ? handleConnect : undefined}
             onConnectStart={permissions.canEdit ? onConnectStart : undefined}
             onConnectEnd={permissions.canEdit ? onConnectEnd : undefined}
             panOnDrag={!selectionModeActive}
@@ -1110,11 +1512,12 @@ function EditorInner({
             onEdgeContextMenu={onEdgeContextMenu}
             onPaneContextMenu={onPaneContextMenu}
             nodeTypes={nodeTypes}
-            snapToGrid={true}
+            snapToGrid={preferences?.gridSnapping}
             snapGrid={[15, 15]}
             minZoom={0.1}
             maxZoom={2.5}
             fitView={true}
+            zoomOnDoubleClick={false}
             deleteKeyCode={null} // Handled via key listener above to avoid focus collision
             multiSelectionKeyCode="Shift"
             className="w-full h-full"
@@ -1368,40 +1771,161 @@ function EditorInner({
               <button
                 onClick={() => {
                   setSelectedNode(contextMenu.nodeId!);
+                  if (!useEditorStore.getState().panels.properties) {
+                    togglePanel('properties');
+                  }
                   setContextMenu(null);
                 }}
-                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
               >
-                <Settings className="w-4 h-4 text-zinc-400" />
-                <span>{locale === 'ar' ? 'الخصائص' : 'Properties'}</span>
+                <div className="flex items-center gap-2.5">
+                  <Settings className="w-4 h-4 text-zinc-400" />
+                  <span>{locale === 'ar' ? 'الخصائص' : 'Properties'}</span>
+                </div>
+              </button>
+
+              {(() => {
+                const node = nodes.find(n => n.id === contextMenu.nodeId);
+                const isGroup = node?.type === 'group';
+                const selectedCount = getNodes().filter(n => n.selected).length;
+
+                return (
+                  <>
+                    {isGroup && (
+                      <button
+                        onClick={() => handleUngroupNode(contextMenu.nodeId!)}
+                        className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+                      >
+                        <Unlock className="w-4 h-4 text-zinc-400" />
+                        <span>{locale === 'ar' ? 'تفكيك المجموعة' : 'Ungroup Nodes'}</span>
+                      </button>
+                    )}
+                    {selectedCount >= 2 && (
+                      <button
+                        onClick={() => {
+                          handleGroupSelectedNodes();
+                          setContextMenu(null);
+                        }}
+                        className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <FolderPlus className="w-4 h-4 text-zinc-400" />
+                          <span>{locale === 'ar' ? 'تجميع التحديد' : 'Group Selection'}</span>
+                        </div>
+                        <span className="text-[9px] text-zinc-500 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-zinc-300 transition-colors">
+                          Ctrl+G
+                        </span>
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
+
+              <button
+                onClick={handleCopySelection}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Copy className="w-4 h-4 text-zinc-400" />
+                  <span>
+                    {getNodes().filter(n => n.selected).length > 1
+                      ? (locale === 'ar' ? 'نسخ التحديد' : 'Copy Selection')
+                      : (locale === 'ar' ? 'نسخ العقدة' : 'Copy Node')}
+                  </span>
+                </div>
+                <span className="text-[9px] text-zinc-500 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-zinc-300 transition-colors">
+                  Ctrl+C
+                </span>
               </button>
 
               <button
-                onClick={() => handleCopyNode(contextMenu.nodeId!)}
-                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
-              >
-                <Copy className="w-4 h-4 text-zinc-400" />
-                <span>{locale === 'ar' ? 'نسخ العقدة' : 'Copy Node'}</span>
-              </button>
+                onClick={() => {
+                  const selectedNodes = getNodes().filter((n) => n.selected);
+                  if (selectedNodes.length <= 1) {
+                    handleDuplicateNodeDirect(contextMenu.nodeId!);
+                    return;
+                  }
+                  
+                  pushToUndo();
+                  const selectedNodeIds = new Set(selectedNodes.map((n) => n.id));
+                  const connectingEdges = getEdges().filter(
+                    (e) => selectedNodeIds.has(e.source) && selectedNodeIds.has(e.target)
+                  );
 
-              <button
-                onClick={() => handleDuplicateNodeDirect(contextMenu.nodeId!)}
-                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+                  const oldToNewIdMap: Record<string, string> = {};
+                  const duplicatedNodes = selectedNodes.map((n) => {
+                    const newId = crypto.randomUUID();
+                    oldToNewIdMap[n.id] = newId;
+                    return {
+                      ...n,
+                      id: newId,
+                      position: {
+                        x: n.position.x + 50,
+                        y: n.position.y + 50,
+                      },
+                      data: {
+                        ...n.data,
+                        label: n.data.label + (locale === 'ar' ? ' (نسخة)' : ' (Copy)'),
+                      },
+                      selected: true,
+                    };
+                  });
+
+                  const duplicatedEdges = connectingEdges
+                    .filter((e) => oldToNewIdMap[e.source] && oldToNewIdMap[e.target])
+                    .map((e) => ({
+                      ...e,
+                      id: crypto.randomUUID(),
+                      source: oldToNewIdMap[e.source],
+                      target: oldToNewIdMap[e.target],
+                      selected: true,
+                    }));
+
+                  const deselectedNodes = nodes.map((n) => ({ ...n, selected: false }));
+                  const deselectedEdges = edges.map((e) => ({ ...e, selected: false }));
+
+                  setNodes([...deselectedNodes, ...duplicatedNodes]);
+                  setEdges([...deselectedEdges, ...duplicatedEdges]);
+                  setHasUnsavedChanges(true);
+
+                  duplicatedNodes.forEach((node) => realtime.broadcastNodeChange('INSERT', node));
+                  duplicatedEdges.forEach((edge) => realtime.broadcastEdgeChange('INSERT', edge));
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
                 disabled={!permissions.canEdit}
               >
-                <Layers className="w-4 h-4 text-zinc-400" />
-                <span>{locale === 'ar' ? 'تكرار العقدة' : 'Duplicate Node'}</span>
+                <div className="flex items-center gap-2.5">
+                  <Layers className="w-4 h-4 text-zinc-400" />
+                  <span>
+                    {getNodes().filter(n => n.selected).length > 1
+                      ? (locale === 'ar' ? 'تكرار التحديد' : 'Duplicate Selection')
+                      : (locale === 'ar' ? 'تكرار العقدة' : 'Duplicate Node')}
+                  </span>
+                </div>
+                <span className="text-[9px] text-zinc-500 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-zinc-300 transition-colors">
+                  Ctrl+D
+                </span>
               </button>
 
               <div className="h-px bg-zinc-800/80 my-1" />
 
               <button
-                onClick={() => handleDeleteNodeDirect(contextMenu.nodeId!)}
-                className="w-full text-start px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+                onClick={handleDeleteSelection}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
                 disabled={!permissions.canEdit}
               >
-                <Trash2 className="w-4 h-4" />
-                <span>{locale === 'ar' ? 'حذف العقدة' : 'Delete Node'}</span>
+                <div className="flex items-center gap-2.5">
+                  <Trash2 className="w-4 h-4 font-normal" />
+                  <span>
+                    {getNodes().filter(n => n.selected).length > 1
+                      ? (locale === 'ar' ? 'حذف التحديد' : 'Delete Selection')
+                      : (locale === 'ar' ? 'حذف العقدة' : 'Delete Node')}
+                  </span>
+                </div>
+                <span className="text-[9px] text-red-500/50 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-red-400 transition-colors">
+                  Del
+                </span>
               </button>
             </>
           )}
@@ -1409,26 +1933,49 @@ function EditorInner({
           {contextMenu.edgeId && (
             <button
               onClick={() => handleDeleteEdgeDirect(contextMenu.edgeId!)}
-              className="w-full text-start px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              className="w-full text-start px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
               disabled={!permissions.canEdit}
             >
-              <Trash2 className="w-4 h-4" />
-              <span>{locale === 'ar' ? 'حذف الرابط' : 'Delete Edge'}</span>
+              <div className="flex items-center gap-2.5">
+                <Trash2 className="w-4 h-4 font-normal" />
+                <span>{locale === 'ar' ? 'حذف الرابط' : 'Delete Edge'}</span>
+              </div>
+              <span className="text-[9px] text-red-500/50 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-red-400 transition-colors">
+                Del
+              </span>
             </button>
           )}
 
           {!contextMenu.nodeId && !contextMenu.edgeId && (
             <>
               <button
-                onClick={handlePasteNode}
-                disabled={!copiedNode || !permissions.canEdit}
-                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+                onClick={handlePasteSelection}
+                disabled={!copiedElements || copiedElements.nodes.length === 0 || !permissions.canEdit}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
               >
-                <Clipboard className="w-4 h-4 text-zinc-400" />
-                <span>{locale === 'ar' ? 'لصق العقدة هنا' : 'Paste Node Here'}</span>
+                <div className="flex items-center gap-2.5">
+                  <Clipboard className="w-4 h-4 text-zinc-400" />
+                  <span>{locale === 'ar' ? 'لصق هنا' : 'Paste Selection Here'}</span>
+                </div>
+                <span className="text-[9px] text-zinc-500 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-zinc-300 transition-colors">
+                  Ctrl+V
+                </span>
               </button>
 
               <div className="h-px bg-zinc-800/80 my-1" />
+
+              <button
+                onClick={() => {
+                  handleApplyLayout('TB');
+                  setContextMenu(null);
+                  playClickSound();
+                }}
+                disabled={!permissions.canEdit || nodes.length === 0}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              >
+                <Sparkles className="w-4 h-4 text-zinc-400" />
+                <span>{locale === 'ar' ? 'ترتيب وتنسيق اللوحة' : 'Beautify Layout'}</span>
+              </button>
 
               <button
                 onClick={() => {
@@ -1465,6 +2012,66 @@ function EditorInner({
               </button>
             </>
           )}
+        </div>
+      )}
+      {nodeWheel && (
+        <div
+          style={{
+            position: 'fixed',
+            left: nodeWheel.x - 96,
+            top: nodeWheel.y - 96,
+            zIndex: 999,
+          }}
+          className="w-48 h-48 rounded-full border border-fuchsia-500/35 bg-zinc-950/95 shadow-[0_0_30px_rgba(217,70,239,0.15)] flex items-center justify-center relative select-none animate-scaleIn backdrop-blur-md"
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {/* Top quadrant: Process */}
+          <button
+            onClick={() => handleQuickSpawnNode('process')}
+            title={locale === 'ar' ? 'خطوة عملية' : 'Spawn Process Step'}
+            className="absolute top-1.5 left-1/2 -translate-x-1/2 w-11 h-11 rounded-xl flex flex-col items-center justify-center hover:bg-sky-500/20 text-sky-400 border border-sky-500/10 cursor-pointer transition-all hover:scale-105 active:scale-95 group"
+          >
+            <Play className="w-4.5 h-4.5 group-hover:animate-pulse animate-none" />
+            <span className="text-[7px] font-bold text-zinc-400 mt-0.5">{locale === 'ar' ? 'عملية' : 'Process'}</span>
+          </button>
+
+          {/* Right quadrant: Decision */}
+          <button
+            onClick={() => handleQuickSpawnNode('decision')}
+            title={locale === 'ar' ? 'تفرع قرار' : 'Spawn Decision Branch'}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-xl flex flex-col items-center justify-center hover:bg-amber-500/20 text-amber-400 border border-amber-500/10 cursor-pointer transition-all hover:scale-105 active:scale-95 group"
+          >
+            <GitBranch className="w-4.5 h-4.5 group-hover:rotate-12 transition-transform" />
+            <span className="text-[7px] font-bold text-zinc-400 mt-0.5">{locale === 'ar' ? 'قرار' : 'Decision'}</span>
+          </button>
+
+          {/* Bottom quadrant: Integration */}
+          <button
+            onClick={() => handleQuickSpawnNode('integration')}
+            title={locale === 'ar' ? 'طلب API' : 'Spawn API Request'}
+            className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-11 h-11 rounded-xl flex flex-col items-center justify-center hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/10 cursor-pointer transition-all hover:scale-105 active:scale-95 group"
+          >
+            <Database className="w-4.5 h-4.5 group-hover:animate-bounce" />
+            <span className="text-[7px] font-bold text-zinc-400 mt-0.5">{locale === 'ar' ? 'ربط' : 'API'}</span>
+          </button>
+
+          {/* Left quadrant: Note */}
+          <button
+            onClick={() => handleQuickSpawnNode('note')}
+            title={locale === 'ar' ? 'ملاحظة' : 'Spawn Note'}
+            className="absolute left-1.5 top-1/2 -translate-y-1/2 w-11 h-11 rounded-xl flex flex-col items-center justify-center hover:bg-purple-500/20 text-purple-400 border border-purple-500/10 cursor-pointer transition-all hover:scale-105 active:scale-95 group"
+          >
+            <Layers className="w-4.5 h-4.5 group-hover:skew-x-3 transition-transform" />
+            <span className="text-[7px] font-bold text-zinc-400 mt-0.5">{locale === 'ar' ? 'ملاحظة' : 'Note'}</span>
+          </button>
+
+          {/* Center: Close */}
+          <button
+            onClick={() => setNodeWheel(null)}
+            className="w-9 h-9 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center hover:bg-red-500/25 hover:border-red-500/35 hover:text-red-400 text-zinc-500 cursor-pointer transition-all shadow-lg shadow-black/50"
+          >
+            <X className="w-4.5 h-4.5" />
+          </button>
         </div>
       )}
     </div>

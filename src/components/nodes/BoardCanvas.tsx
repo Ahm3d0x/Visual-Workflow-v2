@@ -7,15 +7,16 @@ import {
   X, Pen, Minus, Square, Circle, Triangle, ArrowRight, Type, Eraser,
   MousePointer2, Undo2, Redo2, Trash2, Download, ZoomIn, ZoomOut,
   RotateCcw, PaintBucket, ChevronUp,
-  Save, Users
+  Save, Users, Copy, Clipboard, Settings, Layers, StickyNote
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
+import { playClickSound, playPopSound, playSweepSound } from '@/lib/audioSfx';
 import { createClient } from '@/lib/supabase/client';
 import { type BoardStroke } from './BoardNode';
 import { useDialogStore } from '@/stores/dialogStore';
 
 /* ─────────────────────── Types ─────────────────────── */
-type Tool = 'select' | 'pen' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser';
+type Tool = 'select' | 'pen' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser' | 'sticky';
 
 interface PointerState {
   down: boolean;
@@ -96,6 +97,31 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const [isDraggingObject, setIsDraggingObject] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showZoomMenu, setShowZoomMenu] = useState(false);
+  
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; strokeId?: string } | null>(null);
+  const [copiedStroke, setCopiedStroke] = useState<BoardStroke | null>(null);
+  const mousePosRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      mousePosRef.current = { x: e.clientX, y: e.clientY };
+    };
+    wrap.addEventListener('mousemove', handleMouseMove);
+    return () => wrap.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  // Close context menu on document click
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleCloseMenu = () => setContextMenu(null);
+    window.addEventListener('click', handleCloseMenu);
+    return () => window.removeEventListener('click', handleCloseMenu);
+  }, [contextMenu]);
+
+  const lastPastePosRef = useRef<{ x: number; y: number } | null>(null);
+  const consecutivePasteCountRef = useRef<number>(0);
   
   // Real-time collaborative whiteboard drawings preview state
   const [remoteDrawings, setRemoteDrawings] = useState<Record<string, BoardStroke>>({});
@@ -512,6 +538,78 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       }
       ctx.strokeRect(x, y, w, h);
 
+    } else if (stroke.tool === 'sticky' && stroke.points.length >= 1) {
+      const p1 = stroke.points[0];
+      const p2 = stroke.points[1] || { x: p1.x + 160, y: p1.y + 160 };
+      const w = Math.max(120, p2.x - p1.x);
+      const h = Math.max(120, p2.y - p1.y);
+
+      ctx.save();
+      
+      // Shadow cast
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetX = 3;
+      ctx.shadowOffsetY = 4;
+
+      // Fill background
+      ctx.fillStyle = stroke.fillColor || '#fef08a';
+      
+      // Draw sticky rounded rect
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(p1.x, p1.y, w, h, 8);
+      } else {
+        ctx.rect(p1.x, p1.y, w, h);
+      }
+      ctx.fill();
+
+      // Folded corner accent
+      ctx.shadowColor = 'transparent';
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+      ctx.beginPath();
+      ctx.moveTo(p1.x + w - 16, p1.y + h);
+      ctx.lineTo(p1.x + w, p1.y + h - 16);
+      ctx.lineTo(p1.x + w, p1.y + h);
+      ctx.closePath();
+      ctx.fill();
+
+      // Text wrapping
+      if (stroke.text) {
+        ctx.fillStyle = stroke.color || '#18181b';
+        ctx.font = `bold ${stroke.fontSize || 13}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const padding = 15;
+        const maxWidth = w - padding * 2;
+        const words = stroke.text.split(' ');
+        const lines: string[] = [];
+        let currentLine = words[0] || '';
+
+        for (let i = 1; i < words.length; i++) {
+          const word = words[i];
+          const width = ctx.measureText(currentLine + ' ' + word).width;
+          if (width < maxWidth) {
+            currentLine += ' ' + word;
+          } else {
+            lines.push(currentLine);
+            currentLine = word;
+          }
+        }
+        lines.push(currentLine);
+
+        const lineHeight = (stroke.fontSize || 13) + 4;
+        const totalHeight = lines.length * lineHeight;
+        const startY = p1.y + h / 2 - totalHeight / 2 + lineHeight / 2;
+
+        lines.forEach((line, index) => {
+          ctx.fillText(line, p1.x + w / 2, startY + index * lineHeight);
+        });
+      }
+
+      ctx.restore();
+
     } else if (stroke.tool === 'circle' && stroke.points.length >= 2) {
       const p0 = stroke.points[0];
       const pN = stroke.points[stroke.points.length - 1];
@@ -708,7 +806,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     e.currentTarget.setPointerCapture(e.pointerId);
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
 
-    if (tool === 'text') {
+    if (tool === 'text' || tool === 'sticky') {
       setTextInput({ active: true, x: e.clientX, y: e.clientY, value: '' });
       return;
     }
@@ -868,6 +966,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     const newStrokes = [...strokes, newStroke];
     setStrokes(newStrokes);
     persistStrokes(newStrokes);
+    playClickSound();
 
     // Broadcast completed stroke and draw end event
     if (channelRef.current?.state === 'joined') {
@@ -899,12 +998,14 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     const { x, y } = toCanvasCoords(textInput.x, textInput.y);
     const newStroke: BoardStroke = {
       id: crypto.randomUUID(),
-      tool: 'text',
-      points: [{ x, y }],
-      color,
+      tool: tool === 'sticky' ? 'sticky' : 'text',
+      points: tool === 'sticky' ? [{ x, y }, { x: x + 160, y: y + 160 }] : [{ x, y }],
+      color: tool === 'sticky' ? '#18181b' : color,
+      fillColor: tool === 'sticky' ? fillColor || '#fef08a' : undefined,
       width: strokeWidth,
       text: textInput.value,
-      fontSize,
+      fontSize: tool === 'sticky' ? 13 : fontSize,
+      fill: tool === 'sticky' ? true : false,
     };
     setUndoStack((prev) => [...prev, strokes]);
     setRedoStack([]);
@@ -914,8 +1015,9 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     if (channelRef.current?.state === 'joined') {
       channelRef.current.send({ type: 'broadcast', event: 'stroke_add', payload: { stroke: newStroke } });
     }
+    playClickSound();
     setTextInput({ active: false, x: 0, y: 0, value: '' });
-  }, [textInput, toCanvasCoords, color, strokeWidth, fontSize, strokes, persistStrokes]);
+  }, [textInput, toCanvasCoords, color, strokeWidth, fontSize, strokes, persistStrokes, tool, fillColor]);
 
   /* ─── Undo / Redo ─── */
   const handleUndo = useCallback(() => {
@@ -925,6 +1027,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     setStrokes(prev);
     setUndoStack((u) => u.slice(0, -1));
     persistStrokes(prev);
+    playClickSound();
   }, [undoStack, strokes, persistStrokes]);
 
   const handleRedo = useCallback(() => {
@@ -934,6 +1037,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     setStrokes(next);
     setRedoStack((r) => r.slice(0, -1));
     persistStrokes(next);
+    playClickSound();
   }, [redoStack, strokes, persistStrokes]);
 
   /* ─── Clear all ─── */
@@ -951,6 +1055,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     if (channelRef.current?.state === 'joined') {
       channelRef.current.send({ type: 'broadcast', event: 'strokes_clear', payload: {} });
     }
+    playSweepSound();
   }, [strokes, persistStrokes]);
 
   /* ─── Delete selected stroke ─── */
@@ -965,7 +1070,142 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       channelRef.current.send({ type: 'broadcast', event: 'stroke_delete', payload: { id: selectedStrokeId } });
     }
     setSelectedStrokeId(null);
+    playPopSound();
   }, [selectedStrokeId, strokes, persistStrokes]);
+
+  /* ─── Copy selected stroke ─── */
+  const handleCopyStroke = useCallback((strokeId: string) => {
+    const stroke = strokes.find((s) => s.id === strokeId);
+    if (!stroke) return;
+    setCopiedStroke(JSON.parse(JSON.stringify(stroke)));
+    useDialogStore.getState().showNotification(
+      'Stroke copied to clipboard',
+      'success',
+      2000
+    );
+  }, [strokes]);
+
+  /* ─── Paste copied stroke ─── */
+  const handlePasteStroke = useCallback((clientX: number, clientY: number) => {
+    if (!copiedStroke) return;
+    const { x: flowX, y: flowY } = toCanvasCoords(clientX, clientY);
+
+    // Smart Cascading Paste Offset for whiteboard shapes
+    const isSamePosition = lastPastePosRef.current &&
+      lastPastePosRef.current.x === clientX &&
+      lastPastePosRef.current.y === clientY;
+
+    if (isSamePosition) {
+      consecutivePasteCountRef.current += 1;
+    } else {
+      consecutivePasteCountRef.current = 0;
+      lastPastePosRef.current = { x: clientX, y: clientY };
+    }
+
+    const cascadeOffset = consecutivePasteCountRef.current * 20;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    copiedStroke.points.forEach((p) => {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+    });
+
+    if (minX === Infinity || minY === Infinity) {
+      minX = 0;
+      minY = 0;
+    }
+
+    const newPoints = copiedStroke.points.map((p) => ({
+      x: flowX + (p.x - minX) + cascadeOffset,
+      y: flowY + (p.y - minY) + cascadeOffset,
+    }));
+
+    const newStroke: BoardStroke = {
+      ...copiedStroke,
+      id: crypto.randomUUID(),
+      points: newPoints,
+    };
+
+    setUndoStack((prev) => [...prev, strokes]);
+    setRedoStack([]);
+    const newStrokes = [...strokes, newStroke];
+    setStrokes(newStrokes);
+    persistStrokes(newStrokes);
+    playClickSound();
+
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'stroke_add',
+        payload: { stroke: newStroke, userId: currentUserId }
+      });
+    }
+
+    setSelectedStrokeId(newStroke.id);
+    useDialogStore.getState().showNotification(
+      'Stroke pasted',
+      'success',
+      1000
+    );
+  }, [copiedStroke, toCanvasCoords, strokes, persistStrokes, currentUserId]);
+
+  /* ─── Duplicate stroke directly ─── */
+  const handleDuplicateStrokeDirect = useCallback((strokeId: string) => {
+    const stroke = strokes.find((s) => s.id === strokeId);
+    if (!stroke) return;
+
+    const newPoints = stroke.points.map((p) => ({
+      x: p.x + 40,
+      y: p.y + 40,
+    }));
+
+    const newStroke: BoardStroke = {
+      ...stroke,
+      id: crypto.randomUUID(),
+      points: newPoints,
+    };
+
+    setUndoStack((prev) => [...prev, strokes]);
+    setRedoStack([]);
+    const newStrokes = [...strokes, newStroke];
+    setStrokes(newStrokes);
+    persistStrokes(newStrokes);
+    playClickSound();
+
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'stroke_add',
+        payload: { stroke: newStroke, userId: currentUserId }
+      });
+    }
+
+    setSelectedStrokeId(newStroke.id);
+  }, [strokes, persistStrokes, currentUserId]);
+
+  /* ─── Right-click context menu handler ─── */
+  const onContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const { x, y } = toCanvasCoords(e.clientX, e.clientY);
+    
+    // Hit-test strokes in reverse order
+    const hit = [...strokes].reverse().find((s) => hitTestStroke(s, x, y, 8));
+    if (hit) {
+      setSelectedStrokeId(hit.id);
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        strokeId: hit.id,
+      });
+    } else {
+      setSelectedStrokeId(null);
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+      });
+    }
+  }, [strokes, hitTestStroke, toCanvasCoords]);
 
   /* ─── Background change ─── */
   const handleBgChange = useCallback((newBg: string) => {
@@ -1048,6 +1288,9 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'z') { e.preventDefault(); handleUndo(); }
         if (e.key === 'y') { e.preventDefault(); handleRedo(); }
+        if (e.key === 'c') { if (selectedStrokeId) { e.preventDefault(); handleCopyStroke(selectedStrokeId); } }
+        if (e.key === 'v') { e.preventDefault(); handlePasteStroke(mousePosRef.current.x, mousePosRef.current.y); }
+        if (e.key === 'd') { if (selectedStrokeId) { e.preventDefault(); handleDuplicateStrokeDirect(selectedStrokeId); } }
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedStrokeId && document.activeElement?.tagName !== 'INPUT') {
@@ -1066,7 +1309,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [textInput.active, selectedStrokeId, handleUndo, handleRedo, handleDeleteSelected, onClose]);
+  }, [textInput.active, selectedStrokeId, handleUndo, handleRedo, handleDeleteSelected, handleCopyStroke, handlePasteStroke, handleDuplicateStrokeDirect, onClose]);
 
   /* ─── Tool config ─── */
   const tools: { id: Tool; icon: React.ReactNode; label: string; key: string }[] = [
@@ -1079,6 +1322,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     { id: 'circle', icon: <Circle className="w-4 h-4" />, label: 'Ellipse', key: 'C' },
     { id: 'triangle', icon: <Triangle className="w-4 h-4" />, label: 'Triangle', key: 'T' },
     { id: 'text', icon: <Type className="w-4 h-4" />, label: 'Text', key: 'T' },
+    { id: 'sticky', icon: <StickyNote className="w-4 h-4" />, label: 'Sticky Note', key: 'N' },
   ];
 
   const cursorStyle: Record<Tool, string> = {
@@ -1091,6 +1335,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     circle: 'crosshair',
     triangle: 'crosshair',
     text: 'text',
+    sticky: 'cell',
   };
 
   const collaboratorList = Object.entries(collaborators);
@@ -1408,6 +1653,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerLeave={onPointerUp}
+              onContextMenu={onContextMenu}
             />
           </div>
 
@@ -1580,6 +1826,134 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           <line x1="10" y1="8" x2="8" y2="10" stroke="currentColor" strokeWidth="1.5" />
         </svg>
       </div>
+
+      {/* Floating Glassmorphic Context Menu */}
+      {contextMenu && (
+        <div
+          style={{
+            position: 'fixed',
+            left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 230),
+            top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 250),
+            zIndex: 99999,
+          }}
+          className="w-56 bg-zinc-950/90 border border-zinc-800/80 rounded-2xl shadow-2xl p-1.5 font-sans flex flex-col gap-0.5 animate-fadeIn backdrop-blur-md"
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {contextMenu.strokeId && (
+            <>
+              <button
+                onClick={() => {
+                  // Properties action: open/show stroke color settings swatch picker
+                  setShowPalette(true);
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Settings className="w-4 h-4 text-zinc-400" />
+                  <span>Properties</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleCopyStroke(contextMenu.strokeId!);
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Copy className="w-4 h-4 text-zinc-400" />
+                  <span>Copy Shape</span>
+                </div>
+                <span className="text-[9px] text-zinc-500 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-zinc-300 transition-colors">
+                  Ctrl+C
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleDuplicateStrokeDirect(contextMenu.strokeId!);
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Layers className="w-4 h-4 text-zinc-400" />
+                  <span>Duplicate Shape</span>
+                </div>
+                <span className="text-[9px] text-zinc-500 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-zinc-300 transition-colors">
+                  Ctrl+D
+                </span>
+              </button>
+
+              <div className="h-px bg-zinc-800/80 my-1" />
+
+              <button
+                onClick={() => {
+                  handleDeleteSelected();
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Trash2 className="w-4 h-4 font-normal" />
+                  <span>Delete Shape</span>
+                </div>
+                <span className="text-[9px] text-red-500/50 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-red-400 transition-colors">
+                  Del
+                </span>
+              </button>
+            </>
+          )}
+
+          {!contextMenu.strokeId && (
+            <>
+              <button
+                onClick={() => {
+                  handlePasteStroke(contextMenu.x, contextMenu.y);
+                  setContextMenu(null);
+                }}
+                disabled={!copiedStroke}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-semibold select-none group"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Clipboard className="w-4 h-4 text-zinc-400" />
+                  <span>Paste Shape Here</span>
+                </div>
+                <span className="text-[9px] text-zinc-500 font-mono bg-zinc-900/80 px-1.5 py-0.5 rounded-md border border-zinc-800 ml-auto shrink-0 font-medium tracking-tight group-hover:text-zinc-300 transition-colors">
+                  Ctrl+V
+                </span>
+              </button>
+
+              <div className="h-px bg-zinc-800/80 my-1" />
+
+              <button
+                onClick={() => {
+                  handleClearAll();
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Clear Board</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleZoomReset();
+                  setContextMenu(null);
+                }}
+                className="w-full text-start px-3 py-2 rounded-xl hover:bg-fuchsia-500/10 hover:text-fuchsia-400 text-zinc-300 transition-all cursor-pointer flex items-center gap-2.5 text-xs font-semibold select-none"
+              >
+                <RotateCcw className="w-4 h-4 text-zinc-400" />
+                <span>Reset View</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   </div>
 );

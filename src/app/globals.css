@@ -186,3 +186,18 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+/* Premium edge path dashes for connection animations */
+.premium-flow-edge path.react-flow__edge-path-animation {
+  stroke-dasharray: 8, 8 !important;
+  animation: flowEdgeParticles 14s linear infinite !important;
+}
+
+@keyframes flowEdgeParticles {
+  from {
+    stroke-dashoffset: 160;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}

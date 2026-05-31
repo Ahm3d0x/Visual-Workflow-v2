@@ -75,6 +75,15 @@ export interface EditorState {
   // Simulation state
   activeSimNodeId: string | null;
 
+  // Preferences settings
+  preferences: {
+    soundSfx: boolean;
+    quickWheel: boolean;
+    gridSnapping: boolean;
+    animatedEdges: boolean;
+    orthogonalRouting: boolean;
+  };
+
   // Click-to-Connect Mode
   pendingConnection: { nodeId: string; handleId: string; handleType: 'source' | 'target' } | null;
   setPendingConnection: (conn: { nodeId: string; handleId: string; handleType: 'source' | 'target' } | null) => void;
@@ -104,6 +113,9 @@ export interface EditorState {
   setHasUnsavedChanges: (hasChanges: boolean) => void;
   clearHistory: () => void;
   setActiveSimNodeId: (id: string | null) => void;
+
+  // Preferences Actions
+  setPreference: (key: 'soundSfx' | 'quickWheel' | 'gridSnapping' | 'animatedEdges' | 'orthogonalRouting', value: boolean) => void;
 
   // Collaboration Actions
   setCollaborators: (collaborators: Record<string, Collaborator>) => void;
@@ -135,12 +147,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   collaborators: {},
   comments: [],
   activeSimNodeId: null,
+  preferences: {
+    soundSfx: true,
+    quickWheel: true,
+    gridSnapping: false,
+    animatedEdges: true,
+    orthogonalRouting: false,
+  },
   pendingConnection: null,
   setPendingConnection: (pendingConnection) => set({ pendingConnection }),
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),
   setActiveSimNodeId: (activeSimNodeId) => set({ activeSimNodeId }),
+  setPreference: (key, value) => set((state) => ({
+    preferences: {
+      ...state.preferences,
+      [key]: value,
+    },
+  })),
 
   onNodesChange: (changes) => {
     // Only push to undo on specific structural changes, not every micro-movement to prevent bloating the stack
