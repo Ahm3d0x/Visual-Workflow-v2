@@ -111,5 +111,9 @@
     "title": "Node Creator",
     "create_new": "Create New Node",
     "no_created": "No nodes created yet"
+  },
+  "admin": {
+    "title": "Admin Dashboard",
+    "description": "System administration panel"
   }
 }

@@ -7,6 +7,7 @@ interface ProfileRecord {
   full_name: string | null;
   email: string;
   avatar_url: string | null;
+  is_admin: boolean;
 }
 
 interface WorkspaceRecord {
@@ -43,7 +44,7 @@ export default async function MainLayout({
   // 3. Fetch user profile record
   const { data: profile } = await (supabase
     .from('profiles')
-    .select('full_name, email, avatar_url')
+    .select('full_name, email, avatar_url, is_admin')
     .eq('id', user.id)
     .single() as unknown as { data: ProfileRecord | null });
 

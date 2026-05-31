@@ -55,6 +55,7 @@ interface DashboardShellProps {
     full_name: string | null;
     email: string;
     avatar_url: string | null;
+    is_admin?: boolean;
   } | null;
   workspaces: Array<{
     id: string;
@@ -150,6 +151,9 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
       { name: isRtl ? 'إعدادات مساحة العمل' : 'Workspace settings', href: `/${locale}/settings/workspace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Settings }
     ] : []),
     { name: isRtl ? 'الخطط والاشتراكات' : 'Billing & Plans', href: `/${locale}/billing${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: CreditCard },
+    ...(profile?.is_admin ? [
+      { name: isRtl ? 'لوحة الإدارة' : 'Admin Dashboard', href: `/${locale}/admin`, icon: Shield }
+    ] : []),
     { name: isRtl ? 'دليل المساعدة' : 'Help & Documentation', href: `/${locale}/help`, icon: HelpCircle },
   ];
 
@@ -312,6 +316,15 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                     >
                       <User className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الملف الشخصي' : 'Profile'}
                     </DropdownMenuItem>
+                    {profile.is_admin && (
+                      <DropdownMenuItem
+                        onClick={() => router.push('/admin')}
+                        className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-accent hover:text-accent-foreground"
+                      >
+                        <Shield className="w-4 h-4 text-accent" /> {isRtl ? 'لوحة الإدارة' : 'Admin Dashboard'}
+                      </DropdownMenuItem>
+                    )}
+
                     {activeWorkspace && activeWorkspace.role === 'owner' && (
                       <DropdownMenuItem
                         onClick={() => router.push(`/settings/workspace?w=${activeWorkspace.id}`)}
