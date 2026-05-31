@@ -512,6 +512,182 @@ export interface Database {
           created_at?: string
         }
       }
+      marketplace_nodes: {
+        Row: {
+          id: string
+          author_id: string
+          name: string
+          description: string | null
+          long_description: string | null
+          category: string
+          domain: string | null
+          tags: string[]
+          icon: string | null
+          color: string | null
+          accent_bar: string | null
+          badge_color: string | null
+          color_class: string | null
+          preview_image_url: string | null
+          base_type: string
+          default_data: Json
+          default_style: Json
+          handles: Json
+          fields_schema: Json
+          visibility: 'private' | 'workspace' | 'public'
+          status: 'draft' | 'published' | 'under_review' | 'rejected' | 'archived'
+          install_count: number
+          avg_rating: number
+          rating_count: number
+          is_free: boolean
+          price: number
+          version: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          author_id: string
+          name: string
+          description?: string | null
+          long_description?: string | null
+          category?: string
+          domain?: string | null
+          tags?: string[]
+          icon?: string | null
+          color?: string | null
+          accent_bar?: string | null
+          badge_color?: string | null
+          color_class?: string | null
+          preview_image_url?: string | null
+          base_type?: string
+          default_data?: Json
+          default_style?: Json
+          handles?: Json
+          fields_schema?: Json
+          visibility?: 'private' | 'workspace' | 'public'
+          status?: 'draft' | 'published' | 'under_review' | 'rejected' | 'archived'
+          install_count?: number
+          avg_rating?: number
+          rating_count?: number
+          is_free?: boolean
+          price?: number
+          version?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          author_id?: string
+          name?: string
+          description?: string | null
+          long_description?: string | null
+          category?: string
+          domain?: string | null
+          tags?: string[]
+          icon?: string | null
+          color?: string | null
+          accent_bar?: string | null
+          badge_color?: string | null
+          color_class?: string | null
+          preview_image_url?: string | null
+          base_type?: string
+          default_data?: Json
+          default_style?: Json
+          handles?: Json
+          fields_schema?: Json
+          visibility?: 'private' | 'workspace' | 'public'
+          status?: 'draft' | 'published' | 'under_review' | 'rejected' | 'archived'
+          install_count?: number
+          avg_rating?: number
+          rating_count?: number
+          is_free?: boolean
+          price?: number
+          version?: string
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      marketplace_installs: {
+        Row: {
+          id: string
+          workspace_id: string
+          marketplace_node_id: string
+          installed_by: string
+          installed_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          marketplace_node_id: string
+          installed_by: string
+          installed_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          marketplace_node_id?: string
+          installed_by?: string
+          installed_at?: string
+        }
+      }
+      marketplace_ratings: {
+        Row: {
+          id: string
+          marketplace_node_id: string
+          user_id: string
+          rating: number
+          review: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          marketplace_node_id: string
+          user_id: string
+          rating: number
+          review?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          marketplace_node_id?: string
+          user_id?: string
+          rating?: number
+          review?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      workspace_node_settings: {
+        Row: {
+          id: string
+          workspace_id: string
+          node_groups: Json
+          hidden_nodes: string[]
+          custom_order: Json
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          workspace_id: string
+          node_groups?: Json
+          hidden_nodes?: string[]
+          custom_order?: Json
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          workspace_id?: string
+          node_groups?: Json
+          hidden_nodes?: string[]
+          custom_order?: Json
+          created_at?: string
+          updated_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never

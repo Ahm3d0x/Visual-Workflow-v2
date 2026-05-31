@@ -96,5 +96,20 @@
     "no_credits": "You have no AI credits remaining. Upgrade your plan to continue.",
     "permission_denied": "You don't have permission to perform this action.",
     "not_found": "This workflow doesn't exist or you don't have access."
+  },
+  "marketplace": {
+    "title": "Node Marketplace",
+    "description": "Discover and install advanced nodes to supercharge your workflows",
+    "search_placeholder": "Search nodes by name or tags...",
+    "no_nodes": "No nodes found",
+    "install": "Install",
+    "uninstall": "Uninstall",
+    "installed": "Installed",
+    "my_nodes": "My Nodes"
+  },
+  "node_creator": {
+    "title": "Node Creator",
+    "create_new": "Create New Node",
+    "no_created": "No nodes created yet"
   }
 }

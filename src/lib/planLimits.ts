@@ -16,6 +16,9 @@ export interface PlanLimits {
   priority_support: boolean;
   max_workspaces: number;
   max_workspace_share_links: number;
+  max_marketplace_installs: number;
+  max_created_nodes: number;
+  max_node_groups: number;
 }
 
 export type PlanType = 'free' | 'warrior' | 'elite' | 'champion' | 'legend';
@@ -37,6 +40,9 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     priority_support: false,
     max_workspaces: 1,
     max_workspace_share_links: 0,
+    max_marketplace_installs: 5,
+    max_created_nodes: 2,
+    max_node_groups: 3,
   },
   warrior: {
     max_workflows: 20,
@@ -54,6 +60,9 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     priority_support: false,
     max_workspaces: 3,
     max_workspace_share_links: 3,
+    max_marketplace_installs: 20,
+    max_created_nodes: 10,
+    max_node_groups: 6,
   },
   elite: {
     max_workflows: 75,
@@ -71,6 +80,9 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     priority_support: false,
     max_workspaces: 9999,
     max_workspace_share_links: 9999,
+    max_marketplace_installs: 50,
+    max_created_nodes: 30,
+    max_node_groups: 12,
   },
   champion: {
     max_workflows: 250,
@@ -88,6 +100,9 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     priority_support: true,
     max_workspaces: 9999,
     max_workspace_share_links: 9999,
+    max_marketplace_installs: 200,
+    max_created_nodes: 100,
+    max_node_groups: 25,
   },
   legend: {
     max_workflows: 9999,
@@ -105,6 +120,9 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     priority_support: true,
     max_workspaces: 9999,
     max_workspace_share_links: 9999,
+    max_marketplace_installs: 9999,
+    max_created_nodes: 9999,
+    max_node_groups: 9999,
   },
 };
 
@@ -128,8 +146,8 @@ export interface LimitCheckResult {
 export async function checkPlanLimit(
   supabase: SupabaseClient,
   workspaceId: string,
-  resource: 'workflows' | 'dashboards' | 'collaborators' | 'custom_elements' | 'favorites' | 'version_history' | 'ai_credits',
-  extraId?: string // userId for favorites, workflowId for version_history
+  resource: 'workflows' | 'dashboards' | 'collaborators' | 'custom_elements' | 'favorites' | 'version_history' | 'ai_credits' | 'marketplace_installs' | 'created_nodes' | 'node_groups',
+  extraId?: string // userId for favorites, workflowId for version_history, or authorId for created_nodes
 ): Promise<LimitCheckResult> {
   // 1. Fetch current subscription details
   const { data: sub } = await supabase
@@ -220,6 +238,40 @@ export async function checkPlanLimit(
         .gte('created_at', startOfMonth.toISOString());
 
       current = (requests || []).reduce((acc: number, req: { credits_used: number }) => acc + (req.credits_used || 0), 0);
+      break;
+    }
+    case 'marketplace_installs': {
+      limit = limits.max_marketplace_installs;
+      const { count } = await supabase
+        .from('marketplace_installs')
+        .select('*', { count: 'exact', head: true })
+        .eq('workspace_id', workspaceId);
+      current = count || 0;
+      break;
+    }
+    case 'created_nodes': {
+      limit = limits.max_created_nodes;
+      const authorId = extraId;
+      if (authorId) {
+        const { count } = await supabase
+          .from('marketplace_nodes')
+          .select('*', { count: 'exact', head: true })
+          .eq('author_id', authorId);
+        current = count || 0;
+      }
+      break;
+    }
+    case 'node_groups': {
+      limit = limits.max_node_groups;
+      const { data } = await supabase
+        .from('workspace_node_settings')
+        .select('node_groups')
+        .eq('workspace_id', workspaceId)
+        .maybeSingle();
+      const groups = (data?.node_groups as Array<{ id?: string }> | null) || [];
+      const defaultGroupIds = ['basic', 'human', 'board', 'marketplace', 'custom', 'favorites'];
+      const customGroups = groups.filter((g) => g && g.id && !defaultGroupIds.includes(g.id));
+      current = customGroups.length;
       break;
     }
   }

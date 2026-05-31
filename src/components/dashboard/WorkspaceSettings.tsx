@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from '@/i18n/routing';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +17,9 @@ import {
 import { 
   Shield, Trash2, Loader2, ChevronDown, Check, 
   Copy, Link2, UserPlus, Palette, Plus, Sliders, Cpu,
-  AlertTriangle, Database
+  AlertTriangle, Database, Eye, EyeOff, Puzzle, Grid,
+  Settings, Play, StopCircle, GitFork, ArrowRightLeft,
+  Send, CheckSquare, BrainCircuit, Clock, RefreshCw, Undo2
 } from 'lucide-react';
 import { 
   updateWorkspaceCustomization, 
@@ -26,6 +28,11 @@ import {
   updateWorkspaceSettingsAction,
   deleteWorkspaceAction
 } from '@/actions/workspace.actions';
+import { 
+  saveWorkspaceNodeSettings, 
+  resetWorkspaceNodeSettings 
+} from '@/actions/workspace-nodes.actions';
+import { uninstallMarketplaceNode } from '@/actions/marketplace.actions';
 import { createClient } from '@/lib/supabase/client';
 import { useDialogStore } from '@/stores/dialogStore';
 
@@ -76,6 +83,57 @@ const BANNER_PRESETS = [
   { name: 'Cyberpunk Neon', class: 'bg-gradient-to-r from-purple-950 via-rose-950 to-zinc-950' },
 ];
 
+const iconMap: Record<string, React.ReactNode> = {
+  settings: <Settings className="w-4 h-4 text-violet-500" />,
+  play: <Play className="w-4 h-4 text-emerald-500" />,
+  stop: <StopCircle className="w-4 h-4 text-rose-500" />,
+  branch: <GitFork className="w-4 h-4 text-amber-500" />,
+  data: <ArrowRightLeft className="w-4 h-4 text-sky-500" />,
+  send: <Send className="w-4 h-4 text-violet-500" />,
+  database: <Database className="w-4 h-4 text-violet-500" />,
+  check: <CheckSquare className="w-4 h-4 text-teal-500" />,
+  ai: <BrainCircuit className="w-4 h-4 text-rose-500" />,
+  timer: <Clock className="w-4 h-4 text-zinc-500" />,
+  loop: <RefreshCw className="w-4 h-4 text-violet-500" />,
+};
+
+const getNodeIconName = (type: string, currentIcon: string | null) => {
+  if (currentIcon) return currentIcon;
+  const defaultIconMap: Record<string, string> = {
+    start: 'play',
+    end: 'stop',
+    process: 'settings',
+    decision: 'branch',
+    delay: 'timer',
+    email: 'send',
+    form_step: 'check',
+    approval: 'check',
+    checklist: 'check',
+    signature: 'check',
+  };
+  return defaultIconMap[type] || 'settings';
+};
+
+const renderNodeIcon = (iconName: string | null, name: string) => {
+  if (!iconName) return <span className="text-sm uppercase font-bold">{name.charAt(0)}</span>;
+
+  if (iconName.startsWith('http://') || iconName.startsWith('https://') || iconName.startsWith('/')) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={iconName}
+        alt="icon"
+        className="w-4.5 h-4.5 object-contain"
+      />
+    );
+  }
+
+  const mapped = iconMap[iconName];
+  if (mapped) return mapped;
+
+  return <span className="text-sm font-normal leading-none">{iconName}</span>;
+};
+
 export function WorkspaceSettings({
   initialWorkspace,
   initialMembers,
@@ -123,8 +181,175 @@ export function WorkspaceSettings({
   };
 
   // Tab State
-  type TabType = 'customization' | 'people' | 'preferences' | 'integrations' | 'danger';
+  type TabType = 'customization' | 'people' | 'preferences' | 'integrations' | 'danger' | 'nodes';
   const [activeTab, setActiveTab] = useState<TabType>('customization');
+
+  // Node Management States
+  const [installedNodes, setInstalledNodes] = useState<any[]>([]);
+  const [nodeGroups, setNodeGroups] = useState<any[]>([]);
+  const [hiddenNodes, setHiddenNodes] = useState<string[]>([]);
+  const [loadingNodes, setLoadingNodes] = useState(true);
+  const [savingNodesSettings, setSavingNodesSettings] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [uninstallingNodeId, setUninstallingNodeId] = useState<string | null>(null);
+
+  // Load Node settings and installs
+  useEffect(() => {
+    async function loadWorkspaceNodesData() {
+      try {
+        setLoadingNodes(true);
+        // 1. Fetch installed marketplace nodes
+        const { data: installs } = await (supabase
+          .from('marketplace_installs')
+          .select('marketplace_node_id, marketplace_nodes(*)')
+          .eq('workspace_id', initialWorkspace.id) as unknown as Promise<{
+            data: { marketplace_node_id: string; marketplace_nodes: any }[] | null;
+          }>);
+
+        if (installs) {
+          setInstalledNodes(installs.map((i: any) => i.marketplace_nodes).filter(Boolean));
+        }
+
+        // 2. Fetch node settings
+        const { data: settings } = await (supabase
+          .from('workspace_node_settings')
+          .select('*')
+          .eq('workspace_id', initialWorkspace.id)
+          .maybeSingle() as unknown as Promise<{
+            data: { node_groups: any; hidden_nodes: string[] } | null;
+          }>);
+
+        if (settings) {
+          setNodeGroups(settings.node_groups || []);
+          setHiddenNodes(settings.hidden_nodes || []);
+        } else {
+          // Defaults if none exist yet
+          setNodeGroups([
+            { id: 'basic', label: isRtl ? 'أساسي' : 'Basic', visible: true },
+            { id: 'human', label: isRtl ? 'بشري' : 'Human', visible: true },
+            { id: 'board', label: isRtl ? 'لوحات' : 'Boards', visible: true },
+            { id: 'marketplace', label: isRtl ? 'المتجر' : 'Store', visible: true },
+            { id: 'custom', label: isRtl ? 'قوالب مخصصة' : 'Custom Templates', visible: true }
+          ]);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoadingNodes(false);
+      }
+    }
+
+    loadWorkspaceNodesData();
+  }, [initialWorkspace.id, isRtl, supabase]);
+
+  const handleSaveNodeSettings = async () => {
+    setSavingNodesSettings(true);
+    const res = await saveWorkspaceNodeSettings(initialWorkspace.id, {
+      node_groups: nodeGroups,
+      hidden_nodes: hiddenNodes,
+    });
+    setSavingNodesSettings(false);
+
+    if (res.error) {
+      if (res.error === 'PLAN_LIMIT_REACHED') {
+        useDialogStore.getState().showAlert(
+          isRtl ? 'حماية باقة الاشتراك' : 'Subscription Guard',
+          isRtl
+            ? `لقد تجاوزت الحد الأقصى للمجموعات المخصصة المسموح بها (${res.data?.limit}) في باقتك الحالية. يرجى الترقية لإضافة المزيد.`
+            : `Plan Limit Reached: You have exceeded the custom node groups limit (${res.data?.limit}) on your current plan. Please upgrade.`
+        );
+      } else {
+        useDialogStore.getState().showAlert(isRtl ? 'خطأ' : 'Error', res.error);
+      }
+    } else {
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم حفظ إعدادات العقد بنجاح!' : 'Node settings saved successfully!',
+        'success'
+      );
+    }
+  };
+
+  const handleResetNodeSettings = async () => {
+    const title = isRtl ? 'إعادة ضبط الإعدادات' : 'Reset Node Settings';
+    const message = isRtl ? 'هل تريد بالتأكيد استعادة إعدادات المجموعات والرؤية الافتراضية؟' : 'Are you sure you want to restore default node groups and visibility settings?';
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText: isRtl ? 'تأكيد' : 'Confirm',
+      cancelText: isRtl ? 'إلغاء' : 'Cancel'
+    });
+    if (!confirmed) return;
+
+    setSavingNodesSettings(true);
+    const res = await resetWorkspaceNodeSettings(initialWorkspace.id);
+    setSavingNodesSettings(false);
+
+    if (res.error) {
+      useDialogStore.getState().showAlert(isRtl ? 'خطأ' : 'Error', res.error);
+    } else {
+      setHiddenNodes([]);
+      setNodeGroups([
+        { id: 'basic', label: isRtl ? 'أساسي' : 'Basic', visible: true },
+        { id: 'human', label: isRtl ? 'بشري' : 'Human', visible: true },
+        { id: 'board', label: isRtl ? 'لوحات' : 'Boards', visible: true },
+        { id: 'marketplace', label: isRtl ? 'المتجر' : 'Store', visible: true },
+        { id: 'custom', label: isRtl ? 'قوالب مخصصة' : 'Custom Templates', visible: true }
+      ]);
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تمت إعادة الضبط بنجاح!' : 'Node settings reset successfully!',
+        'success'
+      );
+    }
+  };
+
+  const handleUninstallNodeFromSettings = async (nodeId: string) => {
+    const title = isRtl ? 'إلغاء التثبيت' : 'Uninstall Node';
+    const message = isRtl ? 'هل تريد بالتأكيد إلغاء تثبيت هذا النود من مساحة العمل هذه؟' : 'Are you sure you want to uninstall this node from this workspace?';
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText: isRtl ? 'إلغاء التثبيت' : 'Uninstall',
+      cancelText: isRtl ? 'إلغاء' : 'Cancel'
+    });
+    if (!confirmed) return;
+
+    setUninstallingNodeId(nodeId);
+    const res = await uninstallMarketplaceNode(initialWorkspace.id, nodeId);
+    setUninstallingNodeId(null);
+
+    if (res.error) {
+      useDialogStore.getState().showAlert(isRtl ? 'خطأ' : 'Error', res.error);
+    } else {
+      setInstalledNodes(prev => prev.filter(n => n.id !== nodeId));
+      useDialogStore.getState().showNotification(
+        isRtl ? 'تم إلغاء التثبيت بنجاح!' : 'Node uninstalled successfully!',
+        'success'
+      );
+    }
+  };
+
+  const handleAddGroup = () => {
+    if (!newGroupName.trim()) return;
+    const newGroup = {
+      id: `group_${Date.now()}`,
+      label: newGroupName.trim(),
+      visible: true,
+    };
+    setNodeGroups([...nodeGroups, newGroup]);
+    setNewGroupName('');
+  };
+
+  const handleRemoveGroup = (groupId: string) => {
+    setNodeGroups(nodeGroups.filter(g => g.id !== groupId));
+  };
+
+  const handleToggleGroupVisibility = (groupId: string) => {
+    setNodeGroups(nodeGroups.map(g => g.id === groupId ? { ...g, visible: !g.visible } : g));
+  };
+
+  const handleToggleNodeVisibility = (nodeType: string) => {
+    if (hiddenNodes.includes(nodeType)) {
+      setHiddenNodes(hiddenNodes.filter(n => n !== nodeType));
+    } else {
+      setHiddenNodes([...hiddenNodes, nodeType]);
+    }
+  };
 
   // Customization States
   const [wsName, setWsName] = useState(initialWorkspace.name);
@@ -482,6 +707,18 @@ export function WorkspaceSettings({
           >
             <Cpu className="w-3.5 h-3.5" />
             <span>{isRtl ? 'الذكاء الاصطناعي والربط' : 'AI & Integrations'}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('nodes')}
+            className={`px-4.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'nodes'
+                ? 'bg-background text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Puzzle className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'إدارة العقد' : 'Node Management'}</span>
           </button>
 
           {isOwner && (
@@ -1207,6 +1444,350 @@ export function WorkspaceSettings({
             </form>
           </CardContent>
         </Card>
+      )}
+
+      {/* ─── TAB 6: Node Management ─── */}
+      {activeTab === 'nodes' && (
+        <div className="space-y-8 animate-fadeIn text-left rtl:text-right">
+          {/* Section A: Installed Marketplace Nodes */}
+          <Card className="bg-background/40 border border-border backdrop-blur-md shadow-sm rounded-3xl font-sans">
+            <CardHeader className="pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1.5 text-left rtl:text-right">
+                  <CardTitle className="text-xl font-bold flex items-center gap-2">
+                    <Puzzle className="w-5 h-5 text-accent" />
+                    <span>{isRtl ? 'العقد المثبتة من المتجر' : 'Installed Marketplace Nodes'}</span>
+                  </CardTitle>
+                  <CardDescription className="font-light">
+                    {isRtl
+                      ? 'العقد المتخصصة والمثبتة حالياً في مساحة العمل هذه.'
+                      : 'Specialized marketplace nodes currently active and usable in this workspace.'}
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => window.open(`/${locale}/marketplace`, '_blank')}
+                  className="bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl text-xs h-9 px-4.5 cursor-pointer flex items-center gap-1.5 self-start sm:self-auto shadow-sm shadow-violet-600/10 hover:shadow-violet-600/20 transition-all shrink-0"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>{isRtl ? 'تصفح المتجر' : 'Browse Marketplace'}</span>
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingNodes ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <Loader2 className="w-8 h-8 animate-spin text-accent mb-2" />
+                  <p className="text-xs font-light">{isRtl ? 'جاري تحميل العقد...' : 'Loading installed nodes...'}</p>
+                </div>
+              ) : installedNodes.length === 0 ? (
+                <div className="text-center py-10 border border-dashed border-border/80 rounded-2xl bg-background/25 flex flex-col items-center justify-center gap-3">
+                  <Puzzle className="w-10 h-10 text-muted-foreground/40" />
+                  <p className="text-xs text-muted-foreground font-light">
+                    {isRtl ? 'لا توجد عقد مثبتة من المتجر في مساحة العمل هذه بعد.' : 'No marketplace nodes installed in this workspace yet.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {installedNodes.map((node) => {
+                    const iconName = getNodeIconName(node.base_type, node.icon);
+                    return (
+                      <div
+                        key={node.id}
+                        className="group relative p-4.5 rounded-2xl border border-border/60 bg-background/30 hover:bg-white/2 hover:border-violet-500/20 transition-all duration-200 shadow-xs flex items-center justify-between gap-4"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center border border-border/30 shrink-0 overflow-hidden ${node.badge_color || 'bg-primary/10 text-primary'}`}>
+                            {renderNodeIcon(iconName, node.name)}
+                          </div>
+                          <div className="min-w-0 text-left rtl:text-right">
+                            <h4 className="font-bold text-sm text-foreground truncate">{node.name}</h4>
+                            <p className="text-xs text-muted-foreground/60 font-light truncate mt-0.5 max-w-[200px] sm:max-w-[300px]">
+                              {node.description || (isRtl ? 'لا يوجد وصف' : 'No description')}
+                            </p>
+                          </div>
+                        </div>
+
+                        {canManage && (
+                          <Button
+                            onClick={() => handleUninstallNodeFromSettings(node.id)}
+                            disabled={uninstallingNodeId === node.id}
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs text-destructive hover:bg-destructive/10 hover:text-destructive border border-border hover:border-destructive/20 rounded-xl px-3.5 h-8.5 shrink-0 font-bold transition-all cursor-pointer"
+                          >
+                            {uninstallingNodeId === node.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              isRtl ? 'إلغاء التثبيت' : 'Uninstall'
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Section B: Node Groups Manager */}
+          <Card className="bg-background/40 border border-border backdrop-blur-md shadow-sm rounded-3xl font-sans">
+            <CardHeader>
+              <CardTitle className="text-xl font-bold flex items-center gap-2">
+                <Grid className="w-5 h-5 text-accent" />
+                <span>{isRtl ? 'إدارة مجموعات وتصنيفات العقد' : 'Node Groups & Categories'}</span>
+              </CardTitle>
+              <CardDescription className="font-light">
+                {isRtl
+                  ? 'تحكم في المجموعات المعروضة في شريط الأدوات الجانبي وأضف مجموعات مخصصة.'
+                  : 'Manage which categories appear in your editor catalog and customize custom group groupings.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Group creation form */}
+              {canManage && (
+                <div className="flex flex-col sm:flex-row items-end sm:items-center gap-3 bg-background/25 border border-border/60 rounded-2xl p-4">
+                  <div className="space-y-1.5 flex-1 w-full text-left rtl:text-right">
+                    <Label htmlFor="groupName" className="font-semibold text-xs text-muted-foreground">
+                      {isRtl ? 'اسم المجموعة الجديدة' : 'New Group Title'}
+                    </Label>
+                    <Input
+                      id="groupName"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      placeholder={isRtl ? 'مثال: أتمتة التسويق' : 'e.g. Marketing Automation'}
+                      className="rounded-xl border-border focus:ring-accent"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleAddGroup}
+                    disabled={!newGroupName.trim()}
+                    className="bg-primary hover:bg-primary/95 text-primary-foreground font-bold rounded-xl h-10 px-5 cursor-pointer flex items-center gap-1.5 w-full sm:w-auto shrink-0 animate-fadeIn"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{isRtl ? 'إضافة مجموعة' : 'Add Group'}</span>
+                  </Button>
+                </div>
+              )}
+
+              {/* Groups listing */}
+              <div className="space-y-3">
+                <Label className="font-bold text-xs uppercase tracking-wider text-muted-foreground/80">
+                  {isRtl ? 'المجموعات الحالية' : 'Current Categories'}
+                </Label>
+                {nodeGroups.length === 0 ? (
+                  <div className="text-center py-6 border border-dashed border-border/80 rounded-2xl bg-background/25">
+                    <p className="text-xs text-muted-foreground font-light">{isRtl ? 'لا توجد مجموعات معرفة.' : 'No node groups defined.'}</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border border border-border rounded-2xl overflow-hidden bg-background/30 shadow-xs">
+                    {nodeGroups.map((group) => {
+                      const isCustom = group.id.startsWith('group_');
+                      return (
+                        <div key={group.id} className="p-4 flex items-center justify-between gap-4 hover:bg-white/2 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <span className="w-2 h-2 rounded-full bg-accent" />
+                            <div className="text-left rtl:text-right">
+                              <h4 className="font-bold text-sm text-foreground flex items-center gap-2">
+                                <span>{group.label}</span>
+                                {isCustom && (
+                                  <Badge variant="outline" className="text-[9px] font-semibold bg-violet-500/10 text-violet-400 border-violet-500/20">
+                                    {isRtl ? 'مخصصة' : 'Custom'}
+                                  </Badge>
+                                )}
+                              </h4>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3.5">
+                            {/* Toggle visibility */}
+                            <button
+                              type="button"
+                              disabled={!canManage}
+                              onClick={() => handleToggleGroupVisibility(group.id)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 border transition-all cursor-pointer ${
+                                group.visible !== false
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                                  : 'bg-zinc-800 text-muted-foreground border-border hover:bg-zinc-700'
+                              }`}
+                            >
+                              {group.visible !== false ? (
+                                <>
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>{isRtl ? 'مرئية' : 'Visible'}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                  <span>{isRtl ? 'مخفية' : 'Hidden'}</span>
+                                </>
+                              )}
+                            </button>
+
+                            {/* Delete custom group */}
+                            {canManage && isCustom && (
+                              <Button
+                                onClick={() => handleRemoveGroup(group.id)}
+                                variant="ghost"
+                                size="icon"
+                                className="w-8.5 h-8.5 rounded-xl border border-border text-destructive hover:bg-destructive/10 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Section C: Individual Node Visibility */}
+          <Card className="bg-background/40 border border-border backdrop-blur-md shadow-sm rounded-3xl font-sans">
+            <CardHeader>
+              <CardTitle className="text-xl font-bold flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-accent" />
+                <span>{isRtl ? 'رؤية العقد الفردية في شريط الأدوات' : 'Individual Node Visibility'}</span>
+              </CardTitle>
+              <CardDescription className="font-light">
+                {isRtl
+                  ? 'إخفاء أو إظهار عقد فردية معينة داخل مكتبة المحرر.'
+                  : 'Toggle the editor sidebar visibility of individual nodes to clean up your canvas workspace.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                {/* General Catalog Nodes */}
+                <div className="space-y-3">
+                  <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground/80 text-left rtl:text-right">
+                    {isRtl ? 'عقد النظام الأساسية' : 'System Nodes'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {[
+                      { type: 'board', label: isRtl ? 'لوحة الرسم' : 'Whiteboard' },
+                      { type: 'start', label: isRtl ? 'نقطة البداية' : 'Start Trigger' },
+                      { type: 'process', label: isRtl ? 'خطوة عملية' : 'Process Step' },
+                      { type: 'decision', label: isRtl ? 'خطوة قرار' : 'Decision Node' },
+                      { type: 'delay', label: isRtl ? 'مؤقت تأخير' : 'Delay Timer' },
+                      { type: 'note', label: isRtl ? 'ملاحظة اللوحة' : 'Canvas Note' },
+                      { type: 'end', label: isRtl ? 'نقطة النهاية' : 'End Step' },
+                      { type: 'email', label: isRtl ? 'إرسال بريد إلكتروني' : 'Send Email' },
+                      { type: 'form_step', label: isRtl ? 'انتظار النموذج' : 'Wait for Form' },
+                      { type: 'approval', label: isRtl ? 'انتظار الموافقة' : 'Wait for Approval' },
+                      { type: 'checklist', label: isRtl ? 'قائمة مهام' : 'Checklist Step' },
+                      { type: 'signature', label: isRtl ? 'توقيع المستند' : 'Sign Document' },
+                    ].map((node) => {
+                      const isHidden = hiddenNodes.includes(node.type);
+                      const iconName = getNodeIconName(node.type, null);
+                      return (
+                        <div
+                          key={node.type}
+                          className="p-3.5 rounded-2xl border border-border bg-background/25 flex items-center justify-between gap-3"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-muted border border-border/30 flex items-center justify-center shrink-0">
+                              {renderNodeIcon(iconName, node.label)}
+                            </div>
+                            <span className="font-bold text-xs text-foreground truncate">{node.label}</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={!canManage}
+                            onClick={() => handleToggleNodeVisibility(node.type)}
+                            className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer outline-hidden shrink-0 ${
+                              !isHidden ? 'bg-primary' : 'bg-zinc-800'
+                            }`}
+                          >
+                            <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white transition-all shadow-xs ${
+                              isRtl 
+                                ? (!isHidden ? 'right-5.5' : 'right-0.5') 
+                                : (!isHidden ? 'left-5.5' : 'left-0.5')
+                            }`} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Installed Marketplace Nodes visibility */}
+                {installedNodes.length > 0 && (
+                  <div className="space-y-3 pt-4 border-t border-border/40">
+                    <h4 className="font-bold text-xs uppercase tracking-wider text-muted-foreground/80 text-left rtl:text-right">
+                      {isRtl ? 'العقد المثبتة من المتجر' : 'Installed Marketplace Nodes'}
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      {installedNodes.map((node) => {
+                        const isHidden = hiddenNodes.includes(node.id);
+                        const iconName = getNodeIconName(node.base_type, node.icon);
+                        return (
+                          <div
+                            key={node.id}
+                            className="p-3.5 rounded-2xl border border-border bg-background/25 flex items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className={`w-8 h-8 rounded-lg border border-border/30 flex items-center justify-center shrink-0 overflow-hidden ${node.badge_color || 'bg-primary/10 text-primary'}`}>
+                                {renderNodeIcon(iconName, node.name)}
+                              </div>
+                              <span className="font-bold text-xs text-foreground truncate">{node.name}</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={!canManage}
+                              onClick={() => handleToggleNodeVisibility(node.id)}
+                              className={`w-12 h-7 rounded-full transition-colors relative cursor-pointer outline-hidden shrink-0 ${
+                                !isHidden ? 'bg-primary' : 'bg-zinc-800'
+                              }`}
+                            >
+                              <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white transition-all shadow-xs ${
+                                isRtl 
+                                  ? (!isHidden ? 'right-5.5' : 'right-0.5') 
+                                  : (!isHidden ? 'left-5.5' : 'left-0.5')
+                              }`} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Action buttons */}
+          {canManage && (
+            <div className="pt-4 border-t border-border flex items-center justify-between gap-4 animate-fadeIn">
+              <Button
+                onClick={handleResetNodeSettings}
+                disabled={savingNodesSettings}
+                variant="outline"
+                className="border-border hover:bg-white/5 text-foreground font-bold px-5 py-5 rounded-xl cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <Undo2 className="w-4 h-4" />
+                <span>{isRtl ? 'إعادة ضبط للافتراضي' : 'Reset to Defaults'}</span>
+              </Button>
+
+              <Button
+                onClick={handleSaveNodeSettings}
+                disabled={savingNodesSettings}
+                className="bg-primary hover:bg-primary/95 text-primary-foreground font-bold px-6 py-5 rounded-xl cursor-pointer flex items-center gap-1.5"
+              >
+                {savingNodesSettings ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                <span>{isRtl ? 'حفظ إعدادات العقد' : 'Save Node Settings'}</span>
+              </Button>
+            </div>
+          )}
+        </div>
       )}
 
     </div>

@@ -7,7 +7,7 @@ import {
   Search, Sliders, Play, GitFork, ArrowRightLeft, 
   Send, BrainCircuit, X, ChevronLeft, ChevronRight,
   Star, Sparkles, AlertTriangle, StopCircle, Database, 
-  CheckSquare, Clock, RefreshCw
+  CheckSquare, Clock, RefreshCw, Store, ExternalLink
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { createClient } from '@/lib/supabase/client';
@@ -95,7 +95,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
   const isOpen = panels.library;
 
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'favorites' | 'custom' | 'board' | 'basic' | 'logic' | 'data' | 'integration' | 'human' | 'ai'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'favorites' | 'custom' | 'board' | 'basic' | 'human' | 'marketplace'>('all');
 
   // Supabase states
   const supabase = createClient();
@@ -103,6 +103,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
   const [activePlan, setActivePlan] = useState<'free' | 'warrior' | 'elite' | 'champion' | 'legend'>('free');
   const [favorites, setFavorites] = useState<{ id: string; node_type: string | null; custom_node_template_id: string | null }[]>([]);
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
+  const [marketplaceInstalled, setMarketplaceInstalled] = useState<CustomTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
   const [triggerFetchCount, setTriggerFetchCount] = useState(0);
@@ -116,11 +117,8 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
     { id: 'custom', label: isRtl ? 'مخصصة' : 'Custom', icon: <Sparkles className="w-3.5 h-3.5 text-accent animate-pulse" /> },
     { id: 'board', label: isRtl ? 'لوحات' : 'Boards', icon: <span className="text-[10px]">🎨</span> },
     { id: 'basic', label: isRtl ? 'أساسي' : 'Basic', icon: <Play className="w-3.5 h-3.5" /> },
-    { id: 'logic', label: isRtl ? 'منطق' : 'Logic', icon: <GitFork className="w-3.5 h-3.5" /> },
-    { id: 'data', label: isRtl ? 'بيانات' : 'Data', icon: <ArrowRightLeft className="w-3.5 h-3.5" /> },
-    { id: 'integration', label: isRtl ? 'تكامل' : 'Integrat.', icon: <Send className="w-3.5 h-3.5" /> },
-    { id: 'human', label: isRtl ? 'بشري' : 'Human', icon: <Play className="w-3.5 h-3.5" /> },
-    { id: 'ai', label: isRtl ? 'ذكاء اصطناعي' : 'AI', icon: <BrainCircuit className="w-3.5 h-3.5 text-rose-500" /> },
+    { id: 'human', label: isRtl ? 'بشري' : 'Human', icon: <CheckSquare className="w-3.5 h-3.5 text-teal-500" /> },
+    { id: 'marketplace', label: isRtl ? 'المتجر' : 'Store', icon: <Store className="w-3.5 h-3.5 text-violet-500" /> },
   ] as const;
 
   // 1. Fetch Sidebar Data (Favorites, Subscriptions, Templates) asynchronously in useEffect
@@ -164,6 +162,42 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
         
         if (templates && active) {
           setCustomTemplates(templates);
+        }
+
+        // Fetch installed marketplace nodes for this workspace
+        const { data: installs } = await (supabase
+          .from('marketplace_installs')
+          .select('marketplace_node_id, marketplace_nodes(*)')
+          .eq('workspace_id', workspaceId) as unknown as Promise<{ data: { marketplace_node_id: string; marketplace_nodes: Record<string, unknown> }[] | null }>);
+
+        if (installs && active) {
+          const installed = installs
+            .filter(i => i.marketplace_nodes)
+            .map(i => {
+              const n = i.marketplace_nodes as Record<string, unknown>;
+              return {
+                id: n.id as string,
+                workspace_id: workspaceId,
+                created_by: n.author_id as string,
+                name: n.name as string,
+                description: n.description as string | null,
+                base_type: n.base_type as string,
+                icon: n.icon as string | null,
+                color: n.color as string | null,
+                default_data: {
+                  label: n.name as string,
+                  description: n.description as string,
+                  customNode: true,
+                },
+                default_style: (n.default_style as CustomTemplate['default_style']) || {},
+                handles: (n.handles as CustomTemplate['handles']) || {},
+                validation_schema: {},
+                tags: (n.tags as string[]) || [],
+                visibility: n.visibility as string,
+                created_at: n.created_at as string,
+              } as CustomTemplate;
+            });
+          setMarketplaceInstalled(installed);
         }
       } catch (err) {
         console.error('Error loading library sidebar resources:', err);
@@ -255,6 +289,17 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
 
   // Helper to map dynamic icon names to Lucide icons
   const getCustomIconForSidebar = (iconName: string) => {
+    if (iconName.startsWith('http://') || iconName.startsWith('https://') || iconName.startsWith('/')) {
+      return (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={iconName}
+          alt="icon"
+          className="w-3.5 h-3.5 object-contain"
+        />
+      );
+    }
+    
     switch (iconName) {
       case 'settings': return <Sliders className="w-3.5 h-3.5 text-zinc-500" />;
       case 'play': return <Play className="w-3.5 h-3.5 text-emerald-500" />;
@@ -267,7 +312,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
       case 'ai': return <BrainCircuit className="w-3.5 h-3.5 text-rose-500" />;
       case 'timer': return <Clock className="w-3.5 h-3.5 text-zinc-500" />;
       case 'loop': return <RefreshCw className="w-3.5 h-3.5 text-violet-500" />;
-      default: return <Sliders className="w-3.5 h-3.5 text-zinc-500" />;
+      default: return <span className="text-xs font-normal leading-none">{iconName}</span>;
     }
   };
 
@@ -312,7 +357,7 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
   };
 
   // Filter Catalog / Favorites
-  const filteredCatalog = activeTab === 'custom'
+  const filteredCatalog = (activeTab === 'custom' || activeTab === 'marketplace')
     ? []
     : activeTab === 'favorites' 
       ? nodeCatalog.filter(item => 
@@ -340,6 +385,14 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
            (tpl.description && tpl.description.toLowerCase().includes(search.toLowerCase())))
         )
       : []; // Custom templates are isolated completely and do not render in standard basic/logic categories!
+
+  // Filter marketplace installed nodes
+  const filteredMarketplace = (activeTab === 'marketplace' || activeTab === 'all')
+    ? marketplaceInstalled.filter(tpl =>
+        tpl.name.toLowerCase().includes(search.toLowerCase()) ||
+        (tpl.description && tpl.description.toLowerCase().includes(search.toLowerCase()))
+      )
+    : [];
 
   if (!isOpen) {
     return (
@@ -641,6 +694,84 @@ export function LibrarySidebar({ locale, onAddNode, userRole, workspaceId }: Lib
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+            {/* Installed Marketplace elements section */}
+            {(activeTab === 'marketplace' || activeTab === 'all') && (
+              <div className="pt-4 border-t border-border/60 space-y-3 font-sans">
+                <div className="flex items-center justify-between pl-1">
+                  <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    <Store className="w-3.5 h-3.5 text-violet-400" />
+                    <span>{isRtl ? 'العقد المثبتة (المتجر)' : 'Installed Nodes (Store)'}</span>
+                  </h3>
+                  <button
+                    onClick={() => window.open(`/${locale}/marketplace`, '_blank')}
+                    className="text-[9px] font-bold text-violet-400 hover:text-violet-300 flex items-center gap-0.5 cursor-pointer bg-violet-500/10 px-2 py-0.5 rounded-md hover:bg-violet-500/20 transition-all"
+                  >
+                    <span>{isRtl ? 'تصفح المتجر' : 'Browse'}</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+
+                {filteredMarketplace.length === 0 ? (
+                  <div className="text-center py-4 bg-muted/10 border border-dashed border-border/40 rounded-xl p-3">
+                    <Store className="w-5 h-5 mx-auto text-muted-foreground/25 mb-1" />
+                    <p className="text-[10px] text-muted-foreground font-light leading-snug">
+                      {isRtl 
+                        ? 'لم يتم تثبيت أي عقد من المتجر بعد.'
+                        : 'No installed marketplace nodes found.'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {filteredMarketplace.map((tpl) => (
+                      <div
+                        key={tpl.id}
+                        draggable={canEdit}
+                        onDragStart={(e) => handleDragStart(e, 'custom_template', tpl)}
+                        onClick={() => canEdit && onAddNode('custom_template', tpl)}
+                        className={`p-3 border border-border bg-background/60 hover:bg-muted/50 rounded-xl cursor-grab transition-all shadow-xs flex flex-col gap-1 relative overflow-hidden active:cursor-grabbing group ${
+                          !canEdit ? 'opacity-65 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        {/* Dynamic accent color bar */}
+                        <div className={`absolute top-0 bottom-0 left-0 w-1 ${tpl.default_style?.accentBar || 'bg-violet-500'}`} />
+
+                        <div className="flex items-center justify-between pl-1">
+                          <div className="flex items-center gap-1.5 min-w-0 pr-6">
+                            {/* Small icon */}
+                            <div className="w-4.5 h-4.5 rounded-md bg-muted flex items-center justify-center border border-border/40 shrink-0 text-foreground">
+                              {getCustomIconForSidebar(tpl.default_style?.iconName || 'settings')}
+                            </div>
+                            <span className="font-bold text-xs text-foreground group-hover:text-accent transition-colors truncate">
+                              {tpl.name}
+                            </span>
+                          </div>
+                          
+                          {/* Star Action */}
+                          <div className="absolute right-2 top-2">
+                            {renderStarButton(null, tpl.id)}
+                          </div>
+                        </div>
+                        <p className="text-[10px] font-light text-muted-foreground leading-tight pl-1 pr-6 line-clamp-2">
+                          {tpl.description || (isRtl ? 'لا يوجد وصف.' : 'No description.')}
+                        </p>
+
+                        <div className="mt-1 flex items-center justify-between pl-1">
+                          <span className={`text-[8px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${tpl.default_style?.badgeColor || 'bg-violet-500/10 text-violet-400'}`}>
+                            {tpl.base_type}
+                          </span>
+                          
+                          {canEdit && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity text-[8px] font-semibold text-accent uppercase tracking-wider">
+                              {isRtl ? 'سحب / نقر +' : 'Drag / Click +'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </>
