@@ -7,7 +7,7 @@ import {
   X, Pen, Minus, Square, Circle, Triangle, ArrowRight, Type, Eraser,
   MousePointer2, Undo2, Redo2, Trash2, Download, ZoomIn, ZoomOut,
   RotateCcw, PaintBucket, ChevronUp,
-  Save, Users, Copy, Clipboard, Settings, Layers, StickyNote
+  Save, Users, Copy, Clipboard, Settings, Layers, StickyNote, Highlighter
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { playClickSound, playPopSound, playSweepSound } from '@/lib/audioSfx';
@@ -16,7 +16,7 @@ import { type BoardStroke } from './BoardNode';
 import { useDialogStore } from '@/stores/dialogStore';
 
 /* ─────────────────────── Types ─────────────────────── */
-type Tool = 'select' | 'pen' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser' | 'sticky';
+type Tool = 'select' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'triangle' | 'text' | 'sticky';
 
 interface PointerState {
   down: boolean;
@@ -30,6 +30,8 @@ interface TextInput {
   active: boolean;
   x: number;
   y: number;
+  clientX: number;
+  clientY: number;
   value: string;
 }
 
@@ -88,7 +90,12 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const [redoStack, setRedoStack] = useState<BoardStroke[][]>([]);
   const [pointer, setPointer] = useState<PointerState>({ down: false, x: 0, y: 0, startX: 0, startY: 0 });
   const [currentPen, setCurrentPen] = useState<{ x: number; y: number }[]>([]);
-  const [textInput, setTextInput] = useState<TextInput>({ active: false, x: 0, y: 0, value: '' });
+  const [textInput, setTextInput] = useState<TextInput>({ active: false, x: 0, y: 0, clientX: 0, clientY: 0, value: '' });
+  const [editingStrokeId, setEditingStrokeId] = useState<string | null>(null);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  const isSpacePressedRef = useRef(false);
   const [view, setView] = useState<ViewTransform>({ scale: 1, offsetX: 0, offsetY: 0 });
   const [showPalette, setShowPalette] = useState(false);
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -227,10 +234,10 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const x = (clientX - rect.left - view.offsetX) / view.scale;
-    const y = (clientY - rect.top - view.offsetY) / view.scale;
+    const x = (clientX - rect.left) / view.scale;
+    const y = (clientY - rect.top) / view.scale;
     return { x, y };
-  }, [view]);
+  }, [view.scale]);
 
   // Load active user session metadata and profile details
   useEffect(() => {
@@ -476,8 +483,15 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       ctx.shadowBlur = 8;
     }
 
-    if (stroke.tool === 'pen') {
+    if (stroke.tool === 'pen' || stroke.tool === 'highlighter') {
       if (stroke.points.length < 2) return;
+      ctx.save();
+      if (stroke.tool === 'highlighter') {
+        ctx.globalAlpha = 0.45;
+        ctx.strokeStyle = stroke.color || '#eab308';
+        ctx.lineWidth = stroke.width * 2.5;
+        ctx.lineCap = 'square';
+      }
       ctx.beginPath();
       ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
       for (let i = 1; i < stroke.points.length - 1; i++) {
@@ -488,6 +502,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       const last = stroke.points[stroke.points.length - 1];
       ctx.lineTo(last.x, last.y);
       ctx.stroke();
+      ctx.restore();
 
     } else if (stroke.tool === 'eraser') {
       ctx.globalCompositeOperation = 'destination-out';
@@ -806,14 +821,44 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     e.currentTarget.setPointerCapture(e.pointerId);
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
 
+    const isMiddleClick = e.button === 1;
+    const isSpacePan = e.button === 0 && isSpacePressedRef.current;
+    
+    // Hit-test strokes (reverse order)
+    const hit = [...strokes].reverse().find((s) => hitTestStroke(s, x, y, s.tool === 'highlighter' ? 14 : 8));
+    const isSelectBgPan = tool === 'select' && e.button === 0 && !hit;
+
+    if (isMiddleClick || isSpacePan || isSelectBgPan) {
+      setIsPanning(true);
+      panStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        offsetX: view.offsetX,
+        offsetY: view.offsetY,
+      };
+      return;
+    }
+
     if (tool === 'text' || tool === 'sticky') {
-      setTextInput({ active: true, x: e.clientX, y: e.clientY, value: '' });
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const rect = wrap.getBoundingClientRect();
+      const relativeX = e.clientX - rect.left;
+      const relativeY = e.clientY - rect.top;
+
+      setTextInput({
+        active: true,
+        x: relativeX,
+        y: relativeY,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        value: '',
+      });
+      setEditingStrokeId(null);
       return;
     }
 
     if (tool === 'select') {
-      // Hit-test strokes (reverse order)
-      const hit = [...strokes].reverse().find((s) => hitTestStroke(s, x, y, 8));
       if (hit) {
         setSelectedStrokeId(hit.id);
         setIsDraggingObject(true);
@@ -825,28 +870,41 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       } else {
         setSelectedStrokeId(null);
       }
+      setPointer({ down: false, x, y, startX: x, startY: y });
       return;
     }
 
     setPointer({ down: true, x, y, startX: x, startY: y });
     setCurrentPen([{ x, y }]);
     renderOverlay([{ x, y }]);
-  }, [tool, toCanvasCoords, strokes, renderOverlay, hitTestStroke]);
+  }, [tool, toCanvasCoords, strokes, renderOverlay, hitTestStroke, view]);
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    // 1. Panning board
+    if (isPanning && panStartRef.current) {
+      const dx = e.clientX - panStartRef.current.x;
+      const dy = e.clientY - panStartRef.current.y;
+      setView((v) => ({
+        ...v,
+        offsetX: panStartRef.current!.offsetX + dx,
+        offsetY: panStartRef.current!.offsetY + dy,
+      }));
+      return;
+    }
+
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
 
-    // 1. Dragging committed shapes
+    // 2. Dragging committed shapes
     if (tool === 'select' && isDraggingObject && selectedStrokeId) {
       setStrokes((prev) => prev.map((s) => {
         if (s.id !== selectedStrokeId) return s;
         const newPts = s.points.map((p) => ({
-          x: p.x + (x - pointer.x),
-          y: p.y + (y - pointer.y),
+          x: p.x + (x - pointer.startX),
+          y: p.y + (y - pointer.startY),
         }));
         return { ...s, points: newPts };
       }));
-      setPointer((p) => ({ ...p, x, y }));
+      setPointer((p) => ({ ...p, startX: x, startY: y }));
 
       // Throttle object drag sync
       const now = Date.now();
@@ -856,8 +914,8 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           const movedStroke = strokes.find((s) => s.id === selectedStrokeId);
           if (movedStroke) {
             const nextPts = movedStroke.points.map((p) => ({
-              x: p.x + (x - pointer.x),
-              y: p.y + (y - pointer.y),
+              x: p.x + (x - pointer.startX),
+              y: p.y + (y - pointer.startY),
             }));
             channelRef.current.send({
               type: 'broadcast',
@@ -877,9 +935,9 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       return;
     }
 
-    // 2. Active pointer drawing
+    // 3. Active pointer drawing
     if (pointer.down) {
-      const newPts = tool === 'pen' || tool === 'eraser'
+      const newPts = tool === 'pen' || tool === 'highlighter' || tool === 'eraser'
         ? [...currentPen, { x, y }]
         : [{ x: pointer.startX, y: pointer.startY }, { x, y }];
 
@@ -935,9 +993,15 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         }
       }
     }
-  }, [tool, isDraggingObject, selectedStrokeId, pointer, currentPen, toCanvasCoords, renderOverlay, currentUserId, userName, userColor, color, strokeWidth, useFill, fillColor, strokes]);
+  }, [tool, isPanning, isDraggingObject, selectedStrokeId, pointer, currentPen, toCanvasCoords, renderOverlay, currentUserId, userName, userColor, color, strokeWidth, useFill, fillColor, strokes]);
 
   const onPointerUp = useCallback(() => {
+    if (isPanning) {
+      setIsPanning(false);
+      panStartRef.current = null;
+      return;
+    }
+
     if (isDraggingObject) {
       setIsDraggingObject(false);
       persistStrokes(strokes);
@@ -987,37 +1051,77 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
 
     setCurrentPen([]);
     setPointer((p) => ({ ...p, down: false }));
-  }, [isDraggingObject, pointer.down, currentPen, tool, color, strokeWidth, useFill, fillColor, strokes, persistStrokes, currentUserId]);
+  }, [isPanning, isDraggingObject, pointer.down, currentPen, tool, color, strokeWidth, useFill, fillColor, strokes, persistStrokes, currentUserId]);
 
   /* ─── Text commit ─── */
   const commitText = useCallback(() => {
     if (!textInput.value.trim()) {
-      setTextInput({ active: false, x: 0, y: 0, value: '' });
+      if (editingStrokeId) {
+        setStrokes((prev) => {
+          const next = prev.filter((s) => s.id !== editingStrokeId);
+          persistStrokes(next);
+          return next;
+        });
+        if (channelRef.current?.state === 'joined') {
+          channelRef.current.send({ type: 'broadcast', event: 'stroke_delete', payload: { id: editingStrokeId } });
+        }
+      }
+      setTextInput({ active: false, x: 0, y: 0, clientX: 0, clientY: 0, value: '' });
+      setEditingStrokeId(null);
       return;
     }
-    const { x, y } = toCanvasCoords(textInput.x, textInput.y);
-    const newStroke: BoardStroke = {
-      id: crypto.randomUUID(),
-      tool: tool === 'sticky' ? 'sticky' : 'text',
-      points: tool === 'sticky' ? [{ x, y }, { x: x + 160, y: y + 160 }] : [{ x, y }],
-      color: tool === 'sticky' ? '#18181b' : color,
-      fillColor: tool === 'sticky' ? fillColor || '#fef08a' : undefined,
-      width: strokeWidth,
-      text: textInput.value,
-      fontSize: tool === 'sticky' ? 13 : fontSize,
-      fill: tool === 'sticky' ? true : false,
-    };
-    setUndoStack((prev) => [...prev, strokes]);
-    setRedoStack([]);
-    const newStrokes = [...strokes, newStroke];
-    setStrokes(newStrokes);
-    persistStrokes(newStrokes);
-    if (channelRef.current?.state === 'joined') {
-      channelRef.current.send({ type: 'broadcast', event: 'stroke_add', payload: { stroke: newStroke } });
+
+    const { x, y } = toCanvasCoords(textInput.clientX, textInput.clientY);
+
+    if (editingStrokeId) {
+      setUndoStack((prev) => [...prev, strokes]);
+      setRedoStack([]);
+      setStrokes((prev) => {
+        const next = prev.map((s) => {
+          if (s.id !== editingStrokeId) return s;
+          const updated = {
+            ...s,
+            text: textInput.value,
+          };
+          if (channelRef.current?.state === 'joined') {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'stroke_add',
+              payload: { stroke: updated, userId: currentUserId }
+            });
+          }
+          return updated;
+        });
+        persistStrokes(next);
+        return next;
+      });
+      playClickSound();
+    } else {
+      const newStroke: BoardStroke = {
+        id: crypto.randomUUID(),
+        tool: tool === 'sticky' ? 'sticky' : 'text',
+        points: tool === 'sticky' ? [{ x, y }, { x: x + 160, y: y + 160 }] : [{ x, y }],
+        color: tool === 'sticky' ? '#18181b' : color,
+        fillColor: tool === 'sticky' ? fillColor || '#fef08a' : undefined,
+        width: strokeWidth,
+        text: textInput.value,
+        fontSize: tool === 'sticky' ? 13 : fontSize,
+        fill: tool === 'sticky' ? true : false,
+      };
+      setUndoStack((prev) => [...prev, strokes]);
+      setRedoStack([]);
+      const newStrokes = [...strokes, newStroke];
+      setStrokes(newStrokes);
+      persistStrokes(newStrokes);
+      if (channelRef.current?.state === 'joined') {
+        channelRef.current.send({ type: 'broadcast', event: 'stroke_add', payload: { stroke: newStroke } });
+      }
+      playClickSound();
     }
-    playClickSound();
-    setTextInput({ active: false, x: 0, y: 0, value: '' });
-  }, [textInput, toCanvasCoords, color, strokeWidth, fontSize, strokes, persistStrokes, tool, fillColor]);
+
+    setTextInput({ active: false, x: 0, y: 0, clientX: 0, clientY: 0, value: '' });
+    setEditingStrokeId(null);
+  }, [textInput, editingStrokeId, toCanvasCoords, color, strokeWidth, fontSize, strokes, persistStrokes, tool, fillColor, currentUserId]);
 
   /* ─── Undo / Redo ─── */
   const handleUndo = useCallback(() => {
@@ -1217,20 +1321,62 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     setShowBgPicker(false);
   }, [nodeId, updateNode]);
 
-  /* ─── Zoom & Touch Gesture Event Listeners (Non-Passive) ─── */
+  /* ─── Zoom, Touch Gesture & Spacebar Keyboard Listeners ─── */
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      setView((v) => ({ ...v, scale: Math.min(Math.max(v.scale * delta, 0.15), 4) }));
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+
+      setView((v) => {
+        const nextScale = Math.min(Math.max(v.scale * scaleFactor, 0.15), 4);
+        if (nextScale === v.scale) return v;
+
+        // Calculate mouse position relative to canvas top-left coordinate system in canvas space
+        const mouseX = (e.clientX - rect.left) / v.scale;
+        const mouseY = (e.clientY - rect.top) / v.scale;
+
+        // Adjust offsets so coordinates under the cursor remain under the cursor after scaling
+        const nextOffsetX = v.offsetX + mouseX * (v.scale - nextScale);
+        const nextOffsetY = v.offsetY + mouseY * (v.scale - nextScale);
+
+        return {
+          scale: nextScale,
+          offsetX: nextOffsetX,
+          offsetY: nextOffsetY,
+        };
+      });
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        setIsSpacePressed(true);
+        isSpacePressedRef.current = true;
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+        isSpacePressedRef.current = false;
+      }
     };
 
     wrap.addEventListener('wheel', onWheel, { passive: false });
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
     return () => {
       wrap.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
 
@@ -1300,8 +1446,8 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       }
       // Tool shortcuts
       const toolMap: Record<string, Tool> = {
-        'p': 'pen', 'e': 'eraser', 'l': 'line', 'r': 'rect', 'c': 'circle',
-        'a': 'arrow', 't': 'text', 's': 'select', 'v': 'select',
+        'p': 'pen', 'h': 'highlighter', 'e': 'eraser', 'l': 'line', 'r': 'rect', 'c': 'circle',
+        'y': 'triangle', 'a': 'arrow', 't': 'text', 's': 'select', 'v': 'select',
       };
       if (!e.ctrlKey && !e.metaKey && toolMap[e.key.toLowerCase()]) {
         setTool(toolMap[e.key.toLowerCase()]);
@@ -1315,12 +1461,13 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const tools: { id: Tool; icon: React.ReactNode; label: string; key: string }[] = [
     { id: 'select', icon: <MousePointer2 className="w-4 h-4" />, label: 'Select', key: 'V' },
     { id: 'pen', icon: <Pen className="w-4 h-4" />, label: 'Pen', key: 'P' },
+    { id: 'highlighter', icon: <Highlighter className="w-4 h-4" />, label: 'Highlighter', key: 'H' },
     { id: 'eraser', icon: <Eraser className="w-4 h-4" />, label: 'Eraser', key: 'E' },
     { id: 'line', icon: <Minus className="w-4 h-4" />, label: 'Line', key: 'L' },
     { id: 'arrow', icon: <ArrowRight className="w-4 h-4" />, label: 'Arrow', key: 'A' },
     { id: 'rect', icon: <Square className="w-4 h-4" />, label: 'Rectangle', key: 'R' },
     { id: 'circle', icon: <Circle className="w-4 h-4" />, label: 'Ellipse', key: 'C' },
-    { id: 'triangle', icon: <Triangle className="w-4 h-4" />, label: 'Triangle', key: 'T' },
+    { id: 'triangle', icon: <Triangle className="w-4 h-4" />, label: 'Triangle', key: 'Y' },
     { id: 'text', icon: <Type className="w-4 h-4" />, label: 'Text', key: 'T' },
     { id: 'sticky', icon: <StickyNote className="w-4 h-4" />, label: 'Sticky Note', key: 'N' },
   ];
@@ -1328,6 +1475,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const cursorStyle: Record<Tool, string> = {
     select: 'default',
     pen: 'crosshair',
+    highlighter: 'crosshair',
     eraser: 'cell',
     line: 'crosshair',
     arrow: 'crosshair',
@@ -1338,7 +1486,44 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     sticky: 'cell',
   };
 
+  /* ─── Double click to edit shape ─── */
+  const onDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (tool !== 'select') return;
+    const { x, y } = toCanvasCoords(e.clientX, e.clientY);
+    
+    // Find text or sticky note shape under double click
+    const hit = [...strokes].reverse().find(
+      (s) => (s.tool === 'text' || s.tool === 'sticky') && hitTestStroke(s, x, y, 15)
+    );
+    
+    if (hit) {
+      setEditingStrokeId(hit.id);
+      
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const clientX = hit.points[0].x * view.scale + rect.left;
+      const clientY = hit.points[0].y * view.scale + rect.top;
+      
+      const wrap = wrapRef.current;
+      if (!wrap) return;
+      const wrapRect = wrap.getBoundingClientRect();
+      const relativeX = clientX - wrapRect.left;
+      const relativeY = clientY - wrapRect.top;
+      
+      setTextInput({
+        active: true,
+        x: relativeX,
+        y: relativeY,
+        clientX,
+        clientY,
+        value: hit.text || '',
+      });
+    }
+  }, [tool, strokes, hitTestStroke, toCanvasCoords, view.scale]);
+
   const collaboratorList = Object.entries(collaborators);
+  const currentCursor = isPanning ? 'grabbing' : isSpacePressed ? 'grab' : cursorStyle[tool];
 
   /* ─── Render ─── */
   return (
@@ -1481,7 +1666,10 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       {/* ═══ MAIN AREA ═══ */}
       <div className="flex-1 flex overflow-hidden">
         {/* ── LEFT TOOLS PALETTE ── */}
-        <div className="w-14 shrink-0 bg-zinc-900/90 backdrop-blur-md border-r border-zinc-800/80 flex flex-col items-center py-3 gap-1 z-20">
+        <div 
+          className="w-14 shrink-0 bg-zinc-900/90 backdrop-blur-md border-r border-zinc-800/80 flex flex-col items-center py-3 gap-1.5 z-20 overflow-y-auto"
+          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        >
           {tools.map((t) => (
             <button
               key={t.id}
@@ -1628,7 +1816,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           <div
             className="absolute"
             style={{
-              transform: `scale(${view.scale}) translate(${view.offsetX}px, ${view.offsetY}px)`,
+              transform: `translate(${view.offsetX}px, ${view.offsetY}px) scale(${view.scale})`,
               transformOrigin: 'top left',
               top: 0,
               left: 0,
@@ -1640,7 +1828,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               width={canvasSize.w}
               height={canvasSize.h}
               className="block transition-colors duration-300"
-              style={{ cursor: cursorStyle[tool], touchAction: 'none', backgroundColor: bgColor }}
+              style={{ cursor: currentCursor, touchAction: 'none', backgroundColor: bgColor }}
             />
             {/* Overlay preview canvas (same size, absolutely stacked) */}
             <canvas
@@ -1648,11 +1836,12 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               width={canvasSize.w}
               height={canvasSize.h}
               className="absolute inset-0 block"
-              style={{ cursor: cursorStyle[tool], touchAction: 'none' }}
+              style={{ cursor: currentCursor, touchAction: 'none' }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
               onPointerLeave={onPointerUp}
+              onDoubleClick={onDoubleClick}
               onContextMenu={onContextMenu}
             />
           </div>
@@ -1679,7 +1868,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           {/* Text input overlay */}
           {textInput.active && (
             <div
-              className="fixed z-50"
+              className="absolute z-50"
               style={{ left: textInput.x, top: textInput.y }}
             >
               <input
@@ -1689,7 +1878,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
                 onChange={(e) => setTextInput((t) => ({ ...t, value: e.target.value }))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') commitText();
-                  if (e.key === 'Escape') setTextInput({ active: false, x: 0, y: 0, value: '' });
+                  if (e.key === 'Escape') setTextInput({ active: false, x: 0, y: 0, clientX: 0, clientY: 0, value: '' });
                 }}
                 onBlur={commitText}
                 style={{
@@ -1803,7 +1992,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       <div className="h-8 shrink-0 flex items-center justify-between px-4 border-t border-zinc-800/80 bg-zinc-900/90 text-[10px] text-zinc-500">
         <div className="flex items-center gap-4">
           <span>Tool: <span className="text-zinc-300 font-semibold capitalize">{tool}</span></span>
-          <span>Shortcuts: P=Pen E=Eraser L=Line A=Arrow R=Rect C=Circle T=Text V=Select</span>
+          <span>Shortcuts: P=Pen H=Highlighter E=Eraser L=Line A=Arrow R=Rect C=Circle Y=Triangle T=Text V=Select Space+Drag=Pan</span>
         </div>
         <div className="flex items-center gap-3">
           {selectedStrokeId && (

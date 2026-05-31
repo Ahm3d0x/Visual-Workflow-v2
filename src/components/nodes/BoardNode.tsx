@@ -9,7 +9,7 @@ import { BoardCanvas } from './BoardCanvas';
 
 export interface BoardStroke {
   id: string;
-  tool: 'pen' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser' | 'sticky';
+  tool: 'pen' | 'highlighter' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser' | 'sticky';
   points: { x: number; y: number }[];
   color: string;
   width: number;
