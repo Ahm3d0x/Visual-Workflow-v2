@@ -233,8 +233,8 @@ export function NodeCreatorClient({ locale, userId, workspaceId, existingNodes }
               </h2>
 
               <div className="space-y-1.5">
-                <Label htmlFor="nodeName" className="text-xs font-semibold">{isRtl ? 'اسم النود' : 'Node Name'}</Label>
-                <Input id="nodeName" value={name} onChange={(e) => setName(e.target.value)} placeholder={isRtl ? 'مثال: إرسال إشعار Slack' : 'e.g. Slack Notification Sender'} maxLength={60} className="rounded-xl border-border text-sm" />
+                <Label htmlFor="customNodeName" className="text-xs font-semibold">{isRtl ? 'اسم النود' : 'Node Name'}</Label>
+                <Input id="customNodeName" value={name} onChange={(e) => setName(e.target.value)} placeholder={isRtl ? 'مثال: إرسال إشعار Slack' : 'e.g. Slack Notification Sender'} maxLength={60} className="rounded-xl border-border text-sm" />
               </div>
 
               <div className="space-y-1.5">
