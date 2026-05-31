@@ -31,6 +31,8 @@ import {
   Loader2,
   HelpCircle,
   Shield,
+  Store,
+  Puzzle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createWorkspace } from '@/actions/workspace.actions';
@@ -142,6 +144,8 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
   const navItems = [
     { name: isRtl ? 'لوحة التحكم' : 'Dashboard', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Home },
     { name: isRtl ? 'مخططات العمل' : 'Workflows', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: GitBranch },
+    { name: isRtl ? 'متجر العقد' : 'Marketplace', href: `/${locale}/marketplace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Store },
+    { name: isRtl ? 'صانع العقد' : 'Node Creator', href: `/${locale}/node-creator${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Puzzle },
     ...(activeWorkspace && activeWorkspace.role === 'owner' ? [
       { name: isRtl ? 'إعدادات مساحة العمل' : 'Workspace settings', href: `/${locale}/settings/workspace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Settings }
     ] : []),
