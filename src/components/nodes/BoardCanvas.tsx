@@ -1581,21 +1581,23 @@ export function BoardCanvas({
       ctx.fillStyle = isLightBg ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.05)';
       ctx.lineWidth = 1;
 
-      if (gridType === 'grid') {
-        for (let x = startX; x < canvas.width; x += sizeVal) {
-          for (let y = startY; y < canvas.height; y += sizeVal) {
-            ctx.beginPath(); ctx.arc(x, y, 1.2, 0, Math.PI * 2); ctx.fill();
+      if (sizeVal >= 8) {
+        if (gridType === 'grid') {
+          ctx.beginPath();
+          for (let x = startX; x < canvas.width; x += sizeVal) {
+            ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
           }
+          for (let y = startY; y < canvas.height; y += sizeVal) {
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
+        } else if (gridType === 'lines') {
+          ctx.beginPath();
+          for (let y = startY; y < canvas.height; y += sizeVal) {
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
         }
-      } else if (gridType === 'lines') {
-        ctx.beginPath();
-        for (let x = startX; x < canvas.width; x += sizeVal) {
-          ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
-        }
-        for (let y = startY; y < canvas.height; y += sizeVal) {
-          ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
-        }
-        ctx.stroke();
       }
       ctx.restore();
     }
