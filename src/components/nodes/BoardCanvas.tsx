@@ -748,6 +748,21 @@ export function BoardCanvas({
     setView({ scale: newScale, offsetX, offsetY });
   }, []);
 
+  const handleUpdatePageProperty = useCallback((key: string, value: any) => {
+    setSheets((prev) => {
+      const next = prev.map((s, idx) => {
+        if (idx === activeSheetIndex) {
+          return { ...s, [key]: value };
+        }
+        return s;
+      });
+      sheetsRef.current = next;
+      broadcastSheets(next, isSheetsModeRef.current);
+      persistStrokes(strokes);
+      return next;
+    });
+  }, [activeSheetIndex, broadcastSheets, persistStrokes, strokes]);
+
   useEffect(() => {
     if (isSheetsMode && sheets.length > 0) {
       const activeSheet = sheets[activeSheetIndex] || sheets[0];
@@ -1571,7 +1586,7 @@ export function BoardCanvas({
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // 1. Grid
-    if (gridType !== 'none') {
+    if (!isSheetsMode && gridType !== 'none') {
       ctx.save();
       const sizeVal = gridSize * view.scale;
       const startX = view.offsetX % sizeVal;
@@ -1628,18 +1643,52 @@ export function BoardCanvas({
         ctx.fill();
         ctx.restore();
 
-        // Page border
+        // Draw page grid (clipped to sheet bounds, drawn in page space)
+        const pageGridType = activeSheet.gridType || gridType;
+        if (pageGridType !== 'none') {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
+          ctx.clip();
+
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
+          ctx.lineWidth = 1;
+
+          if (pageGridType === 'grid') {
+            ctx.beginPath();
+            for (let gx = activeSheet.x; gx < activeSheet.x + activeSheet.width; gx += gridSize) {
+              ctx.moveTo(gx, activeSheet.y);
+              ctx.lineTo(gx, activeSheet.y + activeSheet.height);
+            }
+            for (let gy = activeSheet.y; gy < activeSheet.y + activeSheet.height; gy += gridSize) {
+              ctx.moveTo(activeSheet.x, gy);
+              ctx.lineTo(activeSheet.x + activeSheet.width, gy);
+            }
+            ctx.stroke();
+          } else if (pageGridType === 'lines') {
+            ctx.beginPath();
+            for (let gy = activeSheet.y + gridSize; gy < activeSheet.y + activeSheet.height; gy += gridSize) {
+              ctx.moveTo(activeSheet.x, gy);
+              ctx.lineTo(activeSheet.x + activeSheet.width, gy);
+            }
+            ctx.stroke();
+          }
+} else {
+          // Dash border indicator in editor view
+          ctx.save();
+          ctx.strokeStyle = 'rgba(99, 102, 241, 0.35)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([5, 5]);
+          ctx.strokeRect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
+          ctx.restore();
+        }
+
+        // Draw page header template
+        ctx.save();
+        ctx.fillStyle = '#71717a';
+        ctx.font = '600 13px sans-serif';
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
         ctx.lineWidth = 1;
-        ctx.strokeRect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
-
-        // Page label
-        ctx.fillStyle = bgColor === '#ffffff' ? '#27272a' : '#a1a1aa';
-        const pageFontSize = Math.max(12, 13 / view.scale);
-        ctx.font = `600 ${pageFontSize}px sans-serif`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'bottom';
-        const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
         const pageLabel = isRtl
           ? `صفحة ${activeIdx + 1} - ${activeSheet.preset}`
           : `Page ${activeIdx + 1} - ${activeSheet.preset}`;
@@ -3014,6 +3063,24 @@ export function BoardCanvas({
       if (textInput.active) return;
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.hasAttribute('contenteditable')) {
         return;
+      }
+
+      // Keyboard Page Switcher in Sheets Mode
+      if (isSheetsModeRef.current && selectedStrokeIds.length === 0) {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
+          const step = isRtl ? -dir : dir;
+          e.preventDefault();
+          setActiveSheetIndex((prev) => {
+            const nextIdx = Math.max(0, Math.min(sheetsRef.current.length - 1, prev + step));
+            if (nextIdx !== prev) {
+              playSweepSound();
+            }
+            return nextIdx;
+          });
+          return;
+        }
       }
 
       if (e.key === 'Escape') {
