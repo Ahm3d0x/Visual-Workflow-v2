@@ -84,6 +84,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   /* ── State ── */
   const [tool, setTool] = useState<Tool>('pen');
   const [color, setColor] = useState('#ffffff');
+  const [recentColors, setRecentColors] = useState<string[]>(['#ffffff', '#ec4899', '#3b82f6']);
   const [fillColor, setFillColor] = useState('#6366f1');
   const [useFill, setUseFill] = useState(false);
   const [strokeWidth, setStrokeWidth] = useState(2);
@@ -127,6 +128,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showZoomMenu, setShowZoomMenu] = useState(false);
   const [showShapesMenu, setShowShapesMenu] = useState(false);
+  const [showLineMenu, setShowLineMenu] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
   const [copiedStrokes, setCopiedStrokes] = useState<BoardStroke[]>([]);
@@ -194,6 +196,14 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     window.addEventListener('click', handleCloseMenu);
     return () => window.removeEventListener('click', handleCloseMenu);
   }, [contextMenu]);
+
+  // Close line menu on document click
+  useEffect(() => {
+    if (!showLineMenu) return;
+    const handleCloseMenu = () => setShowLineMenu(false);
+    window.addEventListener('click', handleCloseMenu);
+    return () => window.removeEventListener('click', handleCloseMenu);
+  }, [showLineMenu]);
 
   // Load active user session metadata
   useEffect(() => {
@@ -625,6 +635,10 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const handleBrushColorChange = useCallback((newColor: string) => {
     setColor(newColor);
     updateSelectedStrokesProperty((s) => ({ ...s, color: newColor }));
+    setRecentColors((prev) => {
+      const filtered = prev.filter((c) => c.toLowerCase() !== newColor.toLowerCase());
+      return [newColor, ...filtered].slice(0, 3);
+    });
   }, [updateSelectedStrokesProperty]);
 
   const handleStrokeWidthChange = useCallback((newWidth: number) => {
@@ -916,11 +930,17 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     let startTangent = 0;
     let endTangent = 0;
 
+    const sizeStart = Math.max(12, strokeW * 4) * 0.85;
+    const sizeEnd = Math.max(12, strokeW * 4) * 0.85;
+
     if (type === 'straight') {
-      points = [p0, pN];
       const angle = Math.atan2(pN.y - p0.y, pN.x - p0.x);
       startTangent = angle + Math.PI;
       endTangent = angle;
+
+      const p0_line = headStart !== 'none' ? { x: p0.x + Math.cos(angle) * sizeStart, y: p0.y + Math.sin(angle) * sizeStart } : p0;
+      const pN_line = headEnd !== 'none' ? { x: pN.x - Math.cos(angle) * sizeEnd, y: pN.y - Math.sin(angle) * sizeEnd } : pN;
+      points = [p0_line, pN_line];
     } else if (type === 'curved') {
       const midX = (p0.x + pN.x) / 2;
       const midY = (p0.y + pN.y) / 2;
@@ -928,21 +948,34 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       const dy = pN.y - p0.y;
       const cp = { x: midX - dy * 0.15, y: midY + dx * 0.15 };
       
-      ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y);
-      ctx.quadraticCurveTo(cp.x, cp.y, pN.x, pN.y);
-      ctx.stroke();
-
       startTangent = Math.atan2(cp.y - p0.y, cp.x - p0.x) + Math.PI;
       endTangent = Math.atan2(pN.y - cp.y, pN.x - cp.x);
+
+      const angleStart = Math.atan2(cp.y - p0.y, cp.x - p0.x);
+      const angleEnd = Math.atan2(pN.y - cp.y, pN.x - cp.x);
+
+      const p0_line = headStart !== 'none' ? { x: p0.x + Math.cos(angleStart) * sizeStart, y: p0.y + Math.sin(angleStart) * sizeStart } : p0;
+      const pN_line = headEnd !== 'none' ? { x: pN.x - Math.cos(angleEnd) * sizeEnd, y: pN.y - Math.sin(angleEnd) * sizeEnd } : pN;
+
+      ctx.beginPath();
+      ctx.moveTo(p0_line.x, p0_line.y);
+      ctx.quadraticCurveTo(cp.x, cp.y, pN_line.x, pN_line.y);
+      ctx.stroke();
     } else {
       const midX = (p0.x + pN.x) / 2;
       const p1 = { x: midX, y: p0.y };
       const p2 = { x: midX, y: pN.y };
-      points = [p0, p1, p2, pN];
 
-      startTangent = Math.atan2(p1.y - p0.y, p1.x - p0.x) + Math.PI;
-      endTangent = Math.atan2(pN.y - p2.y, pN.x - p2.x);
+      const angleStart = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+      const angleEnd = Math.atan2(pN.y - p2.y, pN.x - p2.x);
+
+      startTangent = angleStart + Math.PI;
+      endTangent = angleEnd;
+
+      const p0_line = headStart !== 'none' ? { x: p0.x + Math.cos(angleStart) * sizeStart, y: p0.y + Math.sin(angleStart) * sizeStart } : p0;
+      const pN_line = headEnd !== 'none' ? { x: pN.x - Math.cos(angleEnd) * sizeEnd, y: pN.y - Math.sin(angleEnd) * sizeEnd } : pN;
+
+      points = [p0_line, p1, p2, pN_line];
     }
 
     if (type !== 'curved') {
@@ -2238,7 +2271,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         } else if (s.tool === 'line') {
           svgContent += `<line x1="${p0.x}" y1="${p0.y}" x2="${pN.x}" y2="${pN.y}" stroke="${s.color}" stroke-width="${s.width}" ${dashStr} ${opacityStr} />`;
         } else {
-          let ptsStr = s.points.map(p => `${p.x},${p.y}`).join(' ');
+          const ptsStr = s.points.map(p => `${p.x},${p.y}`).join(' ');
           svgContent += `<polygon points="${ptsStr}" stroke="${s.color}" stroke-width="${s.width}" fill="${fillStr}" ${dashStr} ${opacityStr} />`;
         }
       }
@@ -2775,22 +2808,131 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {toolsList.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => { setTool(t.id); setShowShapesMenu(false); }}
-                title={`${t.label} (${t.key})`}
-                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative
-                  ${tool === t.id && !showShapesMenu
-                    ? 'bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/30 scale-105'
-                    : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200'
-                  }`}
-              >
-                {t.icon}
-                <span className="absolute left-[52px] bg-zinc-800 text-white text-[10px] font-semibold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none transition-opacity border border-zinc-700 shadow-lg">
-                  {t.label}
-                  <span className="ml-1.5 text-zinc-500 font-mono">{t.key}</span>
-                </span>
-              </button>
+              <div key={t.id} className="relative">
+                <button
+                  onClick={() => { 
+                    setTool(t.id); 
+                    setShowShapesMenu(false); 
+                    setShowLineMenu(false);
+                  }}
+                  onContextMenu={(e) => {
+                    if (t.id === 'line') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowLineMenu((prev) => !prev);
+                      setShowShapesMenu(false);
+                    }
+                  }}
+                  title={`${t.label} (${t.key})${t.id === 'line' ? ' · Right-click for options' : ''}`}
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative
+                    ${(tool === t.id || (t.id === 'line' && ['line', 'arrow'].includes(tool))) && !showShapesMenu && !showLineMenu
+                      ? 'bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/30 scale-105'
+                      : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200'
+                    }`}
+                >
+                  {t.icon}
+                  <span className="absolute left-[52px] bg-zinc-800 text-white text-[10px] font-semibold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none transition-opacity border border-zinc-700 shadow-lg">
+                    {t.label}
+                    <span className="ml-1.5 text-zinc-500 font-mono">{t.key}</span>
+                  </span>
+                </button>
+
+                {t.id === 'line' && showLineMenu && (
+                  <div className="absolute left-[52px] top-[-100px] bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-2xl shadow-2xl z-55 p-4.5 w-[300px] text-left">
+                    <h3 className="text-xs font-bold text-zinc-200 mb-3 border-b border-zinc-800 pb-1.5 flex items-center justify-between">
+                      <span>Connector & Line Options</span>
+                      <span className="text-[9px] uppercase tracking-wider text-fuchsia-400 font-semibold">Right-click menu</span>
+                    </h3>
+                    
+                    {/* Line Type */}
+                    <div className="mb-4">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 block mb-2">Connector Type</label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { id: 'straight', label: 'Straight' },
+                          { id: 'curved', label: 'Curved' },
+                          { id: 'elbow', label: 'Elbow' },
+                          { id: 'orthogonal', label: 'Orthogonal' }
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              setArrowType(item.id as 'straight' | 'curved' | 'elbow' | 'orthogonal');
+                              setTool('line');
+                            }}
+                            className={`px-2 py-1.5 text-xs rounded-lg border text-left font-medium transition-all cursor-pointer flex justify-between items-center
+                              ${arrowType === item.id && tool === 'line'
+                                ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40 shadow-xs'
+                                : 'bg-zinc-900 text-zinc-400 border-zinc-800/80 hover:bg-zinc-800/80 hover:text-zinc-300'
+                              }`}
+                          >
+                            <span>{item.label}</span>
+                            {arrowType === item.id && tool === 'line' && <span className="w-1.5 h-1.5 rounded-full bg-fuchsia-400" />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Start Arrowhead */}
+                    <div className="mb-4">
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 block mb-2">Start Arrowhead</label>
+                      <div className="grid grid-cols-4 gap-1">
+                        {[
+                          { id: 'none', label: 'None' },
+                          { id: 'triangle', label: 'Triangle' },
+                          { id: 'circle', label: 'Circle' },
+                          { id: 'diamond', label: 'Diamond' }
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              setArrowheadStart(item.id as 'none' | 'triangle' | 'circle' | 'diamond');
+                              setTool('line');
+                            }}
+                            className={`py-1 text-[10px] rounded-md border text-center font-medium transition-all cursor-pointer truncate
+                              ${arrowheadStart === item.id
+                                ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
+                                : 'bg-zinc-900 text-zinc-400 border-zinc-850 hover:bg-zinc-800'
+                              }`}
+                            title={item.label}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* End Arrowhead */}
+                    <div>
+                      <label className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 block mb-2">End Arrowhead</label>
+                      <div className="grid grid-cols-4 gap-1">
+                        {[
+                          { id: 'none', label: 'None' },
+                          { id: 'triangle', label: 'Triangle' },
+                          { id: 'circle', label: 'Circle' },
+                          { id: 'diamond', label: 'Diamond' }
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              setArrowheadEnd(item.id as 'none' | 'triangle' | 'circle' | 'diamond');
+                              setTool('line');
+                            }}
+                            className={`py-1 text-[10px] rounded-md border text-center font-medium transition-all cursor-pointer truncate
+                              ${arrowheadEnd === item.id
+                                ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
+                                : 'bg-zinc-900 text-zinc-400 border-zinc-850 hover:bg-zinc-800'
+                              }`}
+                            title={item.label}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
 
             {/* Custom Shapes library button */}
@@ -2838,32 +2980,25 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
             <div className="w-8 h-px bg-zinc-800 my-1" />
 
             {/* Quick Color Toggles */}
-            <button
-              onClick={() => handleBrushColorChange('#ffffff')}
-              className={`w-10 h-10 rounded-xl border border-zinc-800 transition-all cursor-pointer flex items-center justify-center hover:scale-105 bg-zinc-900/50
-                ${color === '#ffffff' ? 'ring-2 ring-fuchsia-500 ring-offset-1 scale-105' : 'hover:bg-zinc-800/85'}`}
-              title="White border"
-            >
-              <div className="w-4.5 h-4.5 rounded-full bg-white shadow-xs" style={{ border: '1px solid rgba(255,255,255,0.15)' }} />
-            </button>
-
-            <button
-              onClick={() => handleBrushColorChange('#ec4899')}
-              className={`w-10 h-10 rounded-xl border border-zinc-800 transition-all cursor-pointer flex items-center justify-center hover:scale-105 bg-zinc-900/50
-                ${color === '#ec4899' ? 'ring-2 ring-fuchsia-500 ring-offset-1 scale-105' : 'hover:bg-zinc-800/85'}`}
-              title="Pink border"
-            >
-              <div className="w-4.5 h-4.5 rounded-full bg-pink-500 shadow-xs" />
-            </button>
-
-            <button
-              onClick={() => handleBrushColorChange('#3b82f6')}
-              className={`w-10 h-10 rounded-xl border border-zinc-800 transition-all cursor-pointer flex items-center justify-center hover:scale-105 bg-zinc-900/50
-                ${color === '#3b82f6' ? 'ring-2 ring-fuchsia-500 ring-offset-1 scale-105' : 'hover:bg-zinc-800/85'}`}
-              title="Blue border"
-            >
-              <div className="w-4.5 h-4.5 rounded-full bg-blue-500 shadow-xs" />
-            </button>
+            {recentColors.map((c, idx) => (
+              <button
+                key={c + '-' + idx}
+                onClick={() => handleBrushColorChange(c)}
+                className={`w-10 h-10 rounded-xl border border-zinc-800 transition-all cursor-pointer flex items-center justify-center hover:scale-105 bg-zinc-900/50
+                  ${color.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-fuchsia-500 ring-offset-1 scale-105' : 'hover:bg-zinc-800/85'}`}
+                title={`Recent Color ${idx + 1}`}
+              >
+                <div 
+                  className="w-4.5 h-4.5 rounded-full shadow-xs" 
+                  style={{ 
+                    backgroundColor: c, 
+                    border: (c.toLowerCase() === '#ffffff' || c.toLowerCase() === '#f8f9fa' || c.toLowerCase() === '#f4f4f5') 
+                      ? '1px solid rgba(255,255,255,0.15)' 
+                      : 'none' 
+                  }} 
+                />
+              </button>
+            ))}
           </div>
 
           {/* ── CANVAS AREA ── */}
