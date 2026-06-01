@@ -1576,6 +1576,132 @@ export function BoardCanvas({
     return () => ro.disconnect();
   }, []);
 
+  const drawSheetBackgroundAndLayout = useCallback((
+    ctx: CanvasRenderingContext2D,
+    sheet: any,
+    activeIdx: number,
+    totalSheets: number,
+    isEditorView: boolean
+  ) => {
+    // Calculate grid size
+    const pageGridType = sheet.gridType || gridType;
+    if (pageGridType !== 'none') {
+      ctx.save();
+      const x = isEditorView ? sheet.x : 0;
+      const y = isEditorView ? sheet.y : 0;
+      
+      ctx.beginPath();
+      ctx.rect(x, y, sheet.width, sheet.height);
+      ctx.clip();
+
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
+      ctx.lineWidth = 1;
+
+      if (pageGridType === 'grid') {
+        ctx.beginPath();
+        for (let gx = x; gx < x + sheet.width; gx += gridSize) {
+          ctx.moveTo(gx, y);
+          ctx.lineTo(gx, y + sheet.height);
+        }
+        for (let gy = y; gy < y + sheet.height; gy += gridSize) {
+          ctx.moveTo(x, gy);
+          ctx.lineTo(x + sheet.width, gy);
+        }
+        ctx.stroke();
+      } else if (pageGridType === 'lines') {
+        ctx.beginPath();
+        for (let gy = y + gridSize; gy < y + sheet.height; gy += gridSize) {
+          ctx.moveTo(x, gy);
+          ctx.lineTo(x + sheet.width, gy);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 2. Draw border
+    const x = isEditorView ? sheet.x : 0;
+    const y = isEditorView ? sheet.y : 0;
+    const showBorder = sheet.showBorder !== false;
+    
+    if (showBorder) {
+      ctx.save();
+      ctx.strokeStyle = sheet.borderColor || '#cbd5e1';
+      ctx.lineWidth = sheet.borderWidth || 1;
+      ctx.strokeRect(x, y, sheet.width, sheet.height);
+      ctx.restore();
+    } else if (isEditorView) {
+      // Dash border indicator in editor view
+      ctx.save();
+      ctx.strokeStyle = 'rgba(99, 102, 241, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeRect(x, y, sheet.width, sheet.height);
+      ctx.restore();
+    }
+
+    // 3. Draw page header/footer templates
+    const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+    const margin = 40;
+    ctx.save();
+    ctx.fillStyle = '#71717a';
+    ctx.font = '600 13px sans-serif';
+    ctx.lineWidth = 1;
+
+    // Draw Header
+    const headerY = y + margin;
+    // Line below header
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+    ctx.beginPath();
+    ctx.moveTo(x + 30, headerY);
+    ctx.lineTo(x + sheet.width - 30, headerY);
+    ctx.stroke();
+
+    // Header Text above the line
+    const headerTextY = headerY - 6;
+    
+    // Page title (Label)
+    const sheetName = sheet.name || (isRtl ? `صفحة ${activeIdx + 1}` : `Page ${activeIdx + 1}`);
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(sheetName, isRtl ? x + sheet.width - 30 : x + 30, headerTextY);
+
+    // Date (if enabled)
+    const showDate = sheet.showDate !== false;
+    if (showDate) {
+      const dateStr = sheet.date || new Date().toLocaleDateString(isRtl ? 'ar-EG' : 'en-US');
+      ctx.textAlign = isRtl ? 'left' : 'right';
+      ctx.fillText(dateStr, isRtl ? x + 30 : x + sheet.width - 30, headerTextY);
+    }
+
+    // Draw Footer
+    const footerY = y + sheet.height - margin;
+    // Line above footer
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+    ctx.beginPath();
+    ctx.moveTo(x + 30, footerY);
+    ctx.lineTo(x + sheet.width - 30, footerY);
+    ctx.stroke();
+
+    // Footer Text below the line
+    const footerTextY = footerY + 18;
+
+    // Preset (e.g. "A4 Preset")
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(sheet.preset, isRtl ? x + sheet.width - 30 : x + 30, footerTextY);
+
+    // Page number (if enabled)
+    const showPageNumber = sheet.showPageNumber !== false;
+    if (showPageNumber) {
+      const pageNumStr = isRtl
+        ? `صفحة ${activeIdx + 1} من ${totalSheets}`
+        : `Page ${activeIdx + 1} of ${totalSheets}`;
+      ctx.textAlign = isRtl ? 'left' : 'right';
+      ctx.fillText(pageNumStr, isRtl ? x + 30 : x + sheet.width - 30, footerTextY);
+    }
+
+    ctx.restore();
+  }, [gridType, gridSize]);
+
   /* ─── Main canvas renderer ─── */
   const renderCanvasMain = useCallback(() => {
     const canvas = canvasRef.current;
@@ -1643,56 +1769,8 @@ export function BoardCanvas({
         ctx.fill();
         ctx.restore();
 
-        // Draw page grid (clipped to sheet bounds, drawn in page space)
-        const pageGridType = activeSheet.gridType || gridType;
-        if (pageGridType !== 'none') {
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
-          ctx.clip();
-
-          ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
-          ctx.lineWidth = 1;
-
-          if (pageGridType === 'grid') {
-            ctx.beginPath();
-            for (let gx = activeSheet.x; gx < activeSheet.x + activeSheet.width; gx += gridSize) {
-              ctx.moveTo(gx, activeSheet.y);
-              ctx.lineTo(gx, activeSheet.y + activeSheet.height);
-            }
-            for (let gy = activeSheet.y; gy < activeSheet.y + activeSheet.height; gy += gridSize) {
-              ctx.moveTo(activeSheet.x, gy);
-              ctx.lineTo(activeSheet.x + activeSheet.width, gy);
-            }
-            ctx.stroke();
-          } else if (pageGridType === 'lines') {
-            ctx.beginPath();
-            for (let gy = activeSheet.y + gridSize; gy < activeSheet.y + activeSheet.height; gy += gridSize) {
-              ctx.moveTo(activeSheet.x, gy);
-              ctx.lineTo(activeSheet.x + activeSheet.width, gy);
-            }
-            ctx.stroke();
-          }
-} else {
-          // Dash border indicator in editor view
-          ctx.save();
-          ctx.strokeStyle = 'rgba(99, 102, 241, 0.35)';
-          ctx.lineWidth = 1;
-          ctx.setLineDash([5, 5]);
-          ctx.strokeRect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
-          ctx.restore();
-        }
-
-        // Draw page header template
-        ctx.save();
-        ctx.fillStyle = '#71717a';
-        ctx.font = '600 13px sans-serif';
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
-        ctx.lineWidth = 1;
-        const pageLabel = isRtl
-          ? `صفحة ${activeIdx + 1} - ${activeSheet.preset}`
-          : `Page ${activeIdx + 1} - ${activeSheet.preset}`;
-        ctx.fillText(pageLabel, activeSheet.x, activeSheet.y - 6);
+        // Draw page grid, border, header, and footer templates
+        drawSheetBackgroundAndLayout(ctx, activeSheet, activeIdx, sheets.length, true);
 
         ctx.restore();
       }
@@ -1803,7 +1881,7 @@ export function BoardCanvas({
       ctx.restore();
     }
     ctx.restore();
-  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet]);
+  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout]);
 
   useLayoutEffect(() => {
     renderCanvasMain();
@@ -2883,6 +2961,9 @@ export function BoardCanvas({
         if (ctx) {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, sheet.width, sheet.height);
+
+          // Draw the background grid, border, headers, and footers templates
+          drawSheetBackgroundAndLayout(ctx, sheet, i, sheets.length, false);
 
           ctx.save();
           ctx.translate(-sheet.x, -sheet.y);
@@ -4256,6 +4337,126 @@ export function BoardCanvas({
                           )}
                         </div>
                       </div>
+
+                      {/* Active Page Properties Section */}
+                      {sheets[activeSheetIndex] && (
+                        <div className="space-y-2.5 pt-2.5 border-t border-zinc-800/80">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Active Page Settings</p>
+                          
+                          {/* Page Name/Label */}
+                          <div className="space-y-1">
+                            <label className="text-[8px] text-zinc-500 font-bold block">Page Name</label>
+                            <input
+                              type="text"
+                              value={sheets[activeSheetIndex].name || ''}
+                              onChange={(e) => handleUpdatePageProperty('name', e.target.value)}
+                              placeholder={`Page ${activeSheetIndex + 1}`}
+                              className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none"
+                            />
+                          </div>
+
+                          {/* Page-Specific Grid Type */}
+                          <div className="space-y-1">
+                            <label className="text-[8px] text-zinc-500 font-bold block">Page Grid</label>
+                            <div className="flex gap-1">
+                              {['default', 'grid', 'lines', 'none'].map((g) => {
+                                const activeVal = sheets[activeSheetIndex].gridType || 'default';
+                                return (
+                                  <button
+                                    key={g}
+                                    onClick={() => handleUpdatePageProperty('gridType', g === 'default' ? undefined : g)}
+                                    className={`flex-1 py-0.5 rounded text-[8px] font-bold border transition-all capitalize cursor-pointer ${
+                                      activeVal === g
+                                        ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
+                                        : 'bg-zinc-950 border-zinc-850 text-zinc-400'
+                                    }`}
+                                  >
+                                    {g}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Border Settings */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[8px] text-zinc-500 font-bold block">Show Page Border</label>
+                              <input
+                                type="checkbox"
+                                checked={sheets[activeSheetIndex].showBorder !== false}
+                                onChange={(e) => handleUpdatePageProperty('showBorder', e.target.checked)}
+                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                              />
+                            </div>
+                            
+                            {sheets[activeSheetIndex].showBorder !== false && (
+                              <div className="flex items-center justify-between gap-2 pl-2 border-l border-zinc-800">
+                                <label className="text-[8px] text-zinc-500 font-bold">Border Color</label>
+                                <div className="flex items-center gap-1.5">
+                                  {/* Simple swatches for border color */}
+                                  {['#cbd5e1', '#71717a', '#6366f1', '#ef4444', '#22c55e'].map((c) => (
+                                    <button
+                                      key={c}
+                                      onClick={() => handleUpdatePageProperty('borderColor', c)}
+                                      className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
+                                        (sheets[activeSheetIndex].borderColor || '#cbd5e1') === c
+                                          ? 'ring-1 ring-fuchsia-400 border-white'
+                                          : 'border-zinc-700'
+                                      }`}
+                                      style={{ backgroundColor: c }}
+                                      title={c}
+                                    />
+                                  ))}
+                                  {/* Color picker input for custom colors */}
+                                  <input
+                                    type="color"
+                                    value={sheets[activeSheetIndex].borderColor || '#cbd5e1'}
+                                    onChange={(e) => handleUpdatePageProperty('borderColor', e.target.value)}
+                                    className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Header / Footer Templates */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[8px] text-zinc-500 font-bold block">Show Page Numbers</label>
+                              <input
+                                type="checkbox"
+                                checked={sheets[activeSheetIndex].showPageNumber !== false}
+                                onChange={(e) => handleUpdatePageProperty('showPageNumber', e.target.checked)}
+                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <label className="text-[8px] text-zinc-500 font-bold block">Show Header Date</label>
+                              <input
+                                type="checkbox"
+                                checked={sheets[activeSheetIndex].showDate !== false}
+                                onChange={(e) => handleUpdatePageProperty('showDate', e.target.checked)}
+                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                              />
+                            </div>
+
+                            {sheets[activeSheetIndex].showDate !== false && (
+                              <div className="space-y-1 pl-2 border-l border-zinc-800">
+                                <label className="text-[8px] text-zinc-500 font-bold block">Custom Date</label>
+                                <input
+                                  type="text"
+                                  value={sheets[activeSheetIndex].date || ''}
+                                  onChange={(e) => handleUpdatePageProperty('date', e.target.value)}
+                                  placeholder={new Date().toLocaleDateString()}
+                                  className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
