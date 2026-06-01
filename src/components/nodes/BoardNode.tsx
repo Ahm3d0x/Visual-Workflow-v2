@@ -23,7 +23,7 @@ export interface BoardStroke {
   opacity?: number;
   fillOpacity?: number;
   strokeDasharray?: string;
-  arrowType?: 'straight' | 'curved' | 'elbow' | 'orthogonal';
+  arrowType?: 'straight' | 'curved' | 'elbow' | 'orthogonal' | 'curved-multi';
   arrowheadStart?: 'none' | 'triangle' | 'circle' | 'diamond';
   arrowheadEnd?: 'none' | 'triangle' | 'circle' | 'diamond';
   groupId?: string;
@@ -120,11 +120,31 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
         });
         ctx.stroke();
       } else if (stroke.tool === 'line' && stroke.points.length >= 2) {
-        const p0 = stroke.points[0];
-        const pN = stroke.points[stroke.points.length - 1];
         ctx.beginPath();
-        ctx.moveTo(p0.x * scale + offsetX, p0.y * scale + offsetY);
-        ctx.lineTo(pN.x * scale + offsetX, pN.y * scale + offsetY);
+        ctx.moveTo(stroke.points[0].x * scale + offsetX, stroke.points[0].y * scale + offsetY);
+        if (stroke.arrowType === 'curved-multi') {
+          for (let i = 1; i < stroke.points.length - 1; i++) {
+            const pCurrent = stroke.points[i];
+            const pNext = stroke.points[i + 1];
+            const xc = (pCurrent.x + pNext.x) / 2;
+            const yc = (pCurrent.y + pNext.y) / 2;
+            ctx.quadraticCurveTo(
+              pCurrent.x * scale + offsetX,
+              pCurrent.y * scale + offsetY,
+              xc * scale + offsetX,
+              yc * scale + offsetY
+            );
+          }
+          ctx.lineTo(
+            stroke.points[stroke.points.length - 1].x * scale + offsetX,
+            stroke.points[stroke.points.length - 1].y * scale + offsetY
+          );
+        } else {
+          ctx.lineTo(
+            stroke.points[stroke.points.length - 1].x * scale + offsetX,
+            stroke.points[stroke.points.length - 1].y * scale + offsetY
+          );
+        }
         ctx.stroke();
       } else if (stroke.tool === 'arrow' && stroke.points.length >= 2) {
         const p0 = stroke.points[0];

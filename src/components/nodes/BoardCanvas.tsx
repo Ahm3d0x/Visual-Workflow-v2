@@ -92,7 +92,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const [bgColor, setBgColor] = useState(initialBg || '#121212');
   
   // Connectors State
-  const [arrowType, setArrowType] = useState<'straight' | 'curved' | 'elbow' | 'orthogonal'>('straight');
+  const [arrowType, setArrowType] = useState<'straight' | 'curved' | 'elbow' | 'orthogonal' | 'curved-multi'>('straight');
   const [arrowheadStart, setArrowheadStart] = useState<'none' | 'triangle' | 'circle' | 'diamond'>('none');
   const [arrowheadEnd, setArrowheadEnd] = useState<'none' | 'triangle' | 'circle' | 'diamond'>('triangle');
 
@@ -152,10 +152,11 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const consecutivePasteCountRef = useRef<number>(0);
 
   const dragStartRef = useRef<{
-    mode: 'none' | 'drag-objects' | 'resize' | 'rotate' | 'pan' | 'region-select';
+    mode: 'none' | 'drag-objects' | 'resize' | 'rotate' | 'pan' | 'region-select' | 'drag-node';
     startX: number;
     startY: number;
     resizeHandle?: string;
+    nodeIndex?: number;
     originalStrokes: Record<string, BoardStroke>;
     panStart?: { offsetX: number; offsetY: number };
     selectionStart?: { x: number; y: number };
@@ -204,6 +205,14 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     window.addEventListener('click', handleCloseMenu);
     return () => window.removeEventListener('click', handleCloseMenu);
   }, [showLineMenu]);
+
+  // Close shapes menu on document click
+  useEffect(() => {
+    if (!showShapesMenu) return;
+    const handleCloseMenu = () => setShowShapesMenu(false);
+    window.addEventListener('click', handleCloseMenu);
+    return () => window.removeEventListener('click', handleCloseMenu);
+  }, [showShapesMenu]);
 
   // Load active user session metadata
   useEffect(() => {
@@ -581,8 +590,24 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     return false;
   }, []);
 
-  const hitTestSelectionHandle = useCallback((x: number, y: number): { type: string } | null => {
+  const hitTestSelectionHandle = useCallback((x: number, y: number): { type: string; nodeIndex?: number } | null => {
     if (selectedStrokeIds.length === 0) return null;
+
+    // Check individual line/arrow node handles first
+    if (selectedStrokeIds.length === 1) {
+      const s = strokes.find((st) => st.id === selectedStrokeIds[0]);
+      if (s && (s.tool === 'line' || s.tool === 'arrow')) {
+        const handleSize = 10 / view.scale;
+        const tolerance = 6 / view.scale;
+        for (let i = 0; i < s.points.length; i++) {
+          const p = s.points[i];
+          if (Math.hypot(x - p.x, y - p.y) <= (handleSize / 2 + tolerance)) {
+            return { type: 'node', nodeIndex: i };
+          }
+        }
+      }
+    }
+
     const box = getCombinedBoundingBox(selectedStrokeIds);
     if (box.minX === Infinity) return null;
 
@@ -608,7 +633,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       }
     }
     return null;
-  }, [selectedStrokeIds, getCombinedBoundingBox, view.scale]);
+  }, [selectedStrokeIds, strokes, getCombinedBoundingBox, view.scale]);
 
   // Properties modification applying to selection
   const updateSelectedStrokesProperty = useCallback((updater: (s: BoardStroke) => BoardStroke) => {
@@ -915,11 +940,12 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     ctx: CanvasRenderingContext2D,
     p0: { x: number; y: number },
     pN: { x: number; y: number },
-    type: 'straight' | 'curved' | 'elbow' | 'orthogonal',
+    type: 'straight' | 'curved' | 'elbow' | 'orthogonal' | 'curved-multi',
     headStart: 'none' | 'triangle' | 'circle' | 'diamond',
     headEnd: 'none' | 'triangle' | 'circle' | 'diamond',
     strokeColor: string,
-    strokeW: number
+    strokeW: number,
+    allPoints?: { x: number; y: number }[]
   ) => {
     ctx.save();
     ctx.strokeStyle = strokeColor;
@@ -961,6 +987,34 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       ctx.moveTo(p0_line.x, p0_line.y);
       ctx.quadraticCurveTo(cp.x, cp.y, pN_line.x, pN_line.y);
       ctx.stroke();
+    } else if (type === 'curved-multi') {
+      const pts = allPoints && allPoints.length >= 2 ? allPoints : [p0, pN];
+      const angleStart = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+      const angleEnd = Math.atan2(pts[pts.length - 1].y - pts[pts.length - 2].y, pts[pts.length - 1].x - pts[pts.length - 2].x);
+
+      startTangent = angleStart + Math.PI;
+      endTangent = angleEnd;
+
+      const p0_line = headStart !== 'none' ? { x: pts[0].x + Math.cos(angleStart) * sizeStart, y: pts[0].y + Math.sin(angleStart) * sizeStart } : pts[0];
+      const pN_line = headEnd !== 'none' ? { x: pts[pts.length - 1].x - Math.cos(angleEnd) * sizeEnd, y: pts[pts.length - 1].y - Math.sin(angleEnd) * sizeEnd } : pts[pts.length - 1];
+
+      const drawPts = [p0_line, ...pts.slice(1, -1), pN_line];
+      ctx.beginPath();
+      if (drawPts.length < 3) {
+        ctx.moveTo(drawPts[0].x, drawPts[0].y);
+        ctx.lineTo(drawPts[1].x, drawPts[1].y);
+      } else {
+        ctx.moveTo(drawPts[0].x, drawPts[0].y);
+        for (let i = 1; i < drawPts.length - 2; i++) {
+          const xc = (drawPts[i].x + drawPts[i + 1].x) / 2;
+          const yc = (drawPts[i].y + drawPts[i + 1].y) / 2;
+          ctx.quadraticCurveTo(drawPts[i].x, drawPts[i].y, xc, yc);
+        }
+        const penultimate = drawPts[drawPts.length - 2];
+        const ultimate = drawPts[drawPts.length - 1];
+        ctx.quadraticCurveTo(penultimate.x, penultimate.y, ultimate.x, ultimate.y);
+      }
+      ctx.stroke();
     } else {
       const midX = (p0.x + pN.x) / 2;
       const p1 = { x: midX, y: p0.y };
@@ -978,7 +1032,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       points = [p0_line, p1, p2, pN_line];
     }
 
-    if (type !== 'curved') {
+    if (type !== 'curved' && type !== 'curved-multi') {
       ctx.beginPath();
       ctx.moveTo(points[0].x, points[0].y);
       for (let i = 1; i < points.length; i++) {
@@ -1026,7 +1080,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       const type = stroke.arrowType || 'straight';
       const headStart = stroke.arrowheadStart || 'none';
       const headEnd = stroke.arrowheadEnd || (stroke.tool === 'arrow' ? 'triangle' : 'none');
-      drawConnector(ctx, stroke.points[0], stroke.points[stroke.points.length - 1], type, headStart, headEnd, stroke.color, stroke.width);
+      drawConnector(ctx, stroke.points[0], stroke.points[stroke.points.length - 1], type, headStart, headEnd, stroke.color, stroke.width, stroke.points);
     } else {
       drawStroke(ctx, stroke, isSelected);
     }
@@ -1080,7 +1134,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         const type = arrowType;
         const headStart = arrowheadStart;
         const headEnd = arrowheadEnd;
-        drawConnector(ctx, p0, pN, type, headStart, headEnd, color, strokeWidth);
+        drawConnector(ctx, p0, pN, type, headStart, headEnd, color, strokeWidth, pts);
       } else {
         const px = Math.min(p0.x, pN.x);
         const py = Math.min(p0.y, pN.y);
@@ -1282,6 +1336,23 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         ctx.beginPath();
         ctx.arc(box.minX + box.w / 2, box.minY - rotateLineLen, handleSize / 2, 0, Math.PI * 2);
         ctx.fill(); ctx.stroke();
+
+        // Draw individual connector nodes if editing a single line/arrow
+        if (selectedStrokeIds.length === 1) {
+          const singleStroke = strokes.find((s) => s.id === selectedStrokeIds[0]);
+          if (singleStroke && (singleStroke.tool === 'line' || singleStroke.tool === 'arrow')) {
+            ctx.fillStyle = '#10b981'; // Green for node handles
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5 / view.scale;
+            const nodeSize = 8 / view.scale;
+            singleStroke.points.forEach((p) => {
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, nodeSize / 2, 0, Math.PI * 2);
+              ctx.fill(); ctx.stroke();
+            });
+          }
+        }
+
         ctx.restore();
       }
     }
@@ -1361,10 +1432,11 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         });
 
         dragStartRef.current = {
-          mode: handle.type === 'rotate' ? 'rotate' : 'resize',
+          mode: handle.type === 'rotate' ? 'rotate' : (handle.type === 'node' ? 'drag-node' : 'resize'),
           startX: x,
           startY: y,
           resizeHandle: handle.type,
+          nodeIndex: handle.nodeIndex,
           originalStrokes,
         };
         setIsDraggingObject(true);
@@ -1445,6 +1517,42 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
     const drag = dragStartRef.current;
+
+    if (drag.mode === 'drag-node' && selectedStrokeIds.length === 1) {
+      const idx = drag.nodeIndex!;
+      let dx = x - drag.startX;
+      let dy = y - drag.startY;
+      if (snapToGrid) {
+        dx = Math.round(dx / gridSize) * gridSize;
+        dy = Math.round(dy / gridSize) * gridSize;
+      }
+
+      setStrokes((prev) => prev.map((s) => {
+        if (s.id !== selectedStrokeIds[0]) return s;
+        const orig = drag.originalStrokes[s.id];
+        if (!orig) return s;
+        const newPts = [...orig.points];
+        newPts[idx] = { x: orig.points[idx].x + dx, y: orig.points[idx].y + dy };
+        return { ...s, points: newPts };
+      }));
+
+      // Throttle broadcast
+      const now = Date.now();
+      if (now - lastBroadcastTimeRef.current > 40) {
+        lastBroadcastTimeRef.current = now;
+        if (channelRef.current?.state === 'joined') {
+          const updated = strokes.find((s) => s.id === selectedStrokeIds[0]);
+          if (updated) {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'stroke_add',
+              payload: { stroke: updated, userId: currentUserId }
+            });
+          }
+        }
+      }
+      return;
+    }
 
     if (drag.mode === 'pan' && drag.panStart) {
       const dx = e.clientX - drag.startX;
@@ -1596,14 +1704,31 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     }
 
     if (pointer.down) {
-      const newPts = tool === 'pen' || tool === 'highlighter' || tool === 'eraser'
-        ? [...currentPen, { x, y }]
-        : [{ x: pointer.startX, y: pointer.startY }, { x, y }];
+      let newPts = [];
+      if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
+        newPts = [...currentPen, { x, y }];
+      } else if (tool === 'line' && arrowType === 'curved-multi') {
+        const last = currentPen[currentPen.length - 1];
+        if (last) {
+          const dist = Math.hypot(x - last.x, y - last.y);
+          if (dist > 40) {
+            newPts = [...currentPen, { x, y }];
+          } else {
+            newPts = [...currentPen.slice(0, -1), { x, y }];
+          }
+        } else {
+          newPts = [{ x, y }];
+        }
+      } else {
+        newPts = [{ x: pointer.startX, y: pointer.startY }, { x, y }];
+      }
 
-      if (snapToGrid && !['pen', 'highlighter', 'eraser'].includes(tool)) {
+      if (snapToGrid && !['pen', 'highlighter', 'eraser', 'line'].includes(tool)) {
         const last = newPts[newPts.length - 1];
-        last.x = Math.round(last.x / gridSize) * gridSize;
-        last.y = Math.round(last.y / gridSize) * gridSize;
+        if (last) {
+          last.x = Math.round(last.x / gridSize) * gridSize;
+          last.y = Math.round(last.y / gridSize) * gridSize;
+        }
       }
 
       setCurrentPen(newPts);
@@ -1690,7 +1815,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       return;
     }
 
-    if (drag.mode === 'drag-objects' || drag.mode === 'resize' || drag.mode === 'rotate') {
+    if (drag.mode === 'drag-objects' || drag.mode === 'resize' || drag.mode === 'rotate' || drag.mode === 'drag-node') {
       setIsDraggingObject(false);
       setUndoStack((prev) => [...prev, strokes]);
       setRedoStack([]);
@@ -1715,6 +1840,18 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
 
     if (!pointer.down || currentPen.length < 1) {
       setPointer((p) => ({ ...p, down: false }));
+      return;
+    }
+
+    // Discard single-point lines/arrows
+    if ((tool === 'line' || tool === 'arrow') && currentPen.length < 2) {
+      setPointer((p) => ({ ...p, down: false }));
+      const overlay = overlayRef.current;
+      if (overlay) {
+        const ctx = overlay.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
+      }
+      setCurrentPen([]);
       return;
     }
 
@@ -2801,7 +2938,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         </div>
 
         {/* ═══ MAIN AREA ═══ */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden relative">
           {/* ── LEFT TOOLS PALETTE ── */}
           <div 
             className="w-14 h-full shrink-0 bg-zinc-900/90 backdrop-blur-md border-r border-zinc-800/80 flex flex-col items-center py-3 gap-1.5 z-20 overflow-y-auto"
@@ -2836,109 +2973,16 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
                     <span className="ml-1.5 text-zinc-500 font-mono">{t.key}</span>
                   </span>
                 </button>
-
-                {t.id === 'line' && showLineMenu && (
-                  <div className="absolute left-[52px] top-[-100px] bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-2xl shadow-2xl z-55 p-4.5 w-[300px] text-left">
-                    <h3 className="text-xs font-bold text-zinc-200 mb-3 border-b border-zinc-800 pb-1.5 flex items-center justify-between">
-                      <span>Connector & Line Options</span>
-                      <span className="text-[9px] uppercase tracking-wider text-fuchsia-400 font-semibold">Right-click menu</span>
-                    </h3>
-                    
-                    {/* Line Type */}
-                    <div className="mb-4">
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 block mb-2">Connector Type</label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {[
-                          { id: 'straight', label: 'Straight' },
-                          { id: 'curved', label: 'Curved' },
-                          { id: 'elbow', label: 'Elbow' },
-                          { id: 'orthogonal', label: 'Orthogonal' }
-                        ].map((item) => (
-                          <button
-                            key={item.id}
-                            onClick={() => {
-                              setArrowType(item.id as 'straight' | 'curved' | 'elbow' | 'orthogonal');
-                              setTool('line');
-                            }}
-                            className={`px-2 py-1.5 text-xs rounded-lg border text-left font-medium transition-all cursor-pointer flex justify-between items-center
-                              ${arrowType === item.id && tool === 'line'
-                                ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40 shadow-xs'
-                                : 'bg-zinc-900 text-zinc-400 border-zinc-800/80 hover:bg-zinc-800/80 hover:text-zinc-300'
-                              }`}
-                          >
-                            <span>{item.label}</span>
-                            {arrowType === item.id && tool === 'line' && <span className="w-1.5 h-1.5 rounded-full bg-fuchsia-400" />}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Start Arrowhead */}
-                    <div className="mb-4">
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 block mb-2">Start Arrowhead</label>
-                      <div className="grid grid-cols-4 gap-1">
-                        {[
-                          { id: 'none', label: 'None' },
-                          { id: 'triangle', label: 'Triangle' },
-                          { id: 'circle', label: 'Circle' },
-                          { id: 'diamond', label: 'Diamond' }
-                        ].map((item) => (
-                          <button
-                            key={item.id}
-                            onClick={() => {
-                              setArrowheadStart(item.id as 'none' | 'triangle' | 'circle' | 'diamond');
-                              setTool('line');
-                            }}
-                            className={`py-1 text-[10px] rounded-md border text-center font-medium transition-all cursor-pointer truncate
-                              ${arrowheadStart === item.id
-                                ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
-                                : 'bg-zinc-900 text-zinc-400 border-zinc-850 hover:bg-zinc-800'
-                              }`}
-                            title={item.label}
-                          >
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* End Arrowhead */}
-                    <div>
-                      <label className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 block mb-2">End Arrowhead</label>
-                      <div className="grid grid-cols-4 gap-1">
-                        {[
-                          { id: 'none', label: 'None' },
-                          { id: 'triangle', label: 'Triangle' },
-                          { id: 'circle', label: 'Circle' },
-                          { id: 'diamond', label: 'Diamond' }
-                        ].map((item) => (
-                          <button
-                            key={item.id}
-                            onClick={() => {
-                              setArrowheadEnd(item.id as 'none' | 'triangle' | 'circle' | 'diamond');
-                              setTool('line');
-                            }}
-                            className={`py-1 text-[10px] rounded-md border text-center font-medium transition-all cursor-pointer truncate
-                              ${arrowheadEnd === item.id
-                                ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
-                                : 'bg-zinc-900 text-zinc-400 border-zinc-850 hover:bg-zinc-800'
-                              }`}
-                            title={item.label}
-                          >
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             ))}
 
             {/* Custom Shapes library button */}
             <div className="relative">
               <button
-                onClick={() => setShowShapesMenu(!showShapesMenu)}
+                onClick={() => {
+                  setShowShapesMenu(!showShapesMenu);
+                  setShowLineMenu(false);
+                }}
                 title="More Shapes..."
                 className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all cursor-pointer
                   ${showShapesMenu || !['select', 'pen', 'highlighter', 'eraser', 'line', 'arrow', 'text', 'sticky'].includes(tool)
@@ -2948,33 +2992,6 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               >
                 <Plus className="w-5 h-5" />
               </button>
-              {showShapesMenu && (
-                <div className="absolute left-[52px] top-0 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl z-50 p-3 w-[260px] max-h-[350px] overflow-y-auto">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Whiteboard Shapes</p>
-                  
-                  {['Basic', 'Flowchart', 'Diagram'].map((group) => (
-                    <div key={group} className="mb-3">
-                      <h4 className="text-[9px] text-zinc-600 font-bold uppercase mb-1.5">{group} Shapes</h4>
-                      <div className="grid grid-cols-2 gap-1">
-                        {shapesList.filter(s => s.group === group).map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => { setTool(s.id); setShowShapesMenu(false); }}
-                            className={`px-2.5 py-1.5 text-left text-xs rounded-lg transition-all border flex items-center justify-between cursor-pointer
-                              ${tool === s.id
-                                ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
-                                : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:bg-zinc-800/80 hover:text-zinc-300'
-                              }`}
-                          >
-                            <span>{s.label}</span>
-                            <span className="text-[8px] text-zinc-600 font-mono shrink-0">shape</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div className="w-8 h-px bg-zinc-800 my-1" />
@@ -3000,6 +3017,141 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               </button>
             ))}
           </div>
+
+          {/* Floating Line Options Menu */}
+          {showLineMenu && (
+            <div 
+              className="absolute left-[60px] top-[120px] bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-2xl shadow-2xl z-50 p-4.5 w-[300px] text-left select-none animate-fadeIn"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-xs font-bold text-zinc-200 mb-3 border-b border-zinc-800 pb-1.5 flex items-center justify-between">
+                <span>Connector & Line Options</span>
+                <span className="text-[9px] uppercase tracking-wider text-fuchsia-400 font-semibold font-mono">Options</span>
+              </h3>
+              
+              {/* Line Type */}
+              <div className="mb-4">
+                <label className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 block mb-2">Connector Type</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { id: 'straight', label: 'Straight' },
+                    { id: 'curved', label: 'Curved' },
+                    { id: 'curved-multi', label: 'Curved Multi-Node' },
+                    { id: 'elbow', label: 'Elbow' },
+                    { id: 'orthogonal', label: 'Orthogonal' }
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setArrowType(item.id as any);
+                        setTool('line');
+                      }}
+                      className={`px-2 py-1.5 text-xs rounded-lg border text-left font-medium transition-all cursor-pointer flex justify-between items-center
+                        ${arrowType === item.id && tool === 'line'
+                          ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40 shadow-xs'
+                          : 'bg-zinc-900 text-zinc-400 border-zinc-800/80 hover:bg-zinc-800/80 hover:text-zinc-300'
+                        }`}
+                    >
+                      <span>{item.label}</span>
+                      {arrowType === item.id && tool === 'line' && <span className="w-1.5 h-1.5 rounded-full bg-fuchsia-400" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Start Arrowhead */}
+              <div className="mb-4">
+                <label className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 block mb-2">Start Arrowhead</label>
+                <div className="grid grid-cols-4 gap-1">
+                  {[
+                    { id: 'none', label: 'None' },
+                    { id: 'triangle', label: 'Triangle' },
+                    { id: 'circle', label: 'Circle' },
+                    { id: 'diamond', label: 'Diamond' }
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setArrowheadStart(item.id as any);
+                        setTool('line');
+                      }}
+                      className={`py-1 text-[10px] rounded-md border text-center font-medium transition-all cursor-pointer truncate
+                        ${arrowheadStart === item.id
+                          ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
+                          : 'bg-zinc-900 text-zinc-400 border-zinc-850 hover:bg-zinc-800'
+                        }`}
+                      title={item.label}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* End Arrowhead */}
+              <div>
+                <label className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 block mb-2">End Arrowhead</label>
+                <div className="grid grid-cols-4 gap-1">
+                  {[
+                    { id: 'none', label: 'None' },
+                    { id: 'triangle', label: 'Triangle' },
+                    { id: 'circle', label: 'Circle' },
+                    { id: 'diamond', label: 'Diamond' }
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setArrowheadEnd(item.id as any);
+                        setTool('line');
+                      }}
+                      className={`py-1 text-[10px] rounded-md border text-center font-medium transition-all cursor-pointer truncate
+                        ${arrowheadEnd === item.id
+                          ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
+                          : 'bg-zinc-900 text-zinc-400 border-zinc-850 hover:bg-zinc-800'
+                        }`}
+                      title={item.label}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Floating Shapes Menu */}
+          {showShapesMenu && (
+            <div 
+              className="absolute left-[60px] top-[260px] bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl z-50 p-3 w-[260px] max-h-[350px] overflow-y-auto select-none animate-fadeIn"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Whiteboard Shapes</p>
+              
+              {['Basic', 'Flowchart', 'Diagram'].map((group) => (
+                <div key={group} className="mb-3">
+                  <h4 className="text-[9px] text-zinc-600 font-bold uppercase mb-1.5">{group} Shapes</h4>
+                  <div className="grid grid-cols-2 gap-1">
+                    {shapesList.filter(s => s.group === group).map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => { setTool(s.id); setShowShapesMenu(false); }}
+                        className={`px-2.5 py-1.5 text-left text-xs rounded-lg transition-all border flex items-center justify-between cursor-pointer
+                          ${tool === s.id
+                            ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
+                            : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:bg-zinc-800/80 hover:text-zinc-300'
+                          }`}
+                      >
+                        <span>{s.label}</span>
+                        <span className="text-[8px] text-zinc-600 font-mono shrink-0">shape</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* ── CANVAS AREA ── */}
           <div
