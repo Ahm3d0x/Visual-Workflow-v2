@@ -9,7 +9,10 @@ import { BoardCanvas } from './BoardCanvas';
 
 export interface BoardStroke {
   id: string;
-  tool: 'pen' | 'highlighter' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser' | 'sticky';
+  tool: 'pen' | 'highlighter' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser' | 'sticky' |
+        'rounded-rect' | 'ellipse' | 'diamond' | 'hexagon' |
+        'flow-process' | 'flow-decision' | 'flow-data' | 'flow-terminator' |
+        'diag-cloud' | 'diag-database' | 'diag-cylinder' | 'diag-document';
   points: { x: number; y: number }[];
   color: string;
   width: number;
@@ -17,6 +20,16 @@ export interface BoardStroke {
   fontSize?: number;
   fill?: boolean;
   fillColor?: string;
+  opacity?: number;
+  fillOpacity?: number;
+  strokeDasharray?: string;
+  arrowType?: 'straight' | 'curved' | 'elbow' | 'orthogonal';
+  arrowheadStart?: 'none' | 'triangle' | 'circle' | 'diamond';
+  arrowheadEnd?: 'none' | 'triangle' | 'circle' | 'diamond';
+  groupId?: string;
+  fontFamily?: string;
+  fontWeight?: string;
+  textAlign?: 'left' | 'center' | 'right';
 }
 
 interface BoardNodeProps {
@@ -86,9 +99,18 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
       ctx.lineWidth = Math.max(stroke.width * scale, 0.5);
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      ctx.globalAlpha = stroke.opacity !== undefined ? stroke.opacity : 1;
 
-      if (stroke.tool === 'pen' || stroke.tool === 'eraser') {
+      if (stroke.strokeDasharray) {
+        ctx.setLineDash(stroke.strokeDasharray.split(',').map(Number).map(d => d * scale));
+      }
+
+      if (stroke.tool === 'pen' || stroke.tool === 'eraser' || stroke.tool === 'highlighter') {
         ctx.globalCompositeOperation = stroke.tool === 'eraser' ? 'destination-out' : 'source-over';
+        if (stroke.tool === 'highlighter') {
+          ctx.globalAlpha = (stroke.opacity !== undefined ? stroke.opacity : 1) * 0.45;
+          ctx.lineWidth = Math.max(stroke.width * 2.5 * scale, 1);
+        }
         ctx.beginPath();
         stroke.points.forEach((p, i) => {
           const px = p.x * scale + offsetX;
@@ -104,37 +126,129 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
         ctx.moveTo(p0.x * scale + offsetX, p0.y * scale + offsetY);
         ctx.lineTo(pN.x * scale + offsetX, pN.y * scale + offsetY);
         ctx.stroke();
-      } else if (stroke.tool === 'rect' && stroke.points.length >= 2) {
+      } else if (stroke.tool === 'arrow' && stroke.points.length >= 2) {
         const p0 = stroke.points[0];
         const pN = stroke.points[stroke.points.length - 1];
-        const x = p0.x * scale + offsetX;
-        const y = p0.y * scale + offsetY;
-        const w = (pN.x - p0.x) * scale;
-        const h = (pN.y - p0.y) * scale;
-        if (stroke.fill) {
-          ctx.fillStyle = stroke.fillColor || stroke.color;
-          ctx.fillRect(x, y, w, h);
-        }
-        ctx.strokeRect(x, y, w, h);
-      } else if (stroke.tool === 'circle' && stroke.points.length >= 2) {
-        const p0 = stroke.points[0];
-        const pN = stroke.points[stroke.points.length - 1];
-        const cx = (p0.x + pN.x) / 2 * scale + offsetX;
-        const cy = (p0.y + pN.y) / 2 * scale + offsetY;
-        const rx = Math.abs(pN.x - p0.x) / 2 * scale;
-        const ry = Math.abs(pN.y - p0.y) / 2 * scale;
+        const p0x = p0.x * scale + offsetX;
+        const p0y = p0.y * scale + offsetY;
+        const pNx = pN.x * scale + offsetX;
+        const pNy = pN.y * scale + offsetY;
         ctx.beginPath();
-        ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-        if (stroke.fill) {
-          ctx.fillStyle = stroke.fillColor || stroke.color;
-          ctx.fill();
-        }
+        ctx.moveTo(p0x, p0y);
+        ctx.lineTo(pNx, pNy);
+        ctx.stroke();
+        const angle = Math.atan2(pNy - p0y, pNx - p0x);
+        const arrowLen = Math.max(12 * scale, 4);
+        ctx.beginPath();
+        ctx.moveTo(pNx, pNy);
+        ctx.lineTo(pNx - arrowLen * Math.cos(angle - Math.PI / 7), pNy - arrowLen * Math.sin(angle - Math.PI / 7));
+        ctx.moveTo(pNx, pNy);
+        ctx.lineTo(pNx - arrowLen * Math.cos(angle + Math.PI / 7), pNy - arrowLen * Math.sin(angle + Math.PI / 7));
         ctx.stroke();
       } else if (stroke.tool === 'text' && stroke.text && stroke.points.length >= 1) {
         const p = stroke.points[0];
         ctx.fillStyle = stroke.color;
-        ctx.font = `${Math.max((stroke.fontSize || 16) * scale, 6)}px sans-serif`;
+        ctx.font = `${stroke.fontWeight || 'normal'} ${Math.max((stroke.fontSize || 16) * scale, 6)}px ${stroke.fontFamily || 'sans-serif'}`;
+        ctx.textAlign = stroke.textAlign || 'left';
         ctx.fillText(stroke.text, p.x * scale + offsetX, p.y * scale + offsetY);
+      } else if (stroke.tool === 'sticky' && stroke.points.length >= 1) {
+        const p1 = stroke.points[0];
+        const p2 = stroke.points[1] || { x: p1.x + 160, y: p1.y + 160 };
+        const x = p1.x * scale + offsetX;
+        const y = p1.y * scale + offsetY;
+        const w = (p2.x - p1.x) * scale;
+        const h = (p2.y - p1.y) * scale;
+        
+        ctx.fillStyle = stroke.fillColor || '#fef08a';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(x, y, w, h, 4 * scale);
+        else ctx.rect(x, y, w, h);
+        ctx.fill();
+        if (stroke.text) {
+          ctx.fillStyle = stroke.color || '#18181b';
+          ctx.font = `bold ${Math.max((stroke.fontSize || 13) * scale, 5)}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(stroke.text.slice(0, 15) + (stroke.text.length > 15 ? '...' : ''), x + w / 2, y + h / 2);
+        }
+      } else if (stroke.points.length >= 2) {
+        const p0 = stroke.points[0];
+        const pN = stroke.points[stroke.points.length - 1];
+        const px = Math.min(p0.x, pN.x);
+        const py = Math.min(p0.y, pN.y);
+        const pw = Math.abs(pN.x - p0.x);
+        const ph = Math.abs(pN.y - p0.y);
+        const x = px * scale + offsetX;
+        const y = py * scale + offsetY;
+        const w = pw * scale;
+        const h = ph * scale;
+
+        ctx.beginPath();
+        if (stroke.tool === 'rect' || stroke.tool === 'flow-process') {
+          ctx.rect(x, y, w, h);
+        } else if (stroke.tool === 'rounded-rect' || stroke.tool === 'flow-terminator') {
+          const r = stroke.tool === 'flow-terminator' ? h / 2 : 8 * scale;
+          if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+          else ctx.rect(x, y, w, h);
+        } else if (stroke.tool === 'circle' || stroke.tool === 'ellipse') {
+          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        } else if (stroke.tool === 'triangle') {
+          ctx.moveTo(x + w / 2, y);
+          ctx.lineTo(x + w, y + h);
+          ctx.lineTo(x, y + h);
+          ctx.closePath();
+        } else if (stroke.tool === 'diamond' || stroke.tool === 'flow-decision') {
+          ctx.moveTo(x + w / 2, y);
+          ctx.lineTo(x + w, y + h / 2);
+          ctx.lineTo(x + w / 2, y + h);
+          ctx.lineTo(x, y + h / 2);
+          ctx.closePath();
+        } else if (stroke.tool === 'hexagon') {
+          ctx.moveTo(x + w * 0.25, y);
+          ctx.lineTo(x + w * 0.75, y);
+          ctx.lineTo(x + w, y + h * 0.5);
+          ctx.lineTo(x + w * 0.75, y + h);
+          ctx.lineTo(x + w * 0.25, y + h);
+          ctx.lineTo(x, y + h * 0.5);
+          ctx.closePath();
+        } else if (stroke.tool === 'flow-data') {
+          ctx.moveTo(x + w * 0.15, y);
+          ctx.lineTo(x + w, y);
+          ctx.lineTo(x + w * 0.85, y + h);
+          ctx.lineTo(x, y + h);
+          ctx.closePath();
+        } else if (stroke.tool === 'diag-cloud') {
+          ctx.moveTo(x + w * 0.2, y + h * 0.7);
+          ctx.bezierCurveTo(x, y + h * 0.7, x, y + h * 0.3, x + w * 0.2, y + h * 0.3);
+          ctx.bezierCurveTo(x + w * 0.2, y, x + w * 0.5, y, x + w * 0.5, y + h * 0.25);
+          ctx.bezierCurveTo(x + w * 0.8, y, x + w * 0.8, y + h * 0.3, x + w * 0.8, y + h * 0.3);
+          ctx.bezierCurveTo(x + w, y + h * 0.3, x + w, y + h * 0.7, x + w * 0.8, y + h * 0.7);
+          ctx.bezierCurveTo(x + w * 0.8, y + h, x + w * 0.2, y + h, x + w * 0.2, y + h * 0.7);
+          ctx.closePath();
+        } else if (stroke.tool === 'diag-database' || stroke.tool === 'diag-cylinder') {
+          const ry = h * 0.15;
+          ctx.ellipse(x + w / 2, y + ry, w / 2, ry, 0, 0, Math.PI * 2);
+          ctx.moveTo(x, y + ry);
+          ctx.lineTo(x, y + h - ry);
+          ctx.ellipse(x + w / 2, y + h - ry, w / 2, ry, 0, 0, Math.PI, false);
+          ctx.lineTo(x + w, y + ry);
+        } else if (stroke.tool === 'diag-document') {
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + w, y);
+          ctx.lineTo(x + w, y + h - 12 * scale);
+          ctx.quadraticCurveTo(x + w * 0.75, y + h - 24 * scale, x + w * 0.5, y + h - 12 * scale);
+          ctx.quadraticCurveTo(x + w * 0.25, y + h, x, y + h - 12 * scale);
+          ctx.closePath();
+        }
+
+        if (stroke.fill) {
+          ctx.save();
+          ctx.globalAlpha = (stroke.opacity !== undefined ? stroke.opacity : 1) * (stroke.fillOpacity !== undefined ? stroke.fillOpacity : 1);
+          ctx.fillStyle = stroke.fillColor || stroke.color;
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.stroke();
       }
       ctx.restore();
     });
