@@ -8,7 +8,8 @@ import {
   MousePointer2, Undo2, Redo2, Trash2, Download, ZoomIn, ZoomOut,
   RotateCcw, PaintBucket, ChevronUp, Save, Users, Copy, Clipboard,
   Settings, Layers, StickyNote, Highlighter, Grid, AlignLeft, AlignCenter,
-  AlignRight, Move, Check, FileDown, Plus, ChevronLeft, ChevronRight
+  AlignRight, Move, Check, FileDown, Plus, ChevronLeft, ChevronRight,
+  Image as ImageIcon
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { playClickSound, playPopSound, playSweepSound } from '@/lib/audioSfx';
@@ -21,7 +22,7 @@ import { jsPDF } from 'jspdf';
 type Tool = 'select' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'triangle' | 'text' | 'sticky' |
              'rounded-rect' | 'ellipse' | 'diamond' | 'hexagon' |
              'flow-process' | 'flow-decision' | 'flow-data' | 'flow-terminator' |
-             'diag-cloud' | 'diag-database' | 'diag-cylinder' | 'diag-document' | 'table';
+             'diag-cloud' | 'diag-database' | 'diag-cylinder' | 'diag-document' | 'table' | 'image';
 
 interface PointerState {
   down: boolean;
@@ -67,6 +68,8 @@ const BG_PRESETS = [
   { label: 'Pink', value: '#fff0f6' },
 ];
 
+const imageCache = new Map<string, HTMLImageElement>();
+
 /* ─────────────────────── Component ─────────────────────── */
 interface BoardCanvasProps {
   nodeId: string;
@@ -91,8 +94,10 @@ export function BoardCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* ── State ── */
+  const [redrawTrigger, setRedrawTrigger] = useState(0);
   const [tool, setTool] = useState<Tool>('pen');
   const [color, setColor] = useState('#ffffff');
   const [recentColors, setRecentColors] = useState<string[]>(['#ffffff', '#ec4899', '#3b82f6']);
@@ -499,9 +504,9 @@ export function BoardCanvas({
   const getStrokeBoundingBox = useCallback((stroke: BoardStroke) => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     if (!stroke.points || stroke.points.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-    if (stroke.tool === 'sticky') {
+    if (stroke.tool === 'sticky' || stroke.tool === 'image') {
       const p1 = stroke.points[0];
-      const p2 = stroke.points[1] || { x: p1.x + 160, y: p1.y + 160 };
+      const p2 = stroke.points[1] || (stroke.tool === 'sticky' ? { x: p1.x + 160, y: p1.y + 160 } : { x: p1.x + 300, y: p1.y + 200 });
       return {
         minX: Math.min(p1.x, p2.x),
         minY: Math.min(p1.y, p2.y),
@@ -843,7 +848,8 @@ export function BoardCanvas({
 
     const isBoxShape = [
       'rect', 'rounded-rect', 'flow-process', 'flow-terminator', 
-      'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'
+      'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document',
+      'sticky', 'image'
     ].includes(stroke.tool);
 
     if (isBoxShape && stroke.points.length >= 2) {
@@ -854,7 +860,7 @@ export function BoardCanvas({
       const maxX = Math.max(p0.x, pN.x);
       const maxY = Math.max(p0.y, pN.y);
       
-      if (stroke.fill) {
+      if (stroke.fill || stroke.tool === 'sticky' || stroke.tool === 'image') {
         return x >= minX - tolerance && x <= maxX + tolerance && y >= minY - tolerance && y <= maxY + tolerance;
       } else {
         const nearLeft = Math.abs(x - minX) <= tolerance && y >= minY - tolerance && y <= maxY + tolerance;
@@ -1217,6 +1223,38 @@ export function BoardCanvas({
       ctx.textAlign = stroke.textAlign || 'left';
       ctx.textBaseline = 'alphabetic';
       ctx.fillText(stroke.text || '', p.x, p.y);
+
+    } else if (stroke.tool === 'image' && stroke.imageUrl) {
+      const p1 = stroke.points[0];
+      const p2 = stroke.points[1] || { x: p1.x + 300, y: p1.y + 200 };
+      const w = p2.x - p1.x;
+      const h = p2.y - p1.y;
+      const imgUrl = stroke.imageUrl;
+      let img = imageCache.get(imgUrl);
+      if (!img) {
+        img = new Image();
+        img.src = imgUrl;
+        img.onload = () => {
+          setRedrawTrigger((prev) => prev + 1);
+        };
+        imageCache.set(imgUrl, img);
+      }
+      if (img.complete) {
+        ctx.drawImage(img, p1.x, p1.y, w, h);
+      } else {
+        ctx.save();
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        ctx.strokeStyle = stroke.color || '#6366f1';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(p1.x, p1.y, w, h);
+        ctx.fillRect(p1.x, p1.y, w, h);
+        ctx.fillStyle = '#71717a';
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Loading image...', p1.x + w / 2, p1.y + h / 2);
+        ctx.restore();
+      }
 
     } else if (stroke.tool === 'sticky') {
       const p1 = stroke.points[0];
@@ -2778,6 +2816,85 @@ export function BoardCanvas({
     setEditingStrokeId(null);
   }, [textInput, editingStrokeId, color, strokeWidth, fontSize, strokes, persistStrokes, tool, fillColor, opacity, fontFamily, fontWeight, textAlign, currentUserId]);
 
+  /* ─── Image upload / launching ─── */
+  const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (!dataUrl) return;
+
+      // Preload image to get natural dimensions
+      const img = new Image();
+      img.onload = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        // Calculate center of current canvas view
+        const cx = (canvas.width / 2 - view.offsetX) / view.scale;
+        const cy = (canvas.height / 2 - view.offsetY) / view.scale;
+
+        // Proportional sizing up to maxDim
+        let w = img.naturalWidth || 300;
+        let h = img.naturalHeight || 200;
+        const maxDim = 350;
+        if (w > maxDim || h > maxDim) {
+          const ratio = Math.min(maxDim / w, maxDim / h);
+          w = w * ratio;
+          h = h * ratio;
+        }
+
+        const halfW = w / 2;
+        const halfH = h / 2;
+
+        const newStroke: BoardStroke = {
+          id: crypto.randomUUID(),
+          tool: 'image',
+          points: [
+            { x: cx - halfW, y: cy - halfH },
+            { x: cx + halfW, y: cy + halfH }
+          ],
+          color: '#ffffff',
+          width: 2,
+          imageUrl: dataUrl,
+          opacity: 1
+        };
+
+        // Cache the preloaded image object
+        imageCache.set(dataUrl, img);
+
+        setUndoStack((prev) => [...prev, strokes]);
+        setRedoStack([]);
+        const nextStrokes = [...strokes, newStroke];
+        setStrokes(nextStrokes);
+        persistStrokes(nextStrokes);
+        setSelectedStrokeIds([newStroke.id]);
+        setTool('select');
+        playClickSound();
+
+        // Broadcast to other users
+        if (channelRef.current?.state === 'joined') {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'stroke_add',
+            payload: { stroke: newStroke, userId: currentUserId }
+          });
+        }
+        
+        // Force redraw trigger
+        setRedrawTrigger((prev) => prev + 1);
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+    // Reset file input value so the same image can be uploaded again
+    if (e.target) {
+      e.target.value = '';
+    }
+  }, [view, strokes, persistStrokes, currentUserId, playClickSound]);
+
   /* ─── Undo / Redo ─── */
   const handleUndo = useCallback(() => {
     if (undoStack.length === 0) return;
@@ -3200,6 +3317,12 @@ export function BoardCanvas({
           svgContent += `<text x="${p1.x + w/2}" y="${p1.y + h/2}" fill="${s.color || '#18181b'}" font-size="${s.fontSize || 13}" font-family="sans-serif" font-weight="bold" text-anchor="middle" dominant-baseline="middle">${s.text}</text>`;
         }
         svgContent += `</g>`;
+      } else if (s.tool === 'image' && s.imageUrl) {
+        const p1 = s.points[0];
+        const p2 = s.points[1] || { x: p1.x + 300, y: p1.y + 200 };
+        const w = p2.x - p1.x;
+        const h = p2.y - p1.y;
+        svgContent += `<image href="${s.imageUrl}" x="${p1.x}" y="${p1.y}" width="${w}" height="${h}" ${opacityStr} />`;
       } else if (s.points.length >= 2) {
         const p0 = s.points[0];
         const pN = s.points[s.points.length - 1];
@@ -3638,6 +3761,7 @@ export function BoardCanvas({
     'diag-cylinder': 'crosshair',
     'diag-document': 'crosshair',
     table: 'crosshair',
+    image: 'crosshair',
   };
 
   const currentCursor = isPanning ? 'grabbing' : isSpacePressed ? 'grab' : cursorStyle[tool];
@@ -3650,6 +3774,7 @@ export function BoardCanvas({
     { id: 'line', icon: <Minus className="w-4 h-4" />, label: 'Line / Connector', key: 'L' },
     { id: 'text', icon: <Type className="w-4 h-4" />, label: 'Text', key: 'T' },
     { id: 'sticky', icon: <StickyNote className="w-4 h-4" />, label: 'Sticky Note', key: 'N' },
+    { id: 'image', icon: <ImageIcon className="w-4 h-4" />, label: 'Image / Photo', key: 'I' },
   ];
 
   const shapesList: { id: Tool; label: string; group: string }[] = [
@@ -3896,9 +4021,13 @@ export function BoardCanvas({
               <div key={t.id} className="relative">
                 <button
                   onClick={() => { 
-                    setTool(t.id); 
-                    setShowShapesMenu(false); 
-                    setShowLineMenu(false);
+                    if (t.id === 'image') {
+                      fileInputRef.current?.click();
+                    } else {
+                      setTool(t.id); 
+                      setShowShapesMenu(false); 
+                      setShowLineMenu(false);
+                    }
                   }}
                   onContextMenu={(e) => {
                     if (t.id === 'line') {
@@ -4222,6 +4351,13 @@ export function BoardCanvas({
               );
             })()}
 
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageUpload}
+            />
           </div>
 
           {/* ── RIGHT PROPERTIES PANEL ── */}

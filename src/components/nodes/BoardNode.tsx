@@ -7,12 +7,14 @@ import { PenLine, Maximize2, MessageSquare, Users } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { BoardCanvas } from './BoardCanvas';
 
+export const imageCache = new Map<string, HTMLImageElement>();
+
 export interface BoardStroke {
   id: string;
   tool: 'pen' | 'highlighter' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser' | 'sticky' |
         'rounded-rect' | 'ellipse' | 'diamond' | 'hexagon' |
         'flow-process' | 'flow-decision' | 'flow-data' | 'flow-terminator' |
-        'diag-cloud' | 'diag-database' | 'diag-cylinder' | 'diag-document' | 'table';
+        'diag-cloud' | 'diag-database' | 'diag-cylinder' | 'diag-document' | 'table' | 'image';
   points: { x: number; y: number }[];
   color: string;
   width: number;
@@ -37,6 +39,7 @@ export interface BoardStroke {
   tableHeaderCol?: boolean;
   tableHorizontalLines?: boolean;
   tableVerticalLines?: boolean;
+  imageUrl?: string;
 }
 
 interface BoardNodeProps {
@@ -59,6 +62,7 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
   const comments = useEditorStore((s) => s.comments);
   const setSelectedNode = useEditorStore((s) => s.setSelectedNode);
   const togglePanel = useEditorStore((s) => s.togglePanel);
+  const drawMiniPreviewRef = useRef<() => void>(() => {});
 
   const unresolvedComments = comments.filter((c) => c.node_id === id && !c.resolved_at);
   const commentCount = unresolvedComments.length;
@@ -180,6 +184,31 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
         ctx.font = `${stroke.fontWeight || 'normal'} ${Math.max((stroke.fontSize || 16) * scale, 6)}px ${stroke.fontFamily || 'sans-serif'}`;
         ctx.textAlign = stroke.textAlign || 'left';
         ctx.fillText(stroke.text, p.x * scale + offsetX, p.y * scale + offsetY);
+      } else if (stroke.tool === 'image' && stroke.imageUrl) {
+        const p1 = stroke.points[0];
+        const p2 = stroke.points[1] || { x: p1.x + 300, y: p1.y + 200 };
+        const x = p1.x * scale + offsetX;
+        const y = p1.y * scale + offsetY;
+        const w = (p2.x - p1.x) * scale;
+        const h = (p2.y - p1.y) * scale;
+        const imgUrl = stroke.imageUrl;
+        let img = imageCache.get(imgUrl);
+        if (!img) {
+          img = new Image();
+          img.src = imgUrl;
+          img.onload = () => {
+            drawMiniPreviewRef.current();
+          };
+          imageCache.set(imgUrl, img);
+        }
+        if (img.complete) {
+          ctx.drawImage(img, x, y, w, h);
+        } else {
+          ctx.save();
+          ctx.strokeStyle = stroke.color || '#6366f1';
+          ctx.strokeRect(x, y, w, h);
+          ctx.restore();
+        }
       } else if (stroke.tool === 'sticky' && stroke.points.length >= 1) {
         const p1 = stroke.points[0];
         const p2 = stroke.points[1] || { x: p1.x + 160, y: p1.y + 160 };
@@ -341,6 +370,10 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
       ctx.restore();
     });
   }, [data.boardStrokes, data.boardBg]);
+
+  useEffect(() => {
+    drawMiniPreviewRef.current = drawMiniPreview;
+  }, [drawMiniPreview]);
 
   useEffect(() => {
     drawMiniPreview();

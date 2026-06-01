@@ -33,6 +33,7 @@ import {
   Shield,
   Store,
   Puzzle,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createWorkspace } from '@/actions/workspace.actions';
@@ -70,6 +71,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const [activeWorkspace, setActiveWorkspace] = useState(() => workspaces[0] || null);
 
@@ -159,10 +161,20 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
 
   return (
     <div className="min-h-screen flex bg-canvas text-foreground transition-colors duration-300">
+      {/* Backdrop for Mobile Sidebar */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-xs lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
       {/* 1. SIDEBAR */}
       <aside
-        className={`fixed inset-y-0 start-0 z-40 flex flex-col bg-sidebar border-e border-border transition-all duration-300 ${
-          collapsed ? 'w-20' : 'w-64'
+        className={`fixed inset-y-0 inset-s-0 z-50 flex flex-col bg-sidebar border-e border-border transition-all duration-300 ${
+          collapsed ? 'lg:w-20' : 'lg:w-64'
+        } ${
+          mobileOpen ? 'inset-s-0 w-64' : '-inset-s-64 lg:inset-s-0'
         }`}
       >
         {/* Sidebar Header */}
@@ -171,12 +183,24 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
             <div className="bg-primary text-primary-foreground p-2 rounded-xl flex items-center justify-center shrink-0">
               <Workflow className="w-5 h-5 animate-pulse" />
             </div>
-            {!collapsed && (
+            {(!collapsed || mobileOpen) && (
               <span className="font-bold text-base tracking-tight truncate bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
                 Visual Workflow
               </span>
             )}
           </div>
+          {/* Mobile Close Button */}
+          {mobileOpen && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileOpen(false)}
+              className="w-8 h-8 rounded-lg hover:bg-muted text-muted-foreground lg:hidden"
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          )}
+          {/* Desktop Collapse Buttons */}
           {!collapsed && (
             <Button
               variant="ghost"
@@ -204,19 +228,20 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
             <Link
               key={idx}
               href={item.href}
+              onClick={() => setMobileOpen(false)}
               className={`w-full justify-start gap-3 py-3 rounded-xl hover:bg-muted transition-all cursor-pointer flex items-center text-foreground hover:no-underline select-none ${
-                collapsed ? 'px-0 justify-center' : 'px-4'
+                (collapsed && !mobileOpen) ? 'px-0 justify-center' : 'px-4'
               }`}
             >
               <item.icon className="w-5 h-5 text-accent shrink-0" />
-              {!collapsed && <span className="font-medium text-sm">{item.name}</span>}
+              {(!collapsed || mobileOpen) && <span className="font-medium text-sm">{item.name}</span>}
             </Link>
           ))}
         </nav>
 
         {/* Sidebar Footer */}
         <div className="p-4 border-t border-border flex flex-col gap-2">
-          {!collapsed && (
+          {(!collapsed || mobileOpen) && (
             <Button
               onClick={handleSignOut}
               disabled={isPending}
@@ -227,7 +252,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
               <span>{tAuth('sign_out')}</span>
             </Button>
           )}
-          {collapsed && (
+          {(collapsed && !mobileOpen) && (
             <Button
               onClick={handleSignOut}
               disabled={isPending}
@@ -242,12 +267,17 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
       </aside>
 
       {/* 2. MAIN BODY */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 ${collapsed ? 'ps-20' : 'ps-64'}`}>
+      <div className={`flex-1 flex flex-col transition-all duration-300 ps-0 ${collapsed ? 'lg:ps-20' : 'lg:ps-64'}`}>
         {/* Top Navbar */}
         <header className="h-16 sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-6 flex items-center justify-between transition-colors duration-300">
           <div className="flex items-center gap-4">
             {/* Mobile Sidebar Trigger */}
-            <Button variant="ghost" size="icon" className="lg:hidden w-10 h-10 border border-border rounded-xl">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileOpen(true)}
+              className="lg:hidden w-10 h-10 border border-border rounded-xl"
+            >
               <Menu className="w-5 h-5" />
             </Button>
 
