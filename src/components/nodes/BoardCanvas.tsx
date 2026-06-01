@@ -8,7 +8,7 @@ import {
   MousePointer2, Undo2, Redo2, Trash2, Download, ZoomIn, ZoomOut,
   RotateCcw, PaintBucket, ChevronUp, Save, Users, Copy, Clipboard,
   Settings, Layers, StickyNote, Highlighter, Grid, AlignLeft, AlignCenter,
-  AlignRight, Move, Check, FileDown, Plus
+  AlignRight, Move, Check, FileDown, Plus, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { playClickSound, playPopSound, playSweepSound } from '@/lib/audioSfx';
@@ -121,7 +121,7 @@ export function BoardCanvas({
   const [editingStrokeId, setEditingStrokeId] = useState<string | null>(null);
   
   const [view, setView] = useState<ViewTransform>({ scale: 1, offsetX: 0, offsetY: 0 });
-  const [gridType, setGridType] = useState<'dots' | 'lines' | 'none'>('dots');
+  const [gridType, setGridType] = useState<'grid' | 'lines' | 'none'>('grid');
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [gridSize, setGridSize] = useState(20);
 
@@ -156,9 +156,11 @@ export function BoardCanvas({
   const [isSheetsMode, setIsSheetsMode] = useState<boolean>(initialIsSheetsMode || false);
   const [sheets, setSheets] = useState<any[]>(initialSheets || []);
   const [selectedPreset, setSelectedPreset] = useState('A4 Portrait');
+  const [activeSheetIndex, setActiveSheetIndex] = useState<number>(0);
 
   const isSheetsModeRef = useRef(isSheetsMode);
   const sheetsRef = useRef(sheets);
+  const activeSheetIndexRef = useRef(activeSheetIndex);
 
   useEffect(() => {
     isSheetsModeRef.current = isSheetsMode;
@@ -167,6 +169,10 @@ export function BoardCanvas({
   useEffect(() => {
     sheetsRef.current = sheets;
   }, [sheets]);
+
+  useEffect(() => {
+    activeSheetIndexRef.current = activeSheetIndex;
+  }, [activeSheetIndex]);
 
   const [canvasSize, setCanvasSize] = useState({ w: 1200, h: 800 });
   const [size, setSize] = useState({ width: 1200, height: 800 });
@@ -377,6 +383,18 @@ export function BoardCanvas({
       if (payload?.bg) setBgColor(payload.bg);
     });
 
+    ch.on('broadcast', { event: 'sheets_change' }, ({ payload }) => {
+      if (payload?.sheets) {
+        setSheets(payload.sheets);
+        sheetsRef.current = payload.sheets;
+        setActiveSheetIndex((prev) => Math.max(0, Math.min(prev, payload.sheets.length - 1)));
+      }
+      if (payload?.isSheetsMode !== undefined) {
+        setIsSheetsMode(payload.isSheetsMode);
+        isSheetsModeRef.current = payload.isSheetsMode;
+      }
+    });
+
     ch.subscribe();
     channelRef.current = ch;
     return () => {
@@ -547,6 +565,7 @@ export function BoardCanvas({
       setSheets(nextSheets);
       sheetsRef.current = nextSheets;
     }
+    setActiveSheetIndex(0);
     broadcastSheets(nextSheets, active);
     persistStrokes(strokes);
   }, [broadcastSheets, persistStrokes, strokes]);
@@ -585,6 +604,7 @@ export function BoardCanvas({
     const next = [...currentSheets, newSheet];
     setSheets(next);
     sheetsRef.current = next;
+    setActiveSheetIndex(next.length - 1);
     broadcastSheets(next, isSheetsModeRef.current);
     persistStrokes(strokes);
   }, [broadcastSheets, persistStrokes, strokes]);
@@ -633,6 +653,7 @@ export function BoardCanvas({
 
     setSheets(finalSheets);
     sheetsRef.current = finalSheets;
+    setActiveSheetIndex((prev) => Math.max(0, Math.min(prev, finalSheets.length - 1)));
     setStrokes(updatedStrokes);
 
     broadcastSheets(finalSheets, isSheetsModeRef.current);
@@ -726,6 +747,15 @@ export function BoardCanvas({
 
     setView({ scale: newScale, offsetX, offsetY });
   }, []);
+
+  useEffect(() => {
+    if (isSheetsMode && sheets.length > 0) {
+      const activeSheet = sheets[activeSheetIndex] || sheets[0];
+      if (activeSheet) {
+        handleFocusSheet(activeSheet);
+      }
+    }
+  }, [isSheetsMode, activeSheetIndex, sheets, canvasSize, handleFocusSheet]);
 
   // Complete math-based hit-testing for shapes
   const hitTestStroke = useCallback((stroke: BoardStroke, x: number, y: number, tolerance: number): boolean => {
@@ -1551,7 +1581,7 @@ export function BoardCanvas({
       ctx.fillStyle = isLightBg ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.05)';
       ctx.lineWidth = 1;
 
-      if (gridType === 'dots') {
+      if (gridType === 'grid') {
         for (let x = startX; x < canvas.width; x += sizeVal) {
           for (let y = startY; y < canvas.height; y += sizeVal) {
             ctx.beginPath(); ctx.arc(x, y, 1.2, 0, Math.PI * 2); ctx.fill();
@@ -1572,11 +1602,13 @@ export function BoardCanvas({
 
     // 1.5. Sheets Layer
     if (isSheetsMode && sheets.length > 0) {
-      ctx.save();
-      ctx.translate(view.offsetX, view.offsetY);
-      ctx.scale(view.scale, view.scale);
+      const activeSheet = sheets[activeSheetIndex] || sheets[0];
+      const activeIdx = sheets.indexOf(activeSheet);
+      if (activeSheet) {
+        ctx.save();
+        ctx.translate(view.offsetX, view.offsetY);
+        ctx.scale(view.scale, view.scale);
 
-      sheets.forEach((sheet, idx) => {
         // Page Shadow
         ctx.save();
         ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
@@ -1587,9 +1619,9 @@ export function BoardCanvas({
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         if (ctx.roundRect) {
-          ctx.roundRect(sheet.x, sheet.y, sheet.width, sheet.height, 4);
+          ctx.roundRect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height, 4);
         } else {
-          ctx.rect(sheet.x, sheet.y, sheet.width, sheet.height);
+          ctx.rect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
         }
         ctx.fill();
         ctx.restore();
@@ -1597,7 +1629,7 @@ export function BoardCanvas({
         // Page border
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
         ctx.lineWidth = 1;
-        ctx.strokeRect(sheet.x, sheet.y, sheet.width, sheet.height);
+        ctx.strokeRect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
 
         // Page label
         ctx.fillStyle = bgColor === '#ffffff' ? '#27272a' : '#a1a1aa';
@@ -1607,11 +1639,12 @@ export function BoardCanvas({
         ctx.textBaseline = 'bottom';
         const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
         const pageLabel = isRtl
-          ? `صفحة ${idx + 1} - ${sheet.preset}`
-          : `Page ${idx + 1} - ${sheet.preset}`;
-        ctx.fillText(pageLabel, sheet.x, sheet.y - 6);
-      });
-      ctx.restore();
+          ? `صفحة ${activeIdx + 1} - ${activeSheet.preset}`
+          : `Page ${activeIdx + 1} - ${activeSheet.preset}`;
+        ctx.fillText(pageLabel, activeSheet.x, activeSheet.y - 6);
+
+        ctx.restore();
+      }
     }
 
     // 2. Shapes
@@ -1626,13 +1659,17 @@ export function BoardCanvas({
       maxY: (canvas.height - view.offsetY) / view.scale,
     };
 
+    const activeSheet = sheets[activeSheetIndex] || sheets[0];
+
     strokes.forEach((stroke) => {
+      if (isSheetsMode && activeSheet && !isStrokeInSheet(stroke, activeSheet)) return;
       if (isStrokeInViewport(stroke, visibleRect)) {
         drawStrokeWithConnector(ctx, stroke, selectedStrokeIds.includes(stroke.id));
       }
     });
 
     Object.values(remoteDrawings).forEach((stroke) => {
+      if (isSheetsMode && activeSheet && !isStrokeInSheet(stroke, activeSheet)) return;
       if (isStrokeInViewport(stroke, visibleRect)) {
         drawStrokeWithConnector(ctx, stroke, false);
       }
@@ -1715,7 +1752,7 @@ export function BoardCanvas({
       ctx.restore();
     }
     ctx.restore();
-  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox]);
+  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet]);
 
   useLayoutEffect(() => {
     renderCanvasMain();
@@ -1740,6 +1777,7 @@ export function BoardCanvas({
     const isSelectBgPan = tool === 'select' && e.button === 0 && !hit;
 
     if (isMiddleClick || isSpacePan || isSelectBgPan) {
+      if (isSheetsModeRef.current) return;
       setIsPanning(true);
       dragStartRef.current = {
         mode: 'pan',
@@ -2892,6 +2930,7 @@ export function BoardCanvas({
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      if (isSheetsModeRef.current) return;
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -2954,9 +2993,18 @@ export function BoardCanvas({
     };
   }, []);
 
-  const handleZoomIn = () => setView((v) => ({ ...v, scale: Math.min(v.scale * 1.25, 8) }));
-  const handleZoomOut = () => setView((v) => ({ ...v, scale: Math.max(v.scale * 0.8, 0.1) }));
-  const handleZoomReset = () => setView({ scale: 1, offsetX: 0, offsetY: 0 });
+  const handleZoomIn = () => {
+    if (isSheetsModeRef.current) return;
+    setView((v) => ({ ...v, scale: Math.min(v.scale * 1.25, 8) }));
+  };
+  const handleZoomOut = () => {
+    if (isSheetsModeRef.current) return;
+    setView((v) => ({ ...v, scale: Math.max(v.scale * 0.8, 0.1) }));
+  };
+  const handleZoomReset = () => {
+    if (isSheetsModeRef.current) return;
+    setView({ scale: 1, offsetX: 0, offsetY: 0 });
+  };
 
   /* ─── Keyboard shortcuts ─── */
   useEffect(() => {
@@ -3245,16 +3293,53 @@ export function BoardCanvas({
               </button>
             )}
             <div className="w-px h-5 bg-zinc-800 mx-1" />
+            {/* Page Switcher for Sheets Mode */}
+            {isSheetsMode && sheets.length > 0 && (
+              <>
+                <div className="flex items-center gap-1 bg-zinc-800/40 border border-zinc-800 px-1.5 py-0.5 rounded-lg shrink-0">
+                  <button
+                    disabled={activeSheetIndex === 0}
+                    onClick={() => {
+                      playSweepSound();
+                      setActiveSheetIndex((prev) => Math.max(0, prev - 1));
+                    }}
+                    className="h-6 w-6 rounded-md flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent transition-all cursor-pointer"
+                    title="Previous Page"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  
+                  <span className="text-[10px] font-bold text-zinc-300 px-1 select-none font-mono">
+                    {activeSheetIndex + 1} / {sheets.length}
+                  </span>
+
+                  <button
+                    disabled={activeSheetIndex === sheets.length - 1}
+                    onClick={() => {
+                      playSweepSound();
+                      setActiveSheetIndex((prev) => Math.min(sheets.length - 1, prev + 1));
+                    }}
+                    className="h-6 w-6 rounded-md flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-20 disabled:hover:bg-transparent transition-all cursor-pointer"
+                    title="Next Page"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="w-px h-5 bg-zinc-800 mx-1" />
+              </>
+            )}
+
             {/* Zoom controls */}
             <div className="relative">
               <button
+                disabled={isSheetsMode}
                 onClick={() => setShowZoomMenu(!showZoomMenu)}
-                className="h-8 px-2.5 rounded-lg flex items-center gap-1 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer text-[11px] font-mono font-semibold"
+                className="h-8 px-2.5 rounded-lg flex items-center gap-1 hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer text-[11px] font-mono font-semibold"
               >
                 {Math.round(view.scale * 100)}%
-                <ChevronUp className={`w-3 h-3 transition-transform ${showZoomMenu ? 'rotate-180' : ''}`} />
+                {!isSheetsMode && <ChevronUp className={`w-3 h-3 transition-transform ${showZoomMenu ? 'rotate-180' : ''}`} />}
               </button>
-              {showZoomMenu && (
+              {showZoomMenu && !isSheetsMode && (
                 <div className="absolute top-10 left-0 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-50 overflow-hidden min-w-[120px]">
                   {[10, 25, 50, 75, 100, 150, 200, 400, 800].map((pct) => (
                     <button key={pct}
@@ -3267,13 +3352,28 @@ export function BoardCanvas({
                 </div>
               )}
             </div>
-            <button onClick={handleZoomIn} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer">
+            <button
+              disabled={isSheetsMode}
+              onClick={handleZoomIn}
+              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+              title={isSheetsMode ? "Zoom disabled in Sheets Mode" : "Zoom In"}
+            >
               <ZoomIn className="w-4 h-4" />
             </button>
-            <button onClick={handleZoomOut} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer">
+            <button
+              disabled={isSheetsMode}
+              onClick={handleZoomOut}
+              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+              title={isSheetsMode ? "Zoom disabled in Sheets Mode" : "Zoom Out"}
+            >
               <ZoomOut className="w-4 h-4" />
             </button>
-            <button onClick={handleZoomReset} className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer" title="Reset View">
+            <button
+              disabled={isSheetsMode}
+              onClick={handleZoomReset}
+              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+              title={isSheetsMode ? "Zoom disabled in Sheets Mode" : "Reset View"}
+            >
               <RotateCcw className="w-4 h-4" />
             </button>
             <div className="w-px h-5 bg-zinc-800 mx-1" />
@@ -4039,11 +4139,20 @@ export function BoardCanvas({
                             sheets.map((sheet, idx) => (
                               <div
                                 key={sheet.id}
-                                className="flex items-center justify-between p-1.5 bg-zinc-950/40 border border-zinc-850 rounded-lg hover:border-zinc-800 transition-all gap-1"
+                                className={`flex items-center justify-between p-1.5 border rounded-lg hover:border-zinc-800 transition-all gap-1 ${
+                                  activeSheetIndex === idx
+                                    ? 'bg-fuchsia-500/10 border-fuchsia-500/40 shadow-xs'
+                                    : 'bg-zinc-950/40 border-zinc-850'
+                                }`}
                               >
                                 <button
-                                  onClick={() => handleFocusSheet(sheet)}
-                                  className="flex-1 text-left text-[10px] font-semibold text-zinc-300 hover:text-fuchsia-400 transition-all truncate cursor-pointer"
+                                  onClick={() => {
+                                    setActiveSheetIndex(idx);
+                                    handleFocusSheet(sheet);
+                                  }}
+                                  className={`flex-1 text-left text-[10px] font-semibold transition-all truncate cursor-pointer ${
+                                    activeSheetIndex === idx ? 'text-fuchsia-400 font-bold' : 'text-zinc-300 hover:text-fuchsia-400'
+                                  }`}
                                   title="Jump to Page"
                                 >
                                   {idx + 1}. {sheet.name || sheet.preset}
@@ -4086,7 +4195,7 @@ export function BoardCanvas({
                 <div>
                   <label className="text-[8px] text-zinc-500 font-bold block mb-1">Grid Styling</label>
                   <div className="flex gap-1">
-                    {['dots', 'lines', 'none'].map((g) => (
+                    {['grid', 'lines', 'none'].map((g) => (
                       <button key={g}
                         onClick={() => setGridType(g as any)}
                         className={`flex-1 py-1 rounded-lg text-[9px] font-bold transition-all border capitalize cursor-pointer
