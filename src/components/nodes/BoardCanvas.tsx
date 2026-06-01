@@ -21,7 +21,7 @@ import { jsPDF } from 'jspdf';
 type Tool = 'select' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'triangle' | 'text' | 'sticky' |
              'rounded-rect' | 'ellipse' | 'diamond' | 'hexagon' |
              'flow-process' | 'flow-decision' | 'flow-data' | 'flow-terminator' |
-             'diag-cloud' | 'diag-database' | 'diag-cylinder' | 'diag-document';
+             'diag-cloud' | 'diag-database' | 'diag-cylinder' | 'diag-document' | 'table';
 
 interface PointerState {
   down: boolean;
@@ -130,6 +130,8 @@ export function BoardCanvas({
   const isSpacePressedRef = useRef(false);
 
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
+  const selectedStrokes = strokes.filter((s) => selectedStrokeIds.includes(s.id));
+  const selectedTable = selectedStrokes.length === 1 && selectedStrokes[0].tool === 'table' ? selectedStrokes[0] : null;
   const [isDraggingObject, setIsDraggingObject] = useState(false);
   const [regionSelectStart, setRegionSelectStart] = useState<{ x: number; y: number } | null>(null);
   const [regionSelectCurrent, setRegionSelectCurrent] = useState<{ x: number; y: number } | null>(null);
@@ -829,10 +831,14 @@ export function BoardCanvas({
       return x >= minX - tolerance && x <= minX + estWidth + tolerance && y >= p.y - estHeight - tolerance && y <= p.y + tolerance;
     }
 
-    if (stroke.tool === 'sticky') {
-      const p1 = stroke.points[0];
-      const p2 = stroke.points[1] || { x: p1.x + 160, y: p1.y + 160 };
-      return x >= Math.min(p1.x, p2.x) && x <= Math.max(p1.x, p2.x) && y >= Math.min(p1.y, p2.y) && y <= Math.max(p1.y, p2.y);
+    if (stroke.tool === 'table' && stroke.points.length >= 2) {
+      const p0 = stroke.points[0];
+      const pN = stroke.points[stroke.points.length - 1];
+      const minX = Math.min(p0.x, pN.x);
+      const minY = Math.min(p0.y, pN.y);
+      const maxX = Math.max(p0.x, pN.x);
+      const maxY = Math.max(p0.y, pN.y);
+      return x >= minX - tolerance && x <= maxX + tolerance && y >= minY - tolerance && y <= maxY + tolerance;
     }
 
     const isBoxShape = [
@@ -1081,6 +1087,71 @@ export function BoardCanvas({
     updateSelectedStrokesProperty((s) => ({ ...s, arrowheadEnd: newHead }));
   }, [updateSelectedStrokesProperty]);
 
+  const handleTableRowsChange = useCallback((newRows: number) => {
+    updateSelectedStrokesProperty((s) => {
+      if (s.tool !== 'table') return s;
+      const currentCols = s.tableCols || 3;
+      let cells = s.tableCells ? [...s.tableCells.map(row => [...row])] : [];
+      
+      while (cells.length < newRows) {
+        cells.push(Array(currentCols).fill(''));
+      }
+      if (cells.length > newRows) {
+        cells = cells.slice(0, newRows);
+      }
+      return { ...s, tableRows: newRows, tableCells: cells };
+    });
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTableColsChange = useCallback((newCols: number) => {
+    updateSelectedStrokesProperty((s) => {
+      if (s.tool !== 'table') return s;
+      const currentRows = s.tableRows || 3;
+      let cells = s.tableCells ? [...s.tableCells.map(row => [...row])] : [];
+      
+      while (cells.length < currentRows) {
+        cells.push([]);
+      }
+      
+      cells = cells.map((row) => {
+        const newRow = [...row];
+        while (newRow.length < newCols) {
+          newRow.push('');
+        }
+        if (newRow.length > newCols) {
+          return newRow.slice(0, newCols);
+        }
+        return newRow;
+      });
+      return { ...s, tableCols: newCols, tableCells: cells };
+    });
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTableCellEdit = useCallback((r: number, c: number, val: string) => {
+    updateSelectedStrokesProperty((s) => {
+      if (s.tool !== 'table') return s;
+      const currentRows = s.tableRows || 3;
+      const currentCols = s.tableCols || 3;
+      let cells = s.tableCells ? [...s.tableCells.map(row => [...row])] : [];
+      
+      while (cells.length < currentRows) {
+        cells.push(Array(currentCols).fill(''));
+      }
+      cells = cells.map((row) => {
+        const newRow = [...row];
+        while (newRow.length < currentCols) {
+          newRow.push('');
+        }
+        return newRow;
+      });
+
+      if (cells[r]) {
+        cells[r][c] = val;
+      }
+      return { ...s, tableCells: cells };
+    });
+  }, [updateSelectedStrokesProperty]);
+
   /* ─── Draw stroke helper ─── */
   const drawStroke = useCallback(function drawStrokeImpl(ctx: CanvasRenderingContext2D, stroke: BoardStroke, isSelected = false) {
     if (!stroke.points || stroke.points.length === 0) return;
@@ -1303,6 +1374,76 @@ export function BoardCanvas({
         ctx.quadraticCurveTo(px + pw * 0.75, py + ph - 24, px + pw * 0.5, py + ph - 12);
         ctx.quadraticCurveTo(px + pw * 0.25, py + ph, px, py + ph - 12);
         ctx.closePath();
+      } else if (stroke.tool === 'table') {
+        const rows = stroke.tableRows || 3;
+        const cols = stroke.tableCols || 3;
+        const cells = stroke.tableCells || [];
+
+        // Fill background if enabled
+        if (stroke.fill) {
+          ctx.save();
+          ctx.fillStyle = stroke.fillColor || '#ffffff';
+          ctx.globalAlpha = (stroke.opacity !== undefined ? stroke.opacity : 1) * (stroke.fillOpacity !== undefined ? stroke.fillOpacity : 0.5);
+          ctx.fillRect(px, py, pw, ph);
+          ctx.restore();
+        }
+
+        // Draw outer border
+        ctx.beginPath();
+        ctx.rect(px, py, pw, ph);
+        ctx.stroke();
+
+        // Draw internal horizontal lines
+        const rowHeight = ph / rows;
+        for (let r = 1; r < rows; r++) {
+          const y = py + r * rowHeight;
+          ctx.beginPath();
+          ctx.moveTo(px, y);
+          ctx.lineTo(px + pw, y);
+          ctx.stroke();
+        }
+
+        // Draw internal vertical lines
+        const colWidth = pw / cols;
+        for (let c = 1; c < cols; c++) {
+          const x = px + c * colWidth;
+          ctx.beginPath();
+          ctx.moveTo(x, py);
+          ctx.lineTo(x, py + ph);
+          ctx.stroke();
+        }
+
+        // Draw centered clipped cell texts
+        ctx.save();
+        ctx.fillStyle = stroke.color || '#ffffff';
+        const fontSizeVal = stroke.fontSize || 14;
+        ctx.font = `${stroke.fontWeight || 'normal'} ${fontSizeVal}px ${stroke.fontFamily || 'Inter, sans-serif'}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const cellText = (cells[r] && cells[r][c]) || '';
+            if (cellText) {
+              const cellX = px + c * colWidth;
+              const cellY = py + r * rowHeight;
+
+              ctx.save();
+              ctx.beginPath();
+              const padX = 4;
+              const padY = 2;
+              ctx.rect(cellX + padX, cellY + padY, Math.max(0, colWidth - padX * 2), Math.max(0, rowHeight - padY * 2));
+              ctx.clip();
+
+              ctx.fillText(cellText, cellX + colWidth / 2, cellY + rowHeight / 2);
+              ctx.restore();
+            }
+          }
+        }
+        ctx.restore();
+
+        ctx.restore();
+        return;
       }
 
       if (stroke.fill) {
@@ -1584,6 +1725,37 @@ export function BoardCanvas({
           ctx.quadraticCurveTo(px + pw * 0.75, py + ph - 24, px + pw * 0.5, py + ph - 12);
           ctx.quadraticCurveTo(px + pw * 0.25, py + ph, px, py + ph - 12);
           ctx.closePath();
+        } else if (toolInUse === 'table') {
+          // outer border
+          ctx.rect(px, py, pw, ph);
+          
+          if (useFill) {
+            ctx.save();
+            ctx.fillStyle = fillColor || color;
+            ctx.globalAlpha = opacity * 0.5;
+            ctx.fill();
+            ctx.restore();
+          }
+          ctx.stroke();
+
+          // grid lines
+          const rows = 3;
+          const cols = 3;
+          const rowHeight = ph / rows;
+          const colWidth = pw / cols;
+          ctx.beginPath();
+          for (let r = 1; r < rows; r++) {
+            ctx.moveTo(px, py + r * rowHeight);
+            ctx.lineTo(px + pw, py + r * rowHeight);
+          }
+          for (let c = 1; c < cols; c++) {
+            ctx.moveTo(px + c * colWidth, py);
+            ctx.lineTo(px + c * colWidth, py + ph);
+          }
+          ctx.stroke();
+          
+          ctx.restore();
+          return;
         }
 
         if (useFill) {
@@ -2457,6 +2629,9 @@ export function BoardCanvas({
       arrowType: (tool === 'line' || tool === 'arrow') ? arrowType : undefined,
       arrowheadStart: (tool === 'line' || tool === 'arrow') ? arrowheadStart : undefined,
       arrowheadEnd: (tool === 'line' || tool === 'arrow') ? arrowheadEnd : undefined,
+      tableRows: tool === 'table' ? 3 : undefined,
+      tableCols: tool === 'table' ? 3 : undefined,
+      tableCells: tool === 'table' ? [['', '', ''], ['', '', ''], ['', '', '']] : undefined,
     };
 
     setUndoStack((prev) => [...prev, strokes]);
@@ -3378,6 +3553,9 @@ export function BoardCanvas({
       fill: useFill,
       fillColor,
       fillOpacity: 0.5,
+      tableRows: shapeTool === 'table' ? 3 : undefined,
+      tableCols: shapeTool === 'table' ? 3 : undefined,
+      tableCells: shapeTool === 'table' ? [['', '', ''], ['', '', ''], ['', '', '']] : undefined,
     };
     setUndoStack((p) => [...p, strokes]);
     setRedoStack([]);
@@ -3415,6 +3593,7 @@ export function BoardCanvas({
     'diag-database': 'crosshair',
     'diag-cylinder': 'crosshair',
     'diag-document': 'crosshair',
+    table: 'crosshair',
   };
 
   const currentCursor = isPanning ? 'grabbing' : isSpacePressed ? 'grab' : cursorStyle[tool];
@@ -3445,6 +3624,7 @@ export function BoardCanvas({
     { id: 'diag-database', label: 'Database Cyl', group: 'Diagram' },
     { id: 'diag-cylinder', label: 'Cylinder', group: 'Diagram' },
     { id: 'diag-document', label: 'Document', group: 'Diagram' },
+    { id: 'table', label: 'Table', group: 'Advanced' },
   ];
 
   return (
@@ -3745,7 +3925,7 @@ export function BoardCanvas({
           {/* Floating Line Options Menu */}
           {showLineMenu && (
             <div 
-              className="fixed left-[68px] top-[170px] bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-2xl shadow-2xl z-[9999] p-4 w-[300px] text-left select-none animate-fadeIn"
+              className="fixed left-[68px] top-[170px] bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-2xl shadow-2xl z-9999 p-4 w-[300px] text-left select-none animate-fadeIn"
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
@@ -3853,7 +4033,7 @@ export function BoardCanvas({
             >
               <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Whiteboard Shapes</p>
               
-              {['Basic', 'Flowchart', 'Diagram'].map((group) => (
+              {['Basic', 'Flowchart', 'Diagram', 'Advanced'].map((group) => (
                 <div key={group} className="mb-3">
                   <h4 className="text-[9px] text-zinc-600 font-bold uppercase mb-1.5">{group} Shapes</h4>
                   <div className="grid grid-cols-2 gap-1">
@@ -4128,7 +4308,7 @@ export function BoardCanvas({
             </div>
 
             {/* Shape Border & Fill settings */}
-            {['rect', 'circle', 'triangle', 'rounded-rect', 'ellipse', 'diamond', 'hexagon', 'flow-process', 'flow-decision', 'flow-data', 'flow-terminator', 'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'].includes(tool) && (
+            {([...selectedStrokes.map((s) => s.tool), tool].some((t) => ['rect', 'circle', 'triangle', 'rounded-rect', 'ellipse', 'diamond', 'hexagon', 'flow-process', 'flow-decision', 'flow-data', 'flow-terminator', 'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document', 'table'].includes(t))) && (
               <div className="space-y-3 pt-1 border-t border-zinc-800/80">
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Fill Shape</span>
@@ -4199,7 +4379,7 @@ export function BoardCanvas({
             </div>
 
             {/* Text parameters (Text tool) */}
-            {(tool === 'text' || tool === 'sticky') && (
+            {(tool === 'text' || tool === 'sticky' || tool === 'table' || selectedStrokes.some((s) => ['text', 'sticky', 'table'].includes(s.tool))) && (
               <div className="space-y-3 pt-3 border-t border-zinc-800/80">
                 <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Typography</p>
                 <div>
@@ -4305,6 +4485,58 @@ export function BoardCanvas({
                     <option value="circle">Circle</option>
                     <option value="diamond">Diamond</option>
                   </select>
+                </div>
+              </div>
+            )}
+
+            {/* Table settings */}
+            {selectedTable && (
+              <div className="space-y-3 pt-3 border-t border-zinc-800/80">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Table Settings</p>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-[8px] text-zinc-500 font-bold block mb-1">Rows</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={selectedTable.tableRows || 3}
+                      onChange={(e) => handleTableRowsChange(Math.max(1, Math.min(20, Number(e.target.value))))}
+                      className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[8px] text-zinc-500 font-bold block mb-1">Cols</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={selectedTable.tableCols || 3}
+                      onChange={(e) => handleTableColsChange(Math.max(1, Math.min(20, Number(e.target.value))))}
+                      className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Cell Content</label>
+                  <div className="max-h-[220px] overflow-auto border border-zinc-850 rounded-lg p-1.5 space-y-1 bg-zinc-950 custom-scrollbar">
+                    {Array.from({ length: selectedTable.tableRows || 3 }).map((_, rIdx) => (
+                      <div key={rIdx} className="flex gap-1">
+                        {Array.from({ length: selectedTable.tableCols || 3 }).map((_, cIdx) => (
+                          <input
+                            key={cIdx}
+                            type="text"
+                            value={(selectedTable.tableCells?.[rIdx]?.[cIdx]) || ''}
+                            onChange={(e) => handleTableCellEdit(rIdx, cIdx, e.target.value)}
+                            className="min-w-[55px] flex-1 text-[10px] px-1 py-0.5 bg-zinc-900 border border-zinc-800/80 rounded text-white focus:border-fuchsia-500 outline-none"
+                            placeholder={`R${rIdx+1}C${cIdx+1}`}
+                            title={`Row ${rIdx+1}, Column ${cIdx+1}`}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -4812,6 +5044,24 @@ export function BoardCanvas({
                     { id: 'diag-database' as BoardStroke['tool'], label: 'Database', svg: <><ellipse cx="12" cy="6" rx="8" ry="3" fill="none" stroke="currentColor" strokeWidth="1.5"/><path d="M4 6v6c0 1.657 3.582 3 8 3s8-1.343 8-3V6" fill="none" stroke="currentColor" strokeWidth="1.5"/><path d="M4 12v6c0 1.657 3.582 3 8 3s8-1.343 8-3v-6" fill="none" stroke="currentColor" strokeWidth="1.5"/></> },
                     { id: 'diag-cylinder' as BoardStroke['tool'], label: 'Cylinder', svg: <><ellipse cx="12" cy="5" rx="7" ry="2.5" fill="none" stroke="currentColor" strokeWidth="1.5"/><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" strokeWidth="1.5"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="1.5"/><ellipse cx="12" cy="19" rx="7" ry="2.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></> },
                     { id: 'diag-document' as BoardStroke['tool'], label: 'Document', svg: <><path d="M4,3 L20,3 L20,18 Q16,22 12,18 Q8,22 4,18 Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></> },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => insertShapeAt(s.id, contextMenu.canvasX, contextMenu.canvasY)}
+                      title={s.label}
+                      className="flex flex-col items-center gap-1 py-2 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-700 hover:border-fuchsia-500/40 text-zinc-400 hover:text-fuchsia-300 transition-all cursor-pointer text-[9px] font-semibold"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-5 h-5">{s.svg}</svg>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Advanced */}
+                <p className="px-2.5 pb-0.5 text-[9px] text-zinc-600 font-semibold uppercase tracking-wider">Advanced</p>
+                <div className="grid grid-cols-4 gap-1 px-1.5 pb-2">
+                  {[
+                    { id: 'table' as BoardStroke['tool'], label: 'Table', svg: <><rect x="3" y="3" width="18" height="18" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5"/><line x1="9" y1="3" x2="9" y2="21" stroke="currentColor" strokeWidth="1.2" strokeDasharray="1,1"/><line x1="15" y1="3" x2="15" y2="21" stroke="currentColor" strokeWidth="1.2" strokeDasharray="1,1"/><line x1="3" y1="9" x2="21" y2="9" stroke="currentColor" strokeWidth="1.2" strokeDasharray="1,1"/><line x1="3" y1="15" x2="21" y2="15" stroke="currentColor" strokeWidth="1.2" strokeDasharray="1,1"/></> },
                   ].map((s) => (
                     <button
                       key={s.id}

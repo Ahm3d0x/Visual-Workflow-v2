@@ -12,7 +12,7 @@ export interface BoardStroke {
   tool: 'pen' | 'highlighter' | 'line' | 'rect' | 'circle' | 'triangle' | 'arrow' | 'text' | 'eraser' | 'sticky' |
         'rounded-rect' | 'ellipse' | 'diamond' | 'hexagon' |
         'flow-process' | 'flow-decision' | 'flow-data' | 'flow-terminator' |
-        'diag-cloud' | 'diag-database' | 'diag-cylinder' | 'diag-document';
+        'diag-cloud' | 'diag-database' | 'diag-cylinder' | 'diag-document' | 'table';
   points: { x: number; y: number }[];
   color: string;
   width: number;
@@ -30,6 +30,9 @@ export interface BoardStroke {
   fontFamily?: string;
   fontWeight?: string;
   textAlign?: 'left' | 'center' | 'right';
+  tableRows?: number;
+  tableCols?: number;
+  tableCells?: string[][];
 }
 
 interface BoardNodeProps {
@@ -261,6 +264,35 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
           ctx.quadraticCurveTo(x + w * 0.75, y + h - 24 * scale, x + w * 0.5, y + h - 12 * scale);
           ctx.quadraticCurveTo(x + w * 0.25, y + h, x, y + h - 12 * scale);
           ctx.closePath();
+        } else if (stroke.tool === 'table') {
+          const rows = stroke.tableRows || 3;
+          const cols = stroke.tableCols || 3;
+          if (stroke.fill) {
+            ctx.save();
+            ctx.fillStyle = stroke.fillColor || stroke.color;
+            ctx.globalAlpha = (stroke.opacity !== undefined ? stroke.opacity : 1) * (stroke.fillOpacity !== undefined ? stroke.fillOpacity : 0.5);
+            ctx.fillRect(x, y, w, h);
+            ctx.restore();
+          }
+          ctx.rect(x, y, w, h);
+          ctx.stroke();
+
+          // Internal grid lines
+          const rowHeight = h / rows;
+          const colWidth = w / cols;
+          ctx.beginPath();
+          for (let r = 1; r < rows; r++) {
+            ctx.moveTo(x, y + r * rowHeight);
+            ctx.lineTo(x + w, y + r * rowHeight);
+          }
+          for (let c = 1; c < cols; c++) {
+            ctx.moveTo(x + c * colWidth, y);
+            ctx.lineTo(x + c * colWidth, y + h);
+          }
+          ctx.stroke();
+
+          ctx.restore();
+          return;
         }
 
         if (stroke.fill) {
