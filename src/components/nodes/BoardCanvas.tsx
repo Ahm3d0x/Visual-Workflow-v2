@@ -2256,26 +2256,64 @@ export function BoardCanvas({
     }
 
     if (pointer.down) {
-      let newPts = [];
+      let drawX = x;
+      let drawY = y;
+
+      // Angle snapping (constrained drawing) when holding Shift key for lines and arrows
+      if ((tool === 'line' || tool === 'arrow') && e.shiftKey) {
+        let cx = pointer.startX;
+        let cy = pointer.startY;
+
+        if (tool === 'line' && arrowType === 'curved-multi' && currentPen.length > 0) {
+          const anchor = currentPen.length >= 2 ? currentPen[currentPen.length - 2] : currentPen[0];
+          cx = anchor.x;
+          cy = anchor.y;
+        }
+
+        const r = Math.hypot(x - cx, y - cy);
+        const theta = Math.atan2(y - cy, x - cx);
+        let deg = (theta * 180) / Math.PI;
+        if (deg < 0) deg += 360;
+
+        // Snaps to horizontal (0, 180), vertical (90, 270), 45-deg (45, 135, 225, 315) and 30-deg increments (30, 60, 120, 150, 210, 240, 300, 330)
+        const snapAngles = [0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330];
+        let closest = snapAngles[0];
+        let minDiff = Infinity;
+
+        for (const angle of snapAngles) {
+          let diff = Math.abs(deg - angle);
+          if (diff > 180) diff = 360 - diff;
+          if (diff < minDiff) {
+            minDiff = diff;
+            closest = angle;
+          }
+        }
+
+        const snappedRad = (closest * Math.PI) / 180;
+        drawX = cx + r * Math.cos(snappedRad);
+        drawY = cy + r * Math.sin(snappedRad);
+      }
+
+      let newPts: { x: number; y: number }[] = [];
       if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
-        newPts = [...currentPen, { x, y }];
+        newPts = [...currentPen, { x: drawX, y: drawY }];
       } else if (tool === 'line' && arrowType === 'curved-multi') {
         const last = currentPen[currentPen.length - 1];
         if (last) {
-          const dist = Math.hypot(x - last.x, y - last.y);
+          const dist = Math.hypot(drawX - last.x, drawY - last.y);
           if (dist > 40) {
-            newPts = [...currentPen, { x, y }];
+            newPts = [...currentPen, { x: drawX, y: drawY }];
           } else {
-            newPts = [...currentPen.slice(0, -1), { x, y }];
+            newPts = [...currentPen.slice(0, -1), { x: drawX, y: drawY }];
           }
         } else {
-          newPts = [{ x, y }];
+          newPts = [{ x: drawX, y: drawY }];
         }
       } else {
-        newPts = [{ x: pointer.startX, y: pointer.startY }, { x, y }];
+        newPts = [{ x: pointer.startX, y: pointer.startY }, { x: drawX, y: drawY }];
       }
 
-      if (snapToGrid && !['pen', 'highlighter', 'eraser', 'line'].includes(tool)) {
+      if (snapToGrid && !['pen', 'highlighter', 'eraser', 'line'].includes(tool) && !e.shiftKey) {
         const last = newPts[newPts.length - 1];
         if (last) {
           last.x = Math.round(last.x / gridSize) * gridSize;
@@ -2285,7 +2323,7 @@ export function BoardCanvas({
 
       setCurrentPen(newPts);
       renderOverlay(newPts);
-      setPointer((p) => ({ ...p, x, y }));
+      setPointer((p) => ({ ...p, x: drawX, y: drawY }));
 
       // Throttle broadcast
       const now = Date.now();
