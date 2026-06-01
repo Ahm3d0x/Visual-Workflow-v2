@@ -18,6 +18,7 @@ import { MobileBanner } from './MobileBanner';
 import { NodeBottomSheet } from './NodeBottomSheet';
 import { CommentsPanel } from './CommentsPanel';
 import { getCollaboratorColor } from '@/hooks/useRealtime';
+import { useDialogStore } from '@/stores/dialogStore';
 
 interface MobileEditorViewProps {
   workflow: {
@@ -43,6 +44,23 @@ export function MobileEditorView({
 }: Omit<MobileEditorViewProps, 'userId'>) {
   const router = useRouter();
   const isRtl = locale === 'ar';
+
+  const handleBackConfirm = async () => {
+    const title = isRtl ? 'مغادرة سير العمل؟' : 'Exit Workflow?';
+    const message = isRtl
+      ? 'هل أنت متأكد من رغبتك في مغادرة سير العمل والعودة إلى لوحة التحكم؟ قد تفقد أي تغييرات غير محفوظة.'
+      : 'Are you sure you want to leave the workflow and return to the dashboard? Any unsaved changes may be lost.';
+    const confirmText = isRtl ? 'نعم، مغادرة' : 'Yes, Leave';
+    const cancelText = isRtl ? 'إلغاء' : 'Cancel';
+
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText,
+      cancelText
+    });
+    if (confirmed) {
+      router.push('/dashboard');
+    }
+  };
   
   const {
     nodes,
@@ -85,7 +103,7 @@ export function MobileEditorView({
       <header className="h-16 border-b border-zinc-800/80 bg-zinc-950/80 backdrop-blur-md px-4 flex items-center justify-between z-10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={() => router.push('/dashboard')}
+            onClick={handleBackConfirm}
             className="p-2 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition-colors cursor-pointer focus:outline-hidden"
           >
             <ArrowLeft className={`w-5 h-5 ${isRtl ? 'rotate-180' : ''}`} />

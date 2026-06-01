@@ -65,6 +65,23 @@ export function EditorToolbar({
 
   const canEdit = ['owner', 'admin', 'editor'].includes(userRole);
 
+  const handleBackConfirm = async () => {
+    const title = isRtl ? 'مغادرة سير العمل؟' : 'Exit Workflow?';
+    const message = isRtl
+      ? 'هل أنت متأكد من رغبتك في مغادرة سير العمل والعودة إلى لوحة التحكم؟ قد تفقد أي تغييرات غير محفوظة.'
+      : 'Are you sure you want to leave the workflow and return to the dashboard? Any unsaved changes may be lost.';
+    const confirmText = isRtl ? 'نعم، مغادرة' : 'Yes, Leave';
+    const cancelText = isRtl ? 'إلغاء' : 'Cancel';
+
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText,
+      cancelText
+    });
+    if (confirmed) {
+      router.push('/dashboard');
+    }
+  };
+
   const handleTitleSubmit = async () => {
     setEditing(false);
     const trimmed = name.trim();
@@ -174,7 +191,7 @@ export function EditorToolbar({
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => router.push('/dashboard')}
+          onClick={handleBackConfirm}
           className="rounded-xl border border-border w-9 h-9 cursor-pointer flex items-center justify-center"
         >
           {isRtl ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}

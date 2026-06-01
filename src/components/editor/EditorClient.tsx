@@ -155,6 +155,20 @@ function EditorInner({
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
+  // Prevent accidental tab close/refresh if there are unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges && permissions.canEdit) {
+        e.preventDefault();
+        e.returnValue = ''; // Standard browsers show their own confirmation dialog
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [hasUnsavedChanges, permissions.canEdit]);
+
   const lastPastePosRef = useRef<{ x: number; y: number } | null>(null);
   const consecutivePasteCountRef = useRef<number>(0);
 

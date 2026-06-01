@@ -166,6 +166,34 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const supabase = createClient();
   const channelRef = useRef<any>(null);
 
+  const closeAllFloatingMenus = useCallback(() => {
+    setShowLineMenu(false);
+    setShowShapesMenu(false);
+    setContextMenu(null);
+    setShowPalette(false);
+    setShowBgPicker(false);
+    setShowExportMenu(false);
+    setShowZoomMenu(false);
+  }, []);
+
+  const handleCloseConfirm = useCallback(async () => {
+    const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+    const title = isRtl ? 'إغلاق لوحة الرسم؟' : 'Close Board?';
+    const message = isRtl
+      ? 'هل أنت متأكد من رغبتك في إغلاق لوحة الرسم؟ قد تفقد التغييرات غير المحفوظة.'
+      : 'Are you sure you want to close the whiteboard? Unsaved changes may be lost.';
+    const confirmText = isRtl ? 'نعم، إغلاق' : 'Yes, Close';
+    const cancelText = isRtl ? 'إلغاء' : 'Cancel';
+
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText,
+      cancelText
+    });
+    if (confirmed) {
+      onClose();
+    }
+  }, [onClose]);
+
   // Resize modal window initially
   useEffect(() => {
     const handleResize = () => {
@@ -1404,6 +1432,9 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
 
   /* ─── Pointer Input Observers ─── */
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Close any floating windows/menus when clicking on the board canvas
+    closeAllFloatingMenus();
+
     e.currentTarget.setPointerCapture(e.pointerId);
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
 
@@ -1536,7 +1567,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     setPointer({ down: true, x: startX, y: startY, startX, startY });
     setCurrentPen([{ x: startX, y: startY }]);
     renderOverlay([{ x: startX, y: startY }]);
-  }, [tool, toCanvasCoords, strokes, selectedStrokeIds, hitTestStroke, hitTestSelectionHandle, getCombinedBoundingBox, snapToGrid, gridSize, view, color, fillColor, opacity, fontSize, fontFamily, fontWeight, textAlign, arrowType, arrowheadStart, arrowheadEnd, renderOverlay]);
+  }, [tool, toCanvasCoords, strokes, selectedStrokeIds, hitTestStroke, hitTestSelectionHandle, getCombinedBoundingBox, snapToGrid, gridSize, view, color, fillColor, opacity, fontSize, fontFamily, fontWeight, textAlign, arrowType, arrowheadStart, arrowheadEnd, renderOverlay, closeAllFloatingMenus]);
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
@@ -2623,7 +2654,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
 
       if (e.key === 'Escape') {
         if (selectedStrokeIds.length > 0) { setSelectedStrokeIds([]); return; }
-        onClose();
+        handleCloseConfirm();
       }
 
       if (e.ctrlKey || e.metaKey) {
@@ -2687,7 +2718,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [textInput.active, selectedStrokeIds, strokes, handleUndo, handleRedo, handleDeleteSelected, handleCopyStrokes, handlePasteStrokes, handleDuplicateStrokesDirect, handleCutStrokes, persistStrokes, onClose]);
+  }, [textInput.active, selectedStrokeIds, strokes, handleUndo, handleRedo, handleDeleteSelected, handleCopyStrokes, handlePasteStrokes, handleDuplicateStrokesDirect, handleCutStrokes, persistStrokes, handleCloseConfirm]);
 
   /* ─── Double click to edit shape ─── */
   const onDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -2828,7 +2859,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     <div
       dir="ltr"
       className="fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fadeIn"
-      onClick={onClose}
+      onClick={handleCloseConfirm}
     >
       <div
         className="flex flex-col bg-zinc-950 border border-zinc-800/80 shadow-2xl rounded-2xl overflow-hidden relative select-none"
@@ -2981,7 +3012,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
               </div>
             )}
             <button
-              onClick={onClose}
+              onClick={handleCloseConfirm}
               className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer"
               title="Close Board (Esc)"
             >
