@@ -132,7 +132,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const [isSyncing, setIsSyncing] = useState(false);
 
   const [copiedStrokes, setCopiedStrokes] = useState<BoardStroke[]>([]);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; strokeId?: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number; strokeId?: string; strokeTool?: string } | null>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
   
   const [collaborators, setCollaborators] = useState<Record<string, { x: number; y: number; color: string; name: string }>>({});
@@ -2703,10 +2703,10 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       if (!selectedStrokeIds.includes(hit.id)) {
         setSelectedStrokeIds([hit.id]);
       }
-      setContextMenu({ x: e.clientX, y: e.clientY, strokeId: hit.id });
+      setContextMenu({ x: e.clientX, y: e.clientY, canvasX: x, canvasY: y, strokeId: hit.id, strokeTool: hit.tool });
     } else {
       setSelectedStrokeIds([]);
-      setContextMenu({ x: e.clientX, y: e.clientY });
+      setContextMenu({ x: e.clientX, y: e.clientY, canvasX: x, canvasY: y });
     }
   }, [strokes, hitTestStroke, toCanvasCoords, selectedStrokeIds]);
 
@@ -2717,6 +2717,30 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const contextMenuOpen = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     onContextMenu(e);
   }, [onContextMenu]);
+
+  // Insert shape at canvas position via context menu
+  const insertShapeAt = useCallback((shapeTool: BoardStroke['tool'], cx: number, cy: number) => {
+    const W = 120, H = 80;
+    const newStroke: BoardStroke = {
+      id: Math.random().toString(36).slice(2),
+      tool: shapeTool,
+      points: [{ x: cx - W / 2, y: cy - H / 2 }, { x: cx + W / 2, y: cy + H / 2 }],
+      color,
+      width: strokeWidth,
+      opacity,
+      fill: useFill,
+      fillColor,
+      fillOpacity: 0.5,
+    };
+    setUndoStack((p) => [...p, strokes]);
+    setRedoStack([]);
+    const next = [...strokes, newStroke];
+    setStrokes(next);
+    setSelectedStrokeIds([newStroke.id]);
+    setTool('select');
+    setContextMenu(null);
+    persistStrokes(next);
+  }, [color, strokeWidth, opacity, useFill, fillColor, strokes, persistStrokes]);
 
   const collaboratorList = Object.entries(collaborators);
   
@@ -3668,115 +3692,260 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           <div
             style={{
               position: 'fixed',
-              left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 230),
-              top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 250),
+              left: Math.min(contextMenu.x + 4, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 280),
+              top: Math.min(contextMenu.y + 4, (typeof window !== 'undefined' ? window.innerHeight : 800) - 520),
               zIndex: 99999,
+              minWidth: 260,
+              maxHeight: 'min(520px, calc(100vh - 40px))',
+              scrollbarWidth: 'thin' as const,
+              scrollbarColor: '#3f3f46 transparent',
             }}
-            className="w-52 bg-zinc-950/95 border border-zinc-850 rounded-xl shadow-2xl p-1 font-sans flex flex-col gap-0.5 animate-fadeIn backdrop-blur-md"
+            className="bg-zinc-950/98 border border-zinc-800 rounded-2xl shadow-2xl p-1.5 font-sans flex flex-col gap-0.5 animate-fadeIn backdrop-blur-md overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
           >
+            {/* ── On a stroke (select object) ── */}
             {contextMenu.strokeId && (
               <>
-                <button
-                  onClick={() => {
-                    handleCopyStrokes();
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-850 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
-                >
-                  <div className="flex items-center gap-2">
-                    <Copy className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Copy</span>
-                  </div>
-                  <span className="text-[8px] text-zinc-500 font-mono bg-zinc-900 px-1 py-0.2 rounded border border-zinc-800 font-medium">Ctrl+C</span>
-                </button>
+                {/* Connector type picker if stroke is line/arrow */}
+                {(contextMenu.strokeTool === 'line' || contextMenu.strokeTool === 'arrow') && (
+                  <>
+                    <p className="px-2.5 pt-1.5 pb-0.5 text-[9px] uppercase tracking-widest text-fuchsia-400 font-bold">Connector Type</p>
+                    <div className="grid grid-cols-3 gap-1 px-1.5 pb-2">
+                      {[
+                        { id: 'straight', label: 'Straight', icon: '╌' },
+                        { id: 'curved', label: 'Curved', icon: '⌒' },
+                        { id: 'elbow', label: 'Elbow', icon: '⌐' },
+                        { id: 'orthogonal', label: 'Ortho', icon: '┐' },
+                        { id: 'curved-multi', label: 'Multi-pt', icon: '∿' },
+                      ].map((ct) => {
+                        const sel = strokes.find(s => s.id === contextMenu.strokeId);
+                        const active = sel?.arrowType === ct.id || (!sel?.arrowType && ct.id === 'straight');
+                        return (
+                          <button
+                            key={ct.id}
+                            onClick={() => {
+                              setStrokes(prev => prev.map(s => s.id === contextMenu.strokeId ? { ...s, arrowType: ct.id as any } : s));
+                            }}
+                            title={ct.label}
+                            className={`flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[9px] font-semibold border transition-all cursor-pointer
+                              ${active ? 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40' : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:bg-zinc-800 hover:text-zinc-200'}`}
+                          >
+                            <span className="text-base leading-none">{ct.icon}</span>
+                            {ct.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Arrowhead pickers */}
+                    <p className="px-2.5 pt-0.5 pb-0.5 text-[9px] uppercase tracking-widest text-zinc-500 font-bold">Start → End Head</p>
+                    <div className="flex items-center gap-1 px-1.5 pb-2">
+                      {['none', 'triangle', 'circle', 'diamond'].map((h) => {
+                        const sel = strokes.find(s => s.id === contextMenu.strokeId);
+                        const activeS = (sel?.arrowheadStart || 'none') === h;
+                        return (
+                          <button key={'s-'+h}
+                            onClick={() => setStrokes(prev => prev.map(s => s.id === contextMenu.strokeId ? { ...s, arrowheadStart: h as any } : s))}
+                            title={`Start: ${h}`}
+                            className={`flex-1 py-1 rounded-md text-[9px] border text-center cursor-pointer transition-all
+                              ${activeS ? 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40' : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:bg-zinc-800'}`}
+                          >
+                            {h === 'none' ? '—' : h === 'triangle' ? '◀' : h === 'circle' ? '●' : '◆'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-1 px-1.5 pb-2">
+                      {['none', 'triangle', 'circle', 'diamond'].map((h) => {
+                        const sel = strokes.find(s => s.id === contextMenu.strokeId);
+                        const activeE = (sel?.arrowheadEnd || (sel?.tool === 'arrow' ? 'triangle' : 'none')) === h;
+                        return (
+                          <button key={'e-'+h}
+                            onClick={() => setStrokes(prev => prev.map(s => s.id === contextMenu.strokeId ? { ...s, arrowheadEnd: h as any } : s))}
+                            title={`End: ${h}`}
+                            className={`flex-1 py-1 rounded-md text-[9px] border text-center cursor-pointer transition-all
+                              ${activeE ? 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40' : 'bg-zinc-900 text-zinc-500 border-zinc-800 hover:bg-zinc-800'}`}
+                          >
+                            {h === 'none' ? '—' : h === 'triangle' ? '▶' : h === 'circle' ? '●' : '◆'}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="h-px bg-zinc-800 my-0.5" />
+                  </>
+                )}
 
                 <button
-                  onClick={() => {
-                    handleCutStrokes();
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-850 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
+                  onClick={() => { handleCopyStrokes(); setContextMenu(null); }}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
                 >
-                  <div className="flex items-center gap-2">
-                    <Clipboard className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Cut</span>
-                  </div>
-                  <span className="text-[8px] text-zinc-500 font-mono bg-zinc-900 px-1 py-0.2 rounded border border-zinc-800 font-medium">Ctrl+X</span>
+                  <div className="flex items-center gap-2"><Copy className="w-3.5 h-3.5 text-zinc-400" /><span>Copy</span></div>
+                  <span className="text-[9px] text-zinc-600 font-mono">Ctrl+C</span>
                 </button>
-
                 <button
-                  onClick={() => {
-                    handleDuplicateStrokesDirect();
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-850 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
+                  onClick={() => { handleCutStrokes(); setContextMenu(null); }}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
                 >
-                  <div className="flex items-center gap-2">
-                    <Layers className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Duplicate</span>
-                  </div>
-                  <span className="text-[8px] text-zinc-500 font-mono bg-zinc-900 px-1 py-0.2 rounded border border-zinc-800 font-medium">Ctrl+D</span>
+                  <div className="flex items-center gap-2"><Clipboard className="w-3.5 h-3.5 text-zinc-400" /><span>Cut</span></div>
+                  <span className="text-[9px] text-zinc-600 font-mono">Ctrl+X</span>
                 </button>
-
+                <button
+                  onClick={() => { handleDuplicateStrokesDirect(); setContextMenu(null); }}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
+                >
+                  <div className="flex items-center gap-2"><Layers className="w-3.5 h-3.5 text-zinc-400" /><span>Duplicate</span></div>
+                  <span className="text-[9px] text-zinc-600 font-mono">Ctrl+D</span>
+                </button>
                 <div className="h-px bg-zinc-800 my-1" />
-
                 <button
-                  onClick={() => {
-                    handleDeleteSelected();
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
+                  onClick={() => { handleDeleteSelected(); setContextMenu(null); }}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 text-red-400 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
                 >
-                  <div className="flex items-center gap-2">
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
-                  </div>
-                  <span className="text-[8px] text-red-500/50 font-mono bg-zinc-900 px-1 py-0.2 rounded border border-zinc-800 font-medium">Del</span>
+                  <div className="flex items-center gap-2"><Trash2 className="w-3.5 h-3.5" /><span>Delete</span></div>
+                  <span className="text-[9px] text-red-600 font-mono">Del</span>
                 </button>
               </>
             )}
 
+            {/* ── On empty canvas: insert shapes + utilities ── */}
             {!contextMenu.strokeId && (
               <>
-                <button
-                  onClick={() => {
-                    handlePasteStrokes(contextMenu.x, contextMenu.y);
-                    setContextMenu(null);
-                  }}
-                  disabled={copiedStrokes.length === 0}
-                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-850 hover:text-white text-zinc-300 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-zinc-300 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
-                >
-                  <div className="flex items-center gap-2">
-                    <Clipboard className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Paste Here</span>
-                  </div>
-                  <span className="text-[8px] text-zinc-500 font-mono bg-zinc-900 px-1 py-0.2 rounded border border-zinc-800 font-medium">Ctrl+V</span>
-                </button>
+                {/* Insert Shapes */}
+                <p className="px-2.5 pt-1.5 pb-1 text-[9px] uppercase tracking-widest text-fuchsia-400 font-bold">Insert Shape</p>
+
+                {/* Basic Shapes */}
+                <p className="px-2.5 pb-0.5 text-[9px] text-zinc-600 font-semibold uppercase tracking-wider">Basic</p>
+                <div className="grid grid-cols-4 gap-1 px-1.5 pb-2">
+                  {[
+                    { id: 'rect' as BoardStroke['tool'], label: 'Rect', svg: <rect x="3" y="4" width="18" height="16" rx="1" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'rounded-rect' as BoardStroke['tool'], label: 'Rounded', svg: <rect x="3" y="4" width="18" height="16" rx="5" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'circle' as BoardStroke['tool'], label: 'Circle', svg: <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'ellipse' as BoardStroke['tool'], label: 'Ellipse', svg: <ellipse cx="12" cy="12" rx="9" ry="6" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'triangle' as BoardStroke['tool'], label: 'Triangle', svg: <polygon points="12,3 22,21 2,21" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'diamond' as BoardStroke['tool'], label: 'Diamond', svg: <polygon points="12,2 22,12 12,22 2,12" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'hexagon' as BoardStroke['tool'], label: 'Hexagon', svg: <polygon points="17.5,3.5 22,12 17.5,20.5 6.5,20.5 2,12 6.5,3.5" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'sticky' as BoardStroke['tool'], label: 'Sticky', svg: <><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/><line x1="3" y1="8" x2="21" y2="8" stroke="currentColor" strokeWidth="1"/></> },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => insertShapeAt(s.id, contextMenu.canvasX, contextMenu.canvasY)}
+                      title={s.label}
+                      className="flex flex-col items-center gap-1 py-2 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-700 hover:border-fuchsia-500/40 text-zinc-400 hover:text-fuchsia-300 transition-all cursor-pointer text-[9px] font-semibold"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-5 h-5">{s.svg}</svg>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Flowchart */}
+                <p className="px-2.5 pb-0.5 text-[9px] text-zinc-600 font-semibold uppercase tracking-wider">Flowchart</p>
+                <div className="grid grid-cols-4 gap-1 px-1.5 pb-2">
+                  {[
+                    { id: 'flow-process' as BoardStroke['tool'], label: 'Process', svg: <rect x="3" y="6" width="18" height="12" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'flow-decision' as BoardStroke['tool'], label: 'Decision', svg: <polygon points="12,2 22,12 12,22 2,12" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'flow-data' as BoardStroke['tool'], label: 'Data', svg: <polygon points="5,4 21,4 19,20 3,20" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                    { id: 'flow-terminator' as BoardStroke['tool'], label: 'Terminal', svg: <rect x="3" y="7" width="18" height="10" rx="5" fill="none" stroke="currentColor" strokeWidth="1.5"/> },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => insertShapeAt(s.id, contextMenu.canvasX, contextMenu.canvasY)}
+                      title={s.label}
+                      className="flex flex-col items-center gap-1 py-2 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-700 hover:border-fuchsia-500/40 text-zinc-400 hover:text-fuchsia-300 transition-all cursor-pointer text-[9px] font-semibold"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-5 h-5">{s.svg}</svg>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Diagram */}
+                <p className="px-2.5 pb-0.5 text-[9px] text-zinc-600 font-semibold uppercase tracking-wider">Diagram</p>
+                <div className="grid grid-cols-4 gap-1 px-1.5 pb-2">
+                  {[
+                    { id: 'diag-cloud' as BoardStroke['tool'], label: 'Cloud', svg: <><path d="M6.5 19a4.5 4.5 0 0 1 0-9 5 5 0 0 1 9.8-1 4.5 4.5 0 0 1-.3 9z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></> },
+                    { id: 'diag-database' as BoardStroke['tool'], label: 'Database', svg: <><ellipse cx="12" cy="6" rx="8" ry="3" fill="none" stroke="currentColor" strokeWidth="1.5"/><path d="M4 6v6c0 1.657 3.582 3 8 3s8-1.343 8-3V6" fill="none" stroke="currentColor" strokeWidth="1.5"/><path d="M4 12v6c0 1.657 3.582 3 8 3s8-1.343 8-3v-6" fill="none" stroke="currentColor" strokeWidth="1.5"/></> },
+                    { id: 'diag-cylinder' as BoardStroke['tool'], label: 'Cylinder', svg: <><ellipse cx="12" cy="5" rx="7" ry="2.5" fill="none" stroke="currentColor" strokeWidth="1.5"/><line x1="5" y1="5" x2="5" y2="19" stroke="currentColor" strokeWidth="1.5"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="1.5"/><ellipse cx="12" cy="19" rx="7" ry="2.5" fill="none" stroke="currentColor" strokeWidth="1.5"/></> },
+                    { id: 'diag-document' as BoardStroke['tool'], label: 'Document', svg: <><path d="M4,3 L20,3 L20,18 Q16,22 12,18 Q8,22 4,18 Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></> },
+                  ].map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => insertShapeAt(s.id, contextMenu.canvasX, contextMenu.canvasY)}
+                      title={s.label}
+                      className="flex flex-col items-center gap-1 py-2 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-700 hover:border-fuchsia-500/40 text-zinc-400 hover:text-fuchsia-300 transition-all cursor-pointer text-[9px] font-semibold"
+                    >
+                      <svg viewBox="0 0 24 24" className="w-5 h-5">{s.svg}</svg>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Connectors */}
+                <p className="px-2.5 pb-0.5 text-[9px] text-zinc-600 font-semibold uppercase tracking-wider">Lines & Connectors</p>
+                <div className="grid grid-cols-3 gap-1 px-1.5 pb-2">
+                  {[
+                    { label: 'Line', tool: 'line' as BoardStroke['tool'], aType: 'straight' as any, hEnd: 'none' as any },
+                    { label: 'Arrow', tool: 'line' as BoardStroke['tool'], aType: 'straight' as any, hEnd: 'triangle' as any },
+                    { label: 'Curved', tool: 'line' as BoardStroke['tool'], aType: 'curved' as any, hEnd: 'triangle' as any },
+                    { label: 'Elbow', tool: 'line' as BoardStroke['tool'], aType: 'elbow' as any, hEnd: 'triangle' as any },
+                    { label: 'Ortho', tool: 'line' as BoardStroke['tool'], aType: 'orthogonal' as any, hEnd: 'triangle' as any },
+                    { label: 'Multi-pt', tool: 'line' as BoardStroke['tool'], aType: 'curved-multi' as any, hEnd: 'triangle' as any },
+                  ].map((c) => (
+                    <button
+                      key={c.label}
+                      onClick={() => {
+                        const cx = contextMenu.canvasX;
+                        const cy = contextMenu.canvasY;
+                        const newStroke: BoardStroke = {
+                          id: Math.random().toString(36).slice(2),
+                          tool: c.tool,
+                          points: [{ x: cx - 60, y: cy }, { x: cx + 60, y: cy }],
+                          color,
+                          width: strokeWidth,
+                          opacity,
+                          arrowType: c.aType,
+                          arrowheadStart: 'none',
+                          arrowheadEnd: c.hEnd,
+                        };
+                        setUndoStack((p) => [...p, strokes]);
+                        setRedoStack([]);
+                        const next = [...strokes, newStroke];
+                        setStrokes(next);
+                        setSelectedStrokeIds([newStroke.id]);
+                        setTool('select');
+                        setContextMenu(null);
+                        persistStrokes(next);
+                      }}
+                      className="flex items-center justify-center gap-1 py-1.5 rounded-xl border border-zinc-800 bg-zinc-900 hover:bg-zinc-700 hover:border-fuchsia-500/40 text-zinc-400 hover:text-fuchsia-300 transition-all cursor-pointer text-[9px] font-semibold"
+                    >
+                      <Minus className="w-3 h-3" /> {c.label}
+                    </button>
+                  ))}
+                </div>
 
                 <div className="h-px bg-zinc-800 my-1" />
 
                 <button
-                  onClick={() => {
-                    handleClearAll();
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 text-red-400 hover:text-red-400 transition-all cursor-pointer flex items-center gap-2 text-xs font-medium"
+                  onClick={() => { handlePasteStrokes(contextMenu.x, contextMenu.y); setContextMenu(null); }}
+                  disabled={copiedStrokes.length === 0}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 hover:text-white text-zinc-300 disabled:opacity-30 transition-all cursor-pointer flex items-center justify-between text-xs font-medium"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Clear Board</span>
+                  <div className="flex items-center gap-2"><Clipboard className="w-3.5 h-3.5 text-zinc-400" /><span>Paste Here</span></div>
+                  <span className="text-[9px] text-zinc-600 font-mono">Ctrl+V</span>
                 </button>
 
                 <button
-                  onClick={() => {
-                    handleZoomReset();
-                    setContextMenu(null);
-                  }}
-                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-850 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center gap-2 text-xs font-medium"
+                  onClick={() => { handleZoomReset(); setContextMenu(null); }}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center gap-2 text-xs font-medium"
                 >
-                  <RotateCcw className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Reset Zoom</span>
+                  <RotateCcw className="w-3.5 h-3.5 text-zinc-400" /><span>Reset Zoom</span>
+                </button>
+
+                <button
+                  onClick={() => { handleClearAll(); setContextMenu(null); }}
+                  className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 text-red-400 transition-all cursor-pointer flex items-center gap-2 text-xs font-medium"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /><span>Clear Board</span>
                 </button>
               </>
             )}
