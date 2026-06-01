@@ -15,6 +15,7 @@ import { playClickSound, playPopSound, playSweepSound } from '@/lib/audioSfx';
 import { createClient } from '@/lib/supabase/client';
 import { type BoardStroke } from './BoardNode';
 import { useDialogStore } from '@/stores/dialogStore';
+import { jsPDF } from 'jspdf';
 
 /* ─────────────────────── Types ─────────────────────── */
 type Tool = 'select' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'triangle' | 'text' | 'sticky' |
@@ -72,10 +73,20 @@ interface BoardCanvasProps {
   label: string;
   initialStrokes: BoardStroke[];
   initialBg?: string;
+  initialSheets?: any[];
+  initialIsSheetsMode?: boolean;
   onClose: () => void;
 }
 
-export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose }: BoardCanvasProps) {
+export function BoardCanvas({
+  nodeId,
+  label,
+  initialStrokes,
+  initialBg,
+  initialSheets,
+  initialIsSheetsMode,
+  onClose
+}: BoardCanvasProps) {
   /* ── Refs ── */
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -140,6 +151,22 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
   const [currentUserId, setCurrentUserId] = useState<string>('collaborator');
   const [userName, setUserName] = useState<string>('Collaborator');
   const [userColor] = useState<string>(() => PALETTES[Math.floor(Math.random() * PALETTES.length)] || '#ec4899');
+
+  // Sheets Mode & Sizing State
+  const [isSheetsMode, setIsSheetsMode] = useState<boolean>(initialIsSheetsMode || false);
+  const [sheets, setSheets] = useState<any[]>(initialSheets || []);
+  const [selectedPreset, setSelectedPreset] = useState('A4 Portrait');
+
+  const isSheetsModeRef = useRef(isSheetsMode);
+  const sheetsRef = useRef(sheets);
+
+  useEffect(() => {
+    isSheetsModeRef.current = isSheetsMode;
+  }, [isSheetsMode]);
+
+  useEffect(() => {
+    sheetsRef.current = sheets;
+  }, [sheets]);
 
   const [canvasSize, setCanvasSize] = useState({ w: 1200, h: 800 });
   const [size, setSize] = useState({ width: 1200, height: 800 });
@@ -366,10 +393,14 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       updateNode(nodeId, {
         boardStrokes: newStrokes,
         boardBg: newBg || bgColor,
+        boardSheets: sheetsRef.current,
+        isSheetsMode: isSheetsModeRef.current,
       });
       setTimeout(() => setIsSyncing(false), 600);
     }, 800);
   }, [nodeId, updateNode, bgColor]);
+
+
 
   // Drag modal window
   const onDragStart = (e: React.MouseEvent) => {
@@ -479,6 +510,222 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
       box.minY > visibleRect.maxY
     );
   }, [getStrokeBoundingBox]);
+
+  const broadcastSheets = useCallback((newSheets: any[], sheetsMode: boolean) => {
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'sheets_change',
+        payload: { sheets: newSheets, isSheetsMode: sheetsMode }
+      });
+    }
+  }, []);
+
+  const isStrokeInSheet = useCallback((stroke: BoardStroke, sheet: any) => {
+    const box = getStrokeBoundingBox(stroke);
+    const cx = (box.minX + box.maxX) / 2;
+    const cy = (box.minY + box.maxY) / 2;
+    return cx >= sheet.x && cx <= sheet.x + sheet.width && cy >= sheet.y && cy <= sheet.y + sheet.height;
+  }, [getStrokeBoundingBox]);
+
+  const handleSheetsModeToggle = useCallback((active: boolean) => {
+    setIsSheetsMode(active);
+    isSheetsModeRef.current = active;
+    let nextSheets = [...sheetsRef.current];
+    if (active && nextSheets.length === 0) {
+      nextSheets = [
+        {
+          id: Math.random().toString(36).slice(2),
+          name: 'Page 1',
+          x: 0,
+          y: 0,
+          width: 794,
+          height: 1123,
+          preset: 'A4 Portrait'
+        }
+      ];
+      setSheets(nextSheets);
+      sheetsRef.current = nextSheets;
+    }
+    broadcastSheets(nextSheets, active);
+    persistStrokes(strokes);
+  }, [broadcastSheets, persistStrokes, strokes]);
+
+  const handleAddSheet = useCallback((preset: string) => {
+    const getPresetDims = (presetName: string) => {
+      switch (presetName) {
+        case 'A4 Landscape': return { width: 1123, height: 794 };
+        case 'Letter Portrait': return { width: 816, height: 1056 };
+        case 'Letter Landscape': return { width: 1056, height: 816 };
+        case 'Square': return { width: 800, height: 800 };
+        case 'A4 Portrait':
+        default:
+          return { width: 794, height: 1123 };
+      }
+    };
+
+    const dims = getPresetDims(preset);
+    let newX = 0;
+    let newY = 0;
+    const currentSheets = sheetsRef.current;
+    if (currentSheets.length > 0) {
+      const rightmost = currentSheets.reduce((max: any, s: any) => s.x + s.width > max.x + max.width ? s : max, currentSheets[0]);
+      newX = rightmost.x + rightmost.width + 100;
+      newY = rightmost.y;
+    }
+    const newSheet = {
+      id: Math.random().toString(36).slice(2),
+      name: `Page ${currentSheets.length + 1}`,
+      x: newX,
+      y: newY,
+      width: dims.width,
+      height: dims.height,
+      preset
+    };
+    const next = [...currentSheets, newSheet];
+    setSheets(next);
+    sheetsRef.current = next;
+    broadcastSheets(next, isSheetsModeRef.current);
+    persistStrokes(strokes);
+  }, [broadcastSheets, persistStrokes, strokes]);
+
+  const handleDeleteSheet = useCallback(async (sheetId: string) => {
+    const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+    const title = isRtl ? 'حذف الصفحة؟' : 'Delete Page?';
+    const message = isRtl
+      ? 'هل أنت متأكد من رغبتك في حذف هذه الصفحة؟ سيتم نقل العناصر الموجودة في الصفحات التالية تلقائياً.'
+      : 'Are you sure you want to delete this page? Elements in subsequent pages will shift automatically.';
+    const confirmText = isRtl ? 'نعم، احذف' : 'Yes, Delete';
+    const cancelText = isRtl ? 'إلغاء' : 'Cancel';
+
+    const confirmed = await useDialogStore.getState().showConfirm(title, message, {
+      confirmText,
+      cancelText
+    });
+    if (!confirmed) return;
+
+    const currentSheets = sheetsRef.current;
+    const index = currentSheets.findIndex((s: any) => s.id === sheetId);
+    if (index === -1) return;
+
+    const targetSheet = currentSheets[index];
+    const nextSheets = currentSheets.filter((s: any) => s.id !== sheetId);
+    const shiftOffset = targetSheet.width + 100;
+
+    const updatedStrokes = strokes.map((stroke) => {
+      const rightSheets = currentSheets.slice(index + 1);
+      const inRightSheet = rightSheets.find((s: any) => isStrokeInSheet(stroke, s));
+      if (inRightSheet) {
+        return {
+          ...stroke,
+          points: stroke.points.map(p => ({ x: p.x - shiftOffset, y: p.y }))
+        };
+      }
+      return stroke;
+    });
+
+    const finalSheets = nextSheets.map((s: any, idx: number) => {
+      if (idx >= index) {
+        return { ...s, x: s.x - shiftOffset };
+      }
+      return s;
+    });
+
+    setSheets(finalSheets);
+    sheetsRef.current = finalSheets;
+    setStrokes(updatedStrokes);
+
+    broadcastSheets(finalSheets, isSheetsModeRef.current);
+    if (channelRef.current?.state === 'joined') {
+      updatedStrokes.forEach((st) => {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'stroke_add',
+          payload: { stroke: st, userId: currentUserId }
+        });
+      });
+    }
+    persistStrokes(updatedStrokes);
+  }, [strokes, isStrokeInSheet, broadcastSheets, persistStrokes, currentUserId]);
+
+  const handleMoveSheet = useCallback((index: number, direction: 'up' | 'down') => {
+    const currentSheets = sheetsRef.current;
+    const targetIdx = direction === 'up' ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= currentSheets.length) return;
+
+    const nextSheets = [...currentSheets];
+    const sheetA = { ...nextSheets[index] };
+    const sheetB = { ...nextSheets[targetIdx] };
+
+    // Find shapes in A and B using pre-swap coords
+    const strokesInA = strokes.filter(s => isStrokeInSheet(s, sheetA));
+    const strokesInB = strokes.filter(s => isStrokeInSheet(s, sheetB));
+
+    // Swap coordinates
+    const tempX = nextSheets[index].x;
+    const tempY = nextSheets[index].y;
+    nextSheets[index].x = nextSheets[targetIdx].x;
+    nextSheets[index].y = nextSheets[targetIdx].y;
+    nextSheets[targetIdx].x = tempX;
+    nextSheets[targetIdx].y = tempY;
+
+    // Swap order in array
+    const temp = nextSheets[index];
+    nextSheets[index] = nextSheets[targetIdx];
+    nextSheets[targetIdx] = temp;
+
+    // Offsets
+    const offsetAX = sheetB.x - sheetA.x;
+    const offsetAY = sheetB.y - sheetA.y;
+    const offsetBX = sheetA.x - sheetB.x;
+    const offsetBY = sheetA.y - sheetB.y;
+
+    const updatedStrokes = strokes.map((stroke) => {
+      if (strokesInA.some(s => s.id === stroke.id)) {
+        return {
+          ...stroke,
+          points: stroke.points.map((p) => ({ x: p.x + offsetAX, y: p.y + offsetAY }))
+        };
+      }
+      if (strokesInB.some(s => s.id === stroke.id)) {
+        return {
+          ...stroke,
+          points: stroke.points.map((p) => ({ x: p.x + offsetBX, y: p.y + offsetBY }))
+        };
+      }
+      return stroke;
+    });
+
+    setSheets(nextSheets);
+    sheetsRef.current = nextSheets;
+    setStrokes(updatedStrokes);
+
+    broadcastSheets(nextSheets, isSheetsModeRef.current);
+    if (channelRef.current?.state === 'joined') {
+      updatedStrokes.forEach((st) => {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'stroke_add',
+          payload: { stroke: st, userId: currentUserId }
+        });
+      });
+    }
+    persistStrokes(updatedStrokes);
+  }, [strokes, isStrokeInSheet, broadcastSheets, persistStrokes, currentUserId]);
+
+  const handleFocusSheet = useCallback((sheet: any) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const padding = 60;
+    const scaleX = (canvas.width - padding * 2) / sheet.width;
+    const scaleY = (canvas.height - padding * 2) / sheet.height;
+    const newScale = Math.max(0.1, Math.min(2.0, Math.min(scaleX, scaleY)));
+
+    const offsetX = (canvas.width - sheet.width * newScale) / 2 - sheet.x * newScale;
+    const offsetY = (canvas.height - sheet.height * newScale) / 2 - sheet.y * newScale;
+
+    setView({ scale: newScale, offsetX, offsetY });
+  }, []);
 
   // Complete math-based hit-testing for shapes
   const hitTestStroke = useCallback((stroke: BoardStroke, x: number, y: number, tolerance: number): boolean => {
@@ -1320,6 +1567,50 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         }
         ctx.stroke();
       }
+      ctx.restore();
+    }
+
+    // 1.5. Sheets Layer
+    if (isSheetsMode && sheets.length > 0) {
+      ctx.save();
+      ctx.translate(view.offsetX, view.offsetY);
+      ctx.scale(view.scale, view.scale);
+
+      sheets.forEach((sheet, idx) => {
+        // Page Shadow
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+        ctx.shadowBlur = 15;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 4;
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(sheet.x, sheet.y, sheet.width, sheet.height, 4);
+        } else {
+          ctx.rect(sheet.x, sheet.y, sheet.width, sheet.height);
+        }
+        ctx.fill();
+        ctx.restore();
+
+        // Page border
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sheet.x, sheet.y, sheet.width, sheet.height);
+
+        // Page label
+        ctx.fillStyle = bgColor === '#ffffff' ? '#27272a' : '#a1a1aa';
+        const pageFontSize = Math.max(12, 13 / view.scale);
+        ctx.font = `600 ${pageFontSize}px sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+        const pageLabel = isRtl
+          ? `صفحة ${idx + 1} - ${sheet.preset}`
+          : `Page ${idx + 1} - ${sheet.preset}`;
+        ctx.fillText(pageLabel, sheet.x, sheet.y - 6);
+      });
       ctx.restore();
     }
 
@@ -2479,55 +2770,78 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
     setShowExportMenu(false);
   };
 
-  const handleExportPDF = () => {
-    const box = getCombinedBoundingBox(strokes.map(s => s.id));
-    const padding = 20;
-    const cropX = box.minX === Infinity ? 0 : box.minX - padding;
-    const cropY = box.minY === Infinity ? 0 : box.minY - padding;
-    const cropW = box.minX === Infinity ? canvasSize.w : box.w + padding * 2;
-    const cropH = box.minY === Infinity ? canvasSize.h : box.h + padding * 2;
-
-    const offscreen = document.createElement('canvas');
-    offscreen.width = cropW;
-    offscreen.height = cropH;
-    const ctx = offscreen.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, cropW, cropH);
-
-    ctx.save();
-    ctx.translate(-cropX, -cropY);
-    strokes.forEach((stroke) => {
-      drawStroke(ctx, stroke, false);
-    });
-    ctx.restore();
-
-    const dataUrl = offscreen.toDataURL('image/png');
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Export PDF - Board</title>
-            <style>
-              body { margin: 0; display: flex; justify-content: center; align-items: center; background: white; }
-              img { max-width: 100%; max-height: 100vh; object-fit: contain; }
-              @page { size: auto; margin: 0mm; }
-              @media print {
-                body { background: none; }
-                img { page-break-inside: avoid; }
-              }
-            </style>
-          </head>
-          <body>
-            <img src="${dataUrl}" onload="window.print(); window.close();" />
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
-    }
+  const handleExportPDF = async () => {
     setShowExportMenu(false);
+    
+    if (isSheetsMode && sheets.length > 0) {
+      const first = sheets[0];
+      const doc = new jsPDF({
+        orientation: first.width > first.height ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [first.width, first.height]
+      });
+
+      for (let i = 0; i < sheets.length; i++) {
+        const sheet = sheets[i];
+        if (i > 0) {
+          doc.addPage([sheet.width, sheet.height], sheet.width > sheet.height ? 'l' : 'p');
+        }
+
+        const offscreen = document.createElement('canvas');
+        offscreen.width = sheet.width;
+        offscreen.height = sheet.height;
+        const ctx = offscreen.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, sheet.width, sheet.height);
+
+          ctx.save();
+          ctx.translate(-sheet.x, -sheet.y);
+          strokes.forEach((stroke) => {
+            if (isStrokeInSheet(stroke, sheet)) {
+              drawStrokeWithConnector(ctx, stroke, false);
+            }
+          });
+          ctx.restore();
+
+          const imgData = offscreen.toDataURL('image/png');
+          doc.addImage(imgData, 'PNG', 0, 0, sheet.width, sheet.height);
+        }
+      }
+      doc.save(`board-sheets-${nodeId.slice(0, 6)}.pdf`);
+    } else {
+      const box = getCombinedBoundingBox(strokes.map(s => s.id));
+      const padding = 20;
+      const cropX = box.minX === Infinity ? 0 : box.minX - padding;
+      const cropY = box.minY === Infinity ? 0 : box.minY - padding;
+      const cropW = box.minX === Infinity ? canvasSize.w : box.w + padding * 2;
+      const cropH = box.minY === Infinity ? canvasSize.h : box.h + padding * 2;
+
+      const offscreen = document.createElement('canvas');
+      offscreen.width = cropW;
+      offscreen.height = cropH;
+      const ctx = offscreen.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, cropW, cropH);
+
+        ctx.save();
+        ctx.translate(-cropX, -cropY);
+        strokes.forEach((stroke) => {
+          drawStrokeWithConnector(ctx, stroke, false);
+        });
+        ctx.restore();
+
+        const imgData = offscreen.toDataURL('image/png');
+        const doc = new jsPDF({
+          orientation: cropW > cropH ? 'landscape' : 'portrait',
+          unit: 'px',
+          format: [cropW, cropH]
+        });
+        doc.addImage(imgData, 'PNG', 0, 0, cropW, cropH);
+        doc.save(`board-${nodeId.slice(0, 6)}.pdf`);
+      }
+    }
   };
 
   const handleExportPNG = useCallback(() => {
@@ -3672,6 +3986,102 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
             {/* Canvas Global settings (visible only when no elements selected) */}
             {selectedStrokeIds.length === 0 && (
               <div className="space-y-3 pt-3 border-t border-zinc-800/80">
+                {/* Whiteboard Sheets Layout Controls */}
+                <div className="space-y-3 pb-3 border-b border-zinc-850">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Page Setup</p>
+                    <button
+                      onClick={() => handleSheetsModeToggle(!isSheetsMode)}
+                      className={`px-2 py-1 rounded-lg text-[9px] font-bold cursor-pointer transition-all border ${
+                        isSheetsMode
+                          ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40 shadow-xs'
+                          : 'bg-zinc-950 text-zinc-400 border-zinc-850'
+                      }`}
+                    >
+                      {isSheetsMode ? 'Sheets Active' : 'Infinite Canvas'}
+                    </button>
+                  </div>
+
+                  {isSheetsMode && (
+                    <>
+                      {/* Add Page Dropdown */}
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-zinc-500 font-bold block">Add Page</label>
+                        <div className="flex gap-1.5">
+                          <select
+                            value={selectedPreset}
+                            onChange={(e) => setSelectedPreset(e.target.value)}
+                            className="flex-1 py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none cursor-pointer"
+                          >
+                            <option value="A4 Portrait">A4 Portrait</option>
+                            <option value="A4 Landscape">A4 Landscape</option>
+                            <option value="Letter Portrait">Letter Portrait</option>
+                            <option value="Letter Landscape">Letter Landscape</option>
+                            <option value="Square">Square</option>
+                          </select>
+                          <button
+                            onClick={() => handleAddSheet(selectedPreset)}
+                            className="w-7 h-7 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0"
+                            title="Add Page"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Pages List */}
+                      <div className="space-y-1 pt-1">
+                        <label className="text-[8px] text-zinc-500 font-bold block">Pages List</label>
+                        <div className="space-y-1 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
+                          {sheets.length === 0 ? (
+                            <p className="text-[9px] text-zinc-600 italic">No pages created.</p>
+                          ) : (
+                            sheets.map((sheet, idx) => (
+                              <div
+                                key={sheet.id}
+                                className="flex items-center justify-between p-1.5 bg-zinc-950/40 border border-zinc-850 rounded-lg hover:border-zinc-800 transition-all gap-1"
+                              >
+                                <button
+                                  onClick={() => handleFocusSheet(sheet)}
+                                  className="flex-1 text-left text-[10px] font-semibold text-zinc-300 hover:text-fuchsia-400 transition-all truncate cursor-pointer"
+                                  title="Jump to Page"
+                                >
+                                  {idx + 1}. {sheet.name || sheet.preset}
+                                </button>
+                                <div className="flex items-center">
+                                  <button
+                                    disabled={idx === 0}
+                                    onClick={() => handleMoveSheet(idx, 'up')}
+                                    className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-20 cursor-pointer"
+                                    title="Move Up"
+                                  >
+                                    <ChevronUp className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    disabled={idx === sheets.length - 1}
+                                    onClick={() => handleMoveSheet(idx, 'down')}
+                                    className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-20 cursor-pointer"
+                                    title="Move Down"
+                                  >
+                                    <ChevronUp className="w-3 h-3 rotate-180" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSheet(sheet.id)}
+                                    className="p-0.5 text-zinc-500 hover:text-red-400 cursor-pointer"
+                                    title="Delete Page"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Grid Settings</p>
                 <div>
                   <label className="text-[8px] text-zinc-500 font-bold block mb-1">Grid Styling</label>

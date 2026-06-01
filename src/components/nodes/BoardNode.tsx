@@ -39,6 +39,8 @@ interface BoardNodeProps {
     description?: string;
     boardStrokes?: BoardStroke[];
     boardBg?: string;
+    boardSheets?: any[];
+    isSheetsMode?: boolean;
     [key: string]: unknown;
   };
   selected?: boolean;
@@ -390,6 +392,8 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
           label={data.label || 'Board'}
           initialStrokes={(data.boardStrokes as BoardStroke[]) || []}
           initialBg={data.boardBg as string | undefined}
+          initialSheets={data.boardSheets as any[] | undefined}
+          initialIsSheetsMode={data.isSheetsMode as boolean | undefined}
           onClose={() => setIsOpen(false)}
         />,
         document.body
