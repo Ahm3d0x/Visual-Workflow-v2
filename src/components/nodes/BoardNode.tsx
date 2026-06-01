@@ -33,6 +33,10 @@ export interface BoardStroke {
   tableRows?: number;
   tableCols?: number;
   tableCells?: string[][];
+  tableHeaderRow?: boolean;
+  tableHeaderCol?: boolean;
+  tableHorizontalLines?: boolean;
+  tableVerticalLines?: boolean;
 }
 
 interface BoardNodeProps {
@@ -267,6 +271,9 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
         } else if (stroke.tool === 'table') {
           const rows = stroke.tableRows || 3;
           const cols = stroke.tableCols || 3;
+          const rowHeight = h / rows;
+          const colWidth = w / cols;
+
           if (stroke.fill) {
             ctx.save();
             ctx.fillStyle = stroke.fillColor || stroke.color;
@@ -274,20 +281,47 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
             ctx.fillRect(x, y, w, h);
             ctx.restore();
           }
+
+          // Draw header fills
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const isHeaderRow = stroke.tableHeaderRow && r === 0;
+              const isHeaderCol = stroke.tableHeaderCol && c === 0;
+              const cellX = x + c * colWidth;
+              const cellY = y + r * rowHeight;
+
+              if (isHeaderRow) {
+                ctx.save();
+                ctx.fillStyle = stroke.color || '#ffffff';
+                ctx.globalAlpha = 0.15;
+                ctx.fillRect(cellX, cellY, colWidth, rowHeight);
+                ctx.restore();
+              } else if (isHeaderCol) {
+                ctx.save();
+                ctx.fillStyle = stroke.color || '#ffffff';
+                ctx.globalAlpha = 0.08;
+                ctx.fillRect(cellX, cellY, colWidth, rowHeight);
+                ctx.restore();
+              }
+            }
+          }
+
           ctx.rect(x, y, w, h);
           ctx.stroke();
 
           // Internal grid lines
-          const rowHeight = h / rows;
-          const colWidth = w / cols;
           ctx.beginPath();
-          for (let r = 1; r < rows; r++) {
-            ctx.moveTo(x, y + r * rowHeight);
-            ctx.lineTo(x + w, y + r * rowHeight);
+          if (stroke.tableHorizontalLines !== false) {
+            for (let r = 1; r < rows; r++) {
+              ctx.moveTo(x, y + r * rowHeight);
+              ctx.lineTo(x + w, y + r * rowHeight);
+            }
           }
-          for (let c = 1; c < cols; c++) {
-            ctx.moveTo(x + c * colWidth, y);
-            ctx.lineTo(x + c * colWidth, y + h);
+          if (stroke.tableVerticalLines !== false) {
+            for (let c = 1; c < cols; c++) {
+              ctx.moveTo(x + c * colWidth, y);
+              ctx.lineTo(x + c * colWidth, y + h);
+            }
           }
           ctx.stroke();
 

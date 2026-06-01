@@ -1378,6 +1378,8 @@ export function BoardCanvas({
         const rows = stroke.tableRows || 3;
         const cols = stroke.tableCols || 3;
         const cells = stroke.tableCells || [];
+        const rowHeight = ph / rows;
+        const colWidth = pw / cols;
 
         // Fill background if enabled
         if (stroke.fill) {
@@ -1388,41 +1390,76 @@ export function BoardCanvas({
           ctx.restore();
         }
 
+        // Draw header fills
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const isHeaderRow = stroke.tableHeaderRow && r === 0;
+            const isHeaderCol = stroke.tableHeaderCol && c === 0;
+            const cellX = px + c * colWidth;
+            const cellY = py + r * rowHeight;
+
+            if (isHeaderRow) {
+              ctx.save();
+              ctx.fillStyle = stroke.color || '#ffffff';
+              ctx.globalAlpha = 0.15;
+              ctx.fillRect(cellX, cellY, colWidth, rowHeight);
+              ctx.restore();
+            } else if (isHeaderCol) {
+              ctx.save();
+              ctx.fillStyle = stroke.color || '#ffffff';
+              ctx.globalAlpha = 0.08;
+              ctx.fillRect(cellX, cellY, colWidth, rowHeight);
+              ctx.restore();
+            }
+          }
+        }
+
         // Draw outer border
         ctx.beginPath();
         ctx.rect(px, py, pw, ph);
         ctx.stroke();
 
         // Draw internal horizontal lines
-        const rowHeight = ph / rows;
-        for (let r = 1; r < rows; r++) {
-          const y = py + r * rowHeight;
-          ctx.beginPath();
-          ctx.moveTo(px, y);
-          ctx.lineTo(px + pw, y);
-          ctx.stroke();
+        if (stroke.tableHorizontalLines !== false) {
+          for (let r = 1; r < rows; r++) {
+            const y = py + r * rowHeight;
+            ctx.beginPath();
+            ctx.moveTo(px, y);
+            ctx.lineTo(px + pw, y);
+            ctx.stroke();
+          }
         }
 
         // Draw internal vertical lines
-        const colWidth = pw / cols;
-        for (let c = 1; c < cols; c++) {
-          const x = px + c * colWidth;
-          ctx.beginPath();
-          ctx.moveTo(x, py);
-          ctx.lineTo(x, py + ph);
-          ctx.stroke();
+        if (stroke.tableVerticalLines !== false) {
+          for (let c = 1; c < cols; c++) {
+            const x = px + c * colWidth;
+            ctx.beginPath();
+            ctx.moveTo(x, py);
+            ctx.lineTo(x, py + ph);
+            ctx.stroke();
+          }
         }
 
-        // Draw centered clipped cell texts
+        // Draw cell texts with custom alignment & header font weight
         ctx.save();
         ctx.fillStyle = stroke.color || '#ffffff';
         const fontSizeVal = stroke.fontSize || 14;
-        ctx.font = `${stroke.fontWeight || 'normal'} ${fontSizeVal}px ${stroke.fontFamily || 'Inter, sans-serif'}`;
-        ctx.textAlign = 'center';
+        const align = stroke.textAlign || 'center';
+        ctx.textAlign = align;
         ctx.textBaseline = 'middle';
 
         for (let r = 0; r < rows; r++) {
           for (let c = 0; c < cols; c++) {
+            const isHeaderRow = stroke.tableHeaderRow && r === 0;
+            const isHeaderCol = stroke.tableHeaderCol && c === 0;
+            
+            let isBold = stroke.fontWeight === 'bold';
+            if (isHeaderRow || isHeaderCol) {
+              isBold = true;
+            }
+            ctx.font = `${isBold ? 'bold' : 'normal'} ${fontSizeVal}px ${stroke.fontFamily || 'Inter, sans-serif'}`;
+
             const cellText = (cells[r] && cells[r][c]) || '';
             if (cellText) {
               const cellX = px + c * colWidth;
@@ -1430,12 +1467,19 @@ export function BoardCanvas({
 
               ctx.save();
               ctx.beginPath();
-              const padX = 4;
+              const padX = 6;
               const padY = 2;
               ctx.rect(cellX + padX, cellY + padY, Math.max(0, colWidth - padX * 2), Math.max(0, rowHeight - padY * 2));
               ctx.clip();
 
-              ctx.fillText(cellText, cellX + colWidth / 2, cellY + rowHeight / 2);
+              let textX = cellX + colWidth / 2;
+              if (align === 'left') {
+                textX = cellX + padX;
+              } else if (align === 'right') {
+                textX = cellX + colWidth - padX;
+              }
+
+              ctx.fillText(cellText, textX, cellY + rowHeight / 2);
               ctx.restore();
             }
           }
@@ -3842,7 +3886,7 @@ export function BoardCanvas({
         </div>
 
         {/* ═══ MAIN AREA ═══ */}
-        <div className="flex-1 flex overflow-visible relative">
+        <div className="flex-1 flex overflow-hidden relative">
           {/* ── LEFT TOOLS PALETTE ── */}
           <div 
             className="w-14 h-full shrink-0 bg-zinc-900/90 backdrop-blur-md border-r border-zinc-800/80 flex flex-col items-center py-3 gap-1.5 z-20 overflow-y-auto"
@@ -4181,7 +4225,7 @@ export function BoardCanvas({
           </div>
 
           {/* ── RIGHT PROPERTIES PANEL ── */}
-          <div className="w-[200px] shrink-0 bg-zinc-900/90 backdrop-blur-md border-l border-zinc-800/80 flex flex-col py-4 px-3 gap-4 z-20 overflow-y-auto">
+          <div className="w-[200px] shrink-0 bg-zinc-900/90 backdrop-blur-md border-l border-zinc-800/80 flex flex-col py-4 px-3 gap-4 z-20 overflow-y-auto custom-scrollbar">
             {/* Multi-Selection alignment/grouping panel */}
             {selectedStrokeIds.length > 0 && (
               <div className="space-y-3 pb-3 border-b border-zinc-800/80">
@@ -4515,6 +4559,49 @@ export function BoardCanvas({
                       onChange={(e) => handleTableColsChange(Math.max(1, Math.min(20, Number(e.target.value))))}
                       className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
                     />
+                  </div>
+                </div>
+
+                {/* Table Customizations */}
+                <div className="space-y-2 pt-1">
+                  <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Customization</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
+                      <input
+                        type="checkbox"
+                        checked={selectedTable.tableHeaderRow || false}
+                        onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableHeaderRow: e.target.checked }))}
+                        className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                      />
+                      <span>Header Row</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
+                      <input
+                        type="checkbox"
+                        checked={selectedTable.tableHeaderCol || false}
+                        onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableHeaderCol: e.target.checked }))}
+                        className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                      />
+                      <span>Header Col</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
+                      <input
+                        type="checkbox"
+                        checked={selectedTable.tableHorizontalLines !== false}
+                        onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableHorizontalLines: e.target.checked }))}
+                        className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                      />
+                      <span>Horiz Lines</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
+                      <input
+                        type="checkbox"
+                        checked={selectedTable.tableVerticalLines !== false}
+                        onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableVerticalLines: e.target.checked }))}
+                        className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                      />
+                      <span>Vert Lines</span>
+                    </label>
                   </div>
                 </div>
 
