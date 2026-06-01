@@ -174,6 +174,18 @@ export function BoardCanvas({
     activeSheetIndexRef.current = activeSheetIndex;
   }, [activeSheetIndex]);
 
+  const getActivePalettes = useCallback(() => {
+    if (isSheetsMode) {
+      return [
+        '#18181b', '#cbd5e1', '#a1a1aa', '#71717a',
+        '#ef4444', '#f97316', '#eab308', '#22c55e',
+        '#06b6d4', '#3b82f6', '#6366f1', '#8b5cf6',
+        '#ec4899', '#14b8a6', '#d946ef', '#ffffff',
+      ];
+    }
+    return PALETTES;
+  }, [isSheetsMode]);
+
   const [canvasSize, setCanvasSize] = useState({ w: 1200, h: 800 });
   const [size, setSize] = useState({ width: 1200, height: 800 });
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -566,9 +578,17 @@ export function BoardCanvas({
       sheetsRef.current = nextSheets;
     }
     setActiveSheetIndex(0);
+
+    // Automatically adjust color for sheets visibility
+    if (active && color === '#ffffff') {
+      setColor('#18181b');
+    } else if (!active && color === '#18181b') {
+      setColor('#ffffff');
+    }
+
     broadcastSheets(nextSheets, active);
     persistStrokes(strokes);
-  }, [broadcastSheets, persistStrokes, strokes]);
+  }, [broadcastSheets, persistStrokes, strokes, color]);
 
   const handleAddSheet = useCallback((preset: string) => {
     const getPresetDims = (presetName: string) => {
@@ -763,12 +783,32 @@ export function BoardCanvas({
     });
   }, [activeSheetIndex, broadcastSheets, persistStrokes, strokes]);
 
+  const lastFocusedRef = useRef<{ index: number | null; isSheets: boolean; size: string }>({
+    index: null,
+    isSheets: false,
+    size: ''
+  });
+
   useEffect(() => {
     if (isSheetsMode && sheets.length > 0) {
       const activeSheet = sheets[activeSheetIndex] || sheets[0];
-      if (activeSheet) {
+      const sizeKey = `${canvasSize.w}x${canvasSize.h}`;
+      const shouldFocus = 
+        lastFocusedRef.current.index !== activeSheetIndex ||
+        lastFocusedRef.current.isSheets !== isSheetsMode ||
+        lastFocusedRef.current.size !== sizeKey;
+      
+      if (activeSheet && shouldFocus) {
         handleFocusSheet(activeSheet);
+        lastFocusedRef.current = {
+          index: activeSheetIndex,
+          isSheets: isSheetsMode,
+          size: sizeKey
+        };
       }
+    } else {
+      lastFocusedRef.current.index = null;
+      lastFocusedRef.current.isSheets = isSheetsMode;
     }
   }, [isSheetsMode, activeSheetIndex, sheets, canvasSize, handleFocusSheet]);
 
@@ -1906,7 +1946,6 @@ export function BoardCanvas({
     const isSelectBgPan = tool === 'select' && e.button === 0 && !hit;
 
     if (isMiddleClick || isSpacePan || isSelectBgPan) {
-      if (isSheetsModeRef.current) return;
       setIsPanning(true);
       dragStartRef.current = {
         mode: 'pan',
@@ -3062,7 +3101,6 @@ export function BoardCanvas({
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      if (isSheetsModeRef.current) return;
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
@@ -3126,15 +3164,19 @@ export function BoardCanvas({
   }, []);
 
   const handleZoomIn = () => {
-    if (isSheetsModeRef.current) return;
     setView((v) => ({ ...v, scale: Math.min(v.scale * 1.25, 8) }));
   };
   const handleZoomOut = () => {
-    if (isSheetsModeRef.current) return;
     setView((v) => ({ ...v, scale: Math.max(v.scale * 0.8, 0.1) }));
   };
   const handleZoomReset = () => {
-    if (isSheetsModeRef.current) return;
+    if (isSheetsModeRef.current) {
+      const activeSheet = sheetsRef.current[activeSheetIndexRef.current] || sheetsRef.current[0];
+      if (activeSheet) {
+        handleFocusSheet(activeSheet);
+      }
+      return;
+    }
     setView({ scale: 1, offsetX: 0, offsetY: 0 });
   };
 
@@ -3482,14 +3524,13 @@ export function BoardCanvas({
             {/* Zoom controls */}
             <div className="relative">
               <button
-                disabled={isSheetsMode}
                 onClick={() => setShowZoomMenu(!showZoomMenu)}
-                className="h-8 px-2.5 rounded-lg flex items-center gap-1 hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer text-[11px] font-mono font-semibold"
+                className="h-8 px-2.5 rounded-lg flex items-center gap-1 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer text-[11px] font-mono font-semibold"
               >
                 {Math.round(view.scale * 100)}%
-                {!isSheetsMode && <ChevronUp className={`w-3 h-3 transition-transform ${showZoomMenu ? 'rotate-180' : ''}`} />}
+                <ChevronUp className={`w-3 h-3 transition-transform ${showZoomMenu ? 'rotate-180' : ''}`} />
               </button>
-              {showZoomMenu && !isSheetsMode && (
+              {showZoomMenu && (
                 <div className="absolute top-10 left-0 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-50 overflow-hidden min-w-[120px]">
                   {[10, 25, 50, 75, 100, 150, 200, 400, 800].map((pct) => (
                     <button key={pct}
@@ -3503,26 +3544,23 @@ export function BoardCanvas({
               )}
             </div>
             <button
-              disabled={isSheetsMode}
               onClick={handleZoomIn}
-              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
-              title={isSheetsMode ? "Zoom disabled in Sheets Mode" : "Zoom In"}
+              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer"
+              title="Zoom In"
             >
               <ZoomIn className="w-4 h-4" />
             </button>
             <button
-              disabled={isSheetsMode}
               onClick={handleZoomOut}
-              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
-              title={isSheetsMode ? "Zoom disabled in Sheets Mode" : "Zoom Out"}
+              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer"
+              title="Zoom Out"
             >
               <ZoomOut className="w-4 h-4" />
             </button>
             <button
-              disabled={isSheetsMode}
               onClick={handleZoomReset}
-              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
-              title={isSheetsMode ? "Zoom disabled in Sheets Mode" : "Reset View"}
+              className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer"
+              title="Reset View"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -4069,7 +4107,7 @@ export function BoardCanvas({
                   <div>
                     <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5">Fill Color</p>
                     <div className="grid grid-cols-4 gap-1 mb-2">
-                      {PALETTES.slice(0, 8).map((c) => (
+                      {getActivePalettes().slice(0, 8).map((c) => (
                         <button key={c} onClick={() => handleFillColorChange(c)}
                           className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
                           style={{ backgroundColor: c, borderColor: fillColor === c ? '#d946ef' : 'transparent' }}
@@ -4077,7 +4115,7 @@ export function BoardCanvas({
                       ))}
                     </div>
                     <div className="grid grid-cols-4 gap-1 mb-2">
-                      {PALETTES.slice(8, 16).map((c) => (
+                      {getActivePalettes().slice(8, 16).map((c) => (
                         <button key={c} onClick={() => handleFillColorChange(c)}
                           className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
                           style={{ backgroundColor: c, borderColor: fillColor === c ? '#d946ef' : 'transparent' }}
@@ -4099,7 +4137,7 @@ export function BoardCanvas({
             <div>
               <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Border Color</p>
               <div className="grid grid-cols-4 gap-1 mb-2">
-                {PALETTES.slice(0, 8).map((c) => (
+                {getActivePalettes().slice(0, 8).map((c) => (
                   <button key={c} onClick={() => handleBrushColorChange(c)}
                     className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
                     style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
@@ -4107,7 +4145,7 @@ export function BoardCanvas({
                 ))}
               </div>
               <div className="grid grid-cols-4 gap-1 mb-2">
-                {PALETTES.slice(8, 16).map((c) => (
+                {getActivePalettes().slice(8, 16).map((c) => (
                   <button key={c} onClick={() => handleBrushColorChange(c)}
                     className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
                     style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
