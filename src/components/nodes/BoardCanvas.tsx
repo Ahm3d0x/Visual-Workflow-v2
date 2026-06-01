@@ -907,12 +907,35 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         ctx.bezierCurveTo(px + pw * 0.8, py + ph, px + pw * 0.2, py + ph, px + pw * 0.2, py + ph * 0.7);
         ctx.closePath();
       } else if (stroke.tool === 'diag-database' || stroke.tool === 'diag-cylinder') {
-        const ry = ph * 0.15;
+        const ry = Math.max(8, ph * 0.15);
+        // Top ellipse
+        ctx.beginPath();
         ctx.ellipse(px + pw / 2, py + ry, pw / 2, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        if (stroke.fill) {
+          ctx.save();
+          ctx.fillStyle = stroke.fillColor || stroke.color;
+          ctx.globalAlpha = (stroke.opacity !== undefined ? stroke.opacity : 1) * (stroke.fillOpacity !== undefined ? stroke.fillOpacity : 0.5);
+          ctx.fill();
+          ctx.restore();
+        }
+        // Side walls + bottom half-ellipse as one path
+        ctx.beginPath();
         ctx.moveTo(px, py + ry);
         ctx.lineTo(px, py + ph - ry);
-        ctx.ellipse(px + pw / 2, py + ph - ry, pw / 2, ry, 0, 0, Math.PI, false);
+        ctx.ellipse(px + pw / 2, py + ph - ry, pw / 2, ry, 0, Math.PI, 0, false);
         ctx.lineTo(px + pw, py + ry);
+        ctx.stroke();
+        if (stroke.fill) {
+          ctx.save();
+          ctx.fillStyle = stroke.fillColor || stroke.color;
+          ctx.globalAlpha = (stroke.opacity !== undefined ? stroke.opacity : 1) * (stroke.fillOpacity !== undefined ? stroke.fillOpacity : 0.5);
+          ctx.fill();
+          ctx.restore();
+        }
+        // Skip default stroke/fill below
+        ctx.restore();
+        return;
       } else if (stroke.tool === 'diag-document') {
         ctx.moveTo(px, py);
         ctx.lineTo(px + pw, py);
@@ -1445,7 +1468,8 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
 
       if (hit) {
         let nextSelected = [...selectedStrokeIds];
-        if (e.shiftKey) {
+        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+          // Ctrl/Shift/Cmd: toggle item in selection
           if (selectedStrokeIds.includes(hit.id)) {
             nextSelected = selectedStrokeIds.filter(id => id !== hit.id);
           } else {
@@ -2802,6 +2826,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
 
   return (
     <div
+      dir="ltr"
       className="fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fadeIn"
       onClick={onClose}
     >
@@ -2811,7 +2836,11 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           fontFamily: 'Inter, sans-serif',
           width: `${size.width}px`,
           height: `${size.height}px`,
+          position: 'relative',
+          left: 0,
+          top: 0,
           transform: `translate(${position.x}px, ${position.y}px)`,
+          direction: 'ltr',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -2962,7 +2991,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
         </div>
 
         {/* ═══ MAIN AREA ═══ */}
-        <div className="flex-1 flex overflow-hidden relative">
+        <div className="flex-1 flex overflow-visible relative">
           {/* ── LEFT TOOLS PALETTE ── */}
           <div 
             className="w-14 h-full shrink-0 bg-zinc-900/90 backdrop-blur-md border-r border-zinc-800/80 flex flex-col items-center py-3 gap-1.5 z-20 overflow-y-auto"
@@ -3045,7 +3074,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           {/* Floating Line Options Menu */}
           {showLineMenu && (
             <div 
-              className="absolute left-[60px] top-[120px] bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-2xl shadow-2xl z-50 p-4.5 w-[300px] text-left select-none animate-fadeIn"
+              className="fixed left-[68px] top-[170px] bg-zinc-950/95 backdrop-blur-md border border-zinc-800 rounded-2xl shadow-2xl z-[9999] p-4 w-[300px] text-left select-none animate-fadeIn"
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
@@ -3147,7 +3176,7 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
           {/* Floating Shapes Menu */}
           {showShapesMenu && (
             <div 
-              className="absolute left-[60px] top-[260px] bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl z-50 p-3 w-[260px] max-h-[350px] overflow-y-auto select-none animate-fadeIn"
+              className="fixed left-[68px] top-[280px] bg-zinc-900/98 border border-zinc-700 rounded-2xl shadow-2xl z-[9999] p-3 w-[260px] max-h-[420px] overflow-y-auto select-none animate-fadeIn backdrop-blur-md"
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
@@ -3226,58 +3255,78 @@ export function BoardCanvas({ nodeId, label, initialStrokes, initialBg, onClose 
             ))}
 
             {/* Text/Sticky input area - scales with scale and pan */}
-            {textInput.active && (
-              <div
-                className="absolute z-50"
-                style={{
-                  left: `${textInput.x * view.scale + view.offsetX}px`,
-                  top: `${textInput.y * view.scale + view.offsetY}px`,
-                  transform: `scale(${view.scale})`,
-                  transformOrigin: 'top left',
-                }}
-              >
-                <textarea
-                  autoFocus
-                  value={textInput.value}
-                  onChange={(e) => setTextInput((t) => ({ ...t, value: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      commitText();
-                    }
-                    if (e.key === 'Escape') {
-                      setTextInput({ active: false, x: 0, y: 0, clientX: 0, clientY: 0, value: '' });
-                      setEditingStrokeId(null);
-                    }
-                  }}
-                  onBlur={commitText}
-                  className="resize-none overflow-hidden outline-none p-2 border transition-all duration-150"
+            {textInput.active && (() => {
+              const editingStroke = editingStrokeId ? strokes.find(s => s.id === editingStrokeId) : null;
+              const isSticky = editingStroke?.tool === 'sticky' || (!editingStrokeId && tool === 'sticky');
+              // For sticky notes: compute pixel size from the stored points
+              let stickyW = 160, stickyH = 160;
+              if (editingStroke?.tool === 'sticky' && editingStroke.points.length >= 2) {
+                stickyW = Math.abs(editingStroke.points[1].x - editingStroke.points[0].x);
+                stickyH = Math.abs(editingStroke.points[1].y - editingStroke.points[0].y);
+              }
+              return (
+                <div
+                  className="absolute z-50"
                   style={{
-                    width: editingStrokeId && strokes.find(s => s.id === editingStrokeId)?.tool === 'sticky' ? '160px' : '220px',
-                    height: editingStrokeId && strokes.find(s => s.id === editingStrokeId)?.tool === 'sticky' ? '160px' : 'auto',
-                    minHeight: editingStrokeId && strokes.find(s => s.id === editingStrokeId)?.tool === 'sticky' ? '160px' : '38px',
-                    fontSize: editingStrokeId ? `${strokes.find(s => s.id === editingStrokeId)?.fontSize || 18}px` : `${tool === 'sticky' ? 13 : fontSize}px`,
-                    fontFamily: editingStrokeId ? strokes.find(s => s.id === editingStrokeId)?.fontFamily || 'Inter, sans-serif' : (tool === 'sticky' ? 'sans-serif' : fontFamily),
-                    fontWeight: editingStrokeId ? strokes.find(s => s.id === editingStrokeId)?.fontWeight || 'normal' : (tool === 'sticky' ? 'bold' : fontWeight),
-                    textAlign: editingStrokeId ? strokes.find(s => s.id === editingStrokeId)?.textAlign || 'left' : (tool === 'sticky' ? 'center' : textAlign),
-                    color: editingStrokeId ? strokes.find(s => s.id === editingStrokeId)?.color || '#ffffff' : (tool === 'sticky' ? '#18181b' : color),
-                    backgroundColor: (editingStrokeId && strokes.find(s => s.id === editingStrokeId)?.tool === 'sticky') || (!editingStrokeId && tool === 'sticky')
-                      ? (editingStrokeId ? strokes.find(s => s.id === editingStrokeId)?.fillColor || '#fef08a' : fillColor || '#fef08a')
-                      : 'transparent',
-                    borderColor: (editingStrokeId && strokes.find(s => s.id === editingStrokeId)?.tool === 'sticky') || (!editingStrokeId && tool === 'sticky')
-                      ? 'transparent'
-                      : 'rgba(99,102,241,0.6)',
-                    boxShadow: (tool === 'sticky' || (editingStrokeId && strokes.find(s => s.id === editingStrokeId)?.tool === 'sticky')) 
-                      ? '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2)' 
-                      : 'none',
-                    borderRadius: '8px',
-                    lineHeight: '1.4',
-                    caretColor: (editingStrokeId && strokes.find(s => s.id === editingStrokeId)?.tool === 'sticky') || (!editingStrokeId && tool === 'sticky') ? '#18181b' : color,
+                    left: `${textInput.x * view.scale + view.offsetX}px`,
+                    top: `${textInput.y * view.scale + view.offsetY}px`,
+                    transform: `scale(${view.scale})`,
+                    transformOrigin: 'top left',
                   }}
-                  placeholder={tool === 'sticky' ? 'Note...' : 'Type text...'}
-                />
-              </div>
-            )}
+                >
+                  <textarea
+                    autoFocus
+                    dir="auto"
+                    value={textInput.value}
+                    onChange={(e) => {
+                      setTextInput((t) => ({ ...t, value: e.target.value }));
+                      // Auto-grow height for non-sticky text
+                      if (!isSticky) {
+                        e.target.style.height = 'auto';
+                        e.target.style.height = `${e.target.scrollHeight}px`;
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        commitText();
+                      }
+                      if (e.key === 'Escape') {
+                        setTextInput({ active: false, x: 0, y: 0, clientX: 0, clientY: 0, value: '' });
+                        setEditingStrokeId(null);
+                      }
+                    }}
+                    onBlur={commitText}
+                    className="outline-none p-2 border transition-all duration-150"
+                    style={{
+                      resize: isSticky ? 'none' : 'horizontal',
+                      overflow: isSticky ? 'hidden' : 'hidden',
+                      width: isSticky ? `${stickyW}px` : '220px',
+                      height: isSticky ? `${stickyH}px` : 'auto',
+                      minHeight: isSticky ? `${stickyH}px` : '38px',
+                      maxWidth: isSticky ? `${stickyW}px` : '480px',
+                      fontSize: editingStroke ? `${editingStroke.fontSize || 18}px` : `${tool === 'sticky' ? 13 : fontSize}px`,
+                      fontFamily: editingStroke ? editingStroke.fontFamily || 'Inter, sans-serif' : (tool === 'sticky' ? 'sans-serif' : fontFamily),
+                      fontWeight: editingStroke ? editingStroke.fontWeight || 'normal' : (tool === 'sticky' ? 'bold' : fontWeight),
+                      textAlign: editingStroke ? editingStroke.textAlign || 'left' : (tool === 'sticky' ? 'center' : textAlign),
+                      color: editingStroke ? editingStroke.color || '#ffffff' : (tool === 'sticky' ? '#18181b' : color),
+                      backgroundColor: isSticky
+                        ? (editingStroke?.fillColor || fillColor || '#fef08a')
+                        : 'transparent',
+                      borderColor: isSticky ? 'transparent' : 'rgba(99,102,241,0.6)',
+                      boxShadow: isSticky ? '0 10px 15px -3px rgba(0,0,0,0.3)' : 'none',
+                      borderRadius: '8px',
+                      lineHeight: '1.4',
+                      caretColor: isSticky ? '#18181b' : color,
+                      wordBreak: 'break-word',
+                      whiteSpace: isSticky ? 'pre-wrap' : 'pre',
+                    }}
+                    placeholder={tool === 'sticky' ? 'Note...' : 'Type text...'}
+                  />
+                </div>
+              );
+            })()}
+
           </div>
 
           {/* ── RIGHT PROPERTIES PANEL ── */}
