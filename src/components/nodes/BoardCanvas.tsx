@@ -2817,6 +2817,74 @@ export function BoardCanvas({
   }, [textInput, editingStrokeId, color, strokeWidth, fontSize, strokes, persistStrokes, tool, fillColor, opacity, fontFamily, fontWeight, textAlign, currentUserId]);
 
   /* ─── Image upload / launching ─── */
+  const insertImage = useCallback((dataUrl: string, clientX?: number, clientY?: number) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      let cx = 0, cy = 0;
+      if (clientX !== undefined && clientY !== undefined && clientX > 0 && clientY > 0) {
+        const coords = toCanvasCoords(clientX, clientY);
+        cx = coords.x;
+        cy = coords.y;
+      } else {
+        cx = (canvas.width / 2 - view.offsetX) / view.scale;
+        cy = (canvas.height / 2 - view.offsetY) / view.scale;
+      }
+
+      let w = img.naturalWidth || 300;
+      let h = img.naturalHeight || 200;
+      const maxDim = 350;
+      if (w > maxDim || h > maxDim) {
+        const ratio = Math.min(maxDim / w, maxDim / h);
+        w = w * ratio;
+        h = h * ratio;
+      }
+
+      const halfW = w / 2;
+      const halfH = h / 2;
+
+      const newStroke: BoardStroke = {
+        id: crypto.randomUUID(),
+        tool: 'image',
+        points: [
+          { x: cx - halfW, y: cy - halfH },
+          { x: cx + halfW, y: cy + halfH }
+        ],
+        color: '#ffffff',
+        width: 2,
+        imageUrl: dataUrl,
+        opacity: 1
+      };
+
+      // Cache the preloaded image object
+      imageCache.set(dataUrl, img);
+
+      setUndoStack((prev) => [...prev, strokes]);
+      setRedoStack([]);
+      const nextStrokes = [...strokes, newStroke];
+      setStrokes(nextStrokes);
+      persistStrokes(nextStrokes);
+      setSelectedStrokeIds([newStroke.id]);
+      setTool('select');
+      playClickSound();
+
+      // Broadcast to other users
+      if (channelRef.current?.state === 'joined') {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'stroke_add',
+          payload: { stroke: newStroke, userId: currentUserId }
+        });
+      }
+      
+      // Force redraw trigger
+      setRedrawTrigger((prev) => prev + 1);
+    };
+    img.src = dataUrl;
+  }, [view, strokes, persistStrokes, currentUserId, playClickSound, toCanvasCoords]);
+
   const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2824,76 +2892,16 @@ export function BoardCanvas({
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
-      if (!dataUrl) return;
-
-      // Preload image to get natural dimensions
-      const img = new Image();
-      img.onload = () => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        // Calculate center of current canvas view
-        const cx = (canvas.width / 2 - view.offsetX) / view.scale;
-        const cy = (canvas.height / 2 - view.offsetY) / view.scale;
-
-        // Proportional sizing up to maxDim
-        let w = img.naturalWidth || 300;
-        let h = img.naturalHeight || 200;
-        const maxDim = 350;
-        if (w > maxDim || h > maxDim) {
-          const ratio = Math.min(maxDim / w, maxDim / h);
-          w = w * ratio;
-          h = h * ratio;
-        }
-
-        const halfW = w / 2;
-        const halfH = h / 2;
-
-        const newStroke: BoardStroke = {
-          id: crypto.randomUUID(),
-          tool: 'image',
-          points: [
-            { x: cx - halfW, y: cy - halfH },
-            { x: cx + halfW, y: cy + halfH }
-          ],
-          color: '#ffffff',
-          width: 2,
-          imageUrl: dataUrl,
-          opacity: 1
-        };
-
-        // Cache the preloaded image object
-        imageCache.set(dataUrl, img);
-
-        setUndoStack((prev) => [...prev, strokes]);
-        setRedoStack([]);
-        const nextStrokes = [...strokes, newStroke];
-        setStrokes(nextStrokes);
-        persistStrokes(nextStrokes);
-        setSelectedStrokeIds([newStroke.id]);
-        setTool('select');
-        playClickSound();
-
-        // Broadcast to other users
-        if (channelRef.current?.state === 'joined') {
-          channelRef.current.send({
-            type: 'broadcast',
-            event: 'stroke_add',
-            payload: { stroke: newStroke, userId: currentUserId }
-          });
-        }
-        
-        // Force redraw trigger
-        setRedrawTrigger((prev) => prev + 1);
-      };
-      img.src = dataUrl;
+      if (dataUrl) {
+        insertImage(dataUrl);
+      }
     };
     reader.readAsDataURL(file);
     // Reset file input value so the same image can be uploaded again
     if (e.target) {
       e.target.value = '';
     }
-  }, [view, strokes, persistStrokes, currentUserId, playClickSound]);
+  }, [insertImage]);
 
   /* ─── Undo / Redo ─── */
   const handleUndo = useCallback(() => {
@@ -3474,6 +3482,36 @@ export function BoardCanvas({
     setShowExportMenu(false);
   }, [strokes, bgColor, nodeId, getCombinedBoundingBox, drawStroke]);
 
+  /* ─── Shared zoom logic ─── */
+  const zoomAt = useCallback((factor: number, clientX?: number, clientY?: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+
+    setView((v) => {
+      const nextScale = Math.min(Math.max(v.scale * factor, 0.1), 8);
+      if (nextScale === v.scale) return v;
+
+      let refX = 0, refY = 0;
+      if (clientX !== undefined && clientY !== undefined && clientX > 0 && clientY > 0) {
+        refX = clientX - rect.left;
+        refY = clientY - rect.top;
+      } else {
+        refX = canvas.width / 2;
+        refY = canvas.height / 2;
+      }
+
+      const mouseX = (refX - v.offsetX) / v.scale;
+      const mouseY = (refY - v.offsetY) / v.scale;
+
+      return {
+        scale: nextScale,
+        offsetX: refX - mouseX * nextScale,
+        offsetY: refY - mouseY * nextScale,
+      };
+    });
+  }, []);
+
   /* ─── Zoom, Touch Gesture & Keyboard Pan ─── */
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -3483,24 +3521,11 @@ export function BoardCanvas({
       e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
 
       if (e.ctrlKey) {
-        // Pinch-to-zoom
-        const factor = 1 - e.deltaY * 0.015;
-        setView((v) => {
-          const nextScale = Math.min(Math.max(v.scale * factor, 0.1), 8);
-          if (nextScale === v.scale) return v;
-
-          const mouseX = (e.clientX - rect.left - v.offsetX) / v.scale;
-          const mouseY = (e.clientY - rect.top - v.offsetY) / v.scale;
-
-          return {
-            scale: nextScale,
-            offsetX: e.clientX - rect.left - mouseX * nextScale,
-            offsetY: e.clientY - rect.top - mouseY * nextScale,
-          };
-        });
+        // Pinch-to-zoom (smooth exponential scaling)
+        const factor = Math.exp(-e.deltaY * 0.002);
+        zoomAt(factor, e.clientX, e.clientY);
       } else if (e.shiftKey) {
         // Horizontal scroll
         setView((v) => ({
@@ -3541,13 +3566,13 @@ export function BoardCanvas({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [zoomAt]);
 
   const handleZoomIn = () => {
-    setView((v) => ({ ...v, scale: Math.min(v.scale * 1.25, 8) }));
+    zoomAt(1.25);
   };
   const handleZoomOut = () => {
-    setView((v) => ({ ...v, scale: Math.max(v.scale * 0.8, 0.1) }));
+    zoomAt(0.8);
   };
   const handleZoomReset = () => {
     if (isSheetsModeRef.current) {
@@ -3604,14 +3629,24 @@ export function BoardCanvas({
           if (selectedStrokeIds.length > 0) { e.preventDefault(); handleCopyStrokes(); }
         }
         if (e.key === 'v' || e.key === 'V') {
-          e.preventDefault();
-          handlePasteStrokes(mousePosRef.current.x, mousePosRef.current.y);
+          if (copiedStrokes.length > 0) {
+            e.preventDefault();
+            handlePasteStrokes(mousePosRef.current.x, mousePosRef.current.y);
+          }
         }
         if (e.key === 'd' || e.key === 'D') {
           if (selectedStrokeIds.length > 0) { e.preventDefault(); handleDuplicateStrokesDirect(); }
         }
         if (e.key === 'x' || e.key === 'X') {
           if (selectedStrokeIds.length > 0) { e.preventDefault(); handleCutStrokes(); }
+        }
+        if (e.key === '=' || e.key === '+' || e.key === 'NumpadAdd') {
+          e.preventDefault();
+          zoomAt(1.25, mousePosRef.current.x, mousePosRef.current.y);
+        }
+        if (e.key === '-' || e.key === 'NumpadSubtract') {
+          e.preventDefault();
+          zoomAt(0.8, mousePosRef.current.x, mousePosRef.current.y);
         }
       }
 
@@ -3650,9 +3685,40 @@ export function BoardCanvas({
         setTool(toolMap[e.key.toLowerCase()]);
       }
     };
+
+    const onPaste = (e: ClipboardEvent) => {
+      if (textInput.active) return;
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.hasAttribute('contenteditable')) {
+        return;
+      }
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const dataUrl = event.target?.result as string;
+              if (dataUrl) {
+                insertImage(dataUrl, mousePosRef.current.x, mousePosRef.current.y);
+              }
+            };
+            reader.readAsDataURL(file);
+            break;
+          }
+        }
+      }
+    };
+
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [textInput.active, selectedStrokeIds, strokes, handleUndo, handleRedo, handleDeleteSelected, handleCopyStrokes, handlePasteStrokes, handleDuplicateStrokesDirect, handleCutStrokes, persistStrokes, handleCloseConfirm]);
+    window.addEventListener('paste', onPaste);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('paste', onPaste);
+    };
+  }, [textInput.active, selectedStrokeIds, strokes, handleUndo, handleRedo, handleDeleteSelected, handleCopyStrokes, handlePasteStrokes, handleDuplicateStrokesDirect, handleCutStrokes, persistStrokes, handleCloseConfirm, copiedStrokes, insertImage]);
 
   /* ─── Double click to edit shape ─── */
   const onDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
