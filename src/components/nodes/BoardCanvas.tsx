@@ -142,8 +142,7 @@ export function BoardCanvas({
   const [showMinimap, setShowMinimap] = useState(true);
   const [minimapPos, setMinimapPos] = useState<{ x: number; y: number } | null>(null);
   const [minimapSize, setMinimapSize] = useState({ width: 160, height: 110 });
-  const [isMovingMinimap, setIsMovingMinimap] = useState(false);
-  const [isResizingMinimap, setIsResizingMinimap] = useState(false);
+
   const [gridType, setGridType] = useState<'grid' | 'lines' | 'none'>('grid');
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [gridSize, setGridSize] = useState(20);
@@ -2066,72 +2065,7 @@ export function BoardCanvas({
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Grid
-    if (!isSheetsMode && gridType !== 'none') {
-      ctx.save();
-      const sizeVal = gridSize * view.scale;
-      const startX = view.offsetX % sizeVal;
-      const startY = view.offsetY % sizeVal;
-      const isLightBg = bgColor === '#ffffff' || bgColor === '#f8f9fa' || bgColor === '#e7f5ff' || bgColor === '#fff9db' || bgColor === '#fff0f6' || bgColor === '#ebfbee';
-      ctx.strokeStyle = isLightBg ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.03)';
-      ctx.fillStyle = isLightBg ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.05)';
-      ctx.lineWidth = 1;
-
-      if (sizeVal >= 8) {
-        if (gridType === 'grid') {
-          ctx.beginPath();
-          for (let x = startX; x < canvas.width; x += sizeVal) {
-            ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
-          }
-          for (let y = startY; y < canvas.height; y += sizeVal) {
-            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
-          }
-          ctx.stroke();
-        } else if (gridType === 'lines') {
-          ctx.beginPath();
-          for (let y = startY; y < canvas.height; y += sizeVal) {
-            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
-          }
-          ctx.stroke();
-        }
-      }
-      ctx.restore();
-    }
-
-    // 1.5. Sheets Layer
-    if (isSheetsMode && sheets.length > 0) {
-      const activeSheet = sheets[activeSheetIndex] || sheets[0];
-      const activeIdx = sheets.indexOf(activeSheet);
-      if (activeSheet) {
-        ctx.save();
-        ctx.translate(view.offsetX, view.offsetY);
-        ctx.scale(view.scale, view.scale);
-
-        // Page Shadow
-        ctx.save();
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
-        ctx.shadowBlur = 15;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 4;
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height, 4);
-        } else {
-          ctx.rect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
-        }
-        ctx.fill();
-        ctx.restore();
-
-        // Draw page grid, border, header, and footer templates
-        drawSheetBackgroundAndLayout(ctx, activeSheet, activeIdx, sheets.length, true);
-
-        ctx.restore();
-      }
-    }
-
-    // 2. Shapes
+    // 1. Draw strokes first (so eraser with 'destination-out' only cuts drawings, not sheets/grid)
     ctx.save();
     ctx.translate(view.offsetX, view.offsetY);
     ctx.scale(view.scale, view.scale);
@@ -2235,6 +2169,77 @@ export function BoardCanvas({
       ctx.strokeRect(rx, ry, rw, rh);
       ctx.restore();
     }
+    ctx.restore();
+
+    // 2. Paint backgrounds and grid behind strokes using destination-over
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
+
+    // 2.1. Sheets Layer
+    if (isSheetsMode && sheets.length > 0) {
+      const activeSheetObj = sheets[activeSheetIndex] || sheets[0];
+      const activeIdx = sheets.indexOf(activeSheetObj);
+      if (activeSheetObj) {
+        ctx.save();
+        ctx.translate(view.offsetX, view.offsetY);
+        ctx.scale(view.scale, view.scale);
+
+        // Page Shadow
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+        ctx.shadowBlur = 15;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 4;
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(activeSheetObj.x, activeSheetObj.y, activeSheetObj.width, activeSheetObj.height, 4);
+        } else {
+          ctx.rect(activeSheetObj.x, activeSheetObj.y, activeSheetObj.width, activeSheetObj.height);
+        }
+        ctx.fill();
+        ctx.restore();
+
+        // Draw page grid, border, header, and footer templates
+        drawSheetBackgroundAndLayout(ctx, activeSheetObj, activeIdx, sheets.length, true);
+
+        ctx.restore();
+      }
+    }
+
+    // 2.2. Draw Grid (if not in sheets mode)
+    if (!isSheetsMode && gridType !== 'none') {
+      ctx.save();
+      const sizeVal = gridSize * view.scale;
+      const startX = view.offsetX % sizeVal;
+      const startY = view.offsetY % sizeVal;
+      const isLightBg = bgColor === '#ffffff' || bgColor === '#f8f9fa' || bgColor === '#e7f5ff' || bgColor === '#fff9db' || bgColor === '#fff0f6' || bgColor === '#ebfbee';
+      ctx.strokeStyle = isLightBg ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.03)';
+      ctx.fillStyle = isLightBg ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 1;
+
+      if (sizeVal >= 8) {
+        if (gridType === 'grid') {
+          ctx.beginPath();
+          for (let x = startX; x < canvas.width; x += sizeVal) {
+            ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
+          }
+          for (let y = startY; y < canvas.height; y += sizeVal) {
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
+        } else if (gridType === 'lines') {
+          ctx.beginPath();
+          for (let y = startY; y < canvas.height; y += sizeVal) {
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
     ctx.restore();
   }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout]);
 
@@ -4070,6 +4075,7 @@ export function BoardCanvas({
   }, [color, strokeWidth, opacity, useFill, fillColor, strokes, persistStrokes, setUndoStack, setRedoStack, setStrokes, setSelectedStrokeIds, setTool, setContextMenu]);
 
   // Minimap Move Handlers
+  const isMovingMinimapRef = useRef(false);
   const handleMinimapMoveDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -4089,12 +4095,12 @@ export function BoardCanvas({
       startX: currentX,
       startY: currentY,
     };
-    setIsMovingMinimap(true);
+    isMovingMinimapRef.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
   }, []);
 
   const handleMinimapMoveMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isMovingMinimap) return;
+    if (!isMovingMinimapRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     const deltaX = e.clientX - minimapDragStartRef.current.mouseX;
@@ -4113,17 +4119,17 @@ export function BoardCanvas({
     newY = Math.max(0, Math.min(newY, wrapRect.height - minimapH));
 
     setMinimapPos({ x: newX, y: newY });
-  }, [isMovingMinimap, minimapSize]);
+  }, [minimapSize]);
 
   const handleMinimapMoveUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isMovingMinimap) return;
-    setIsMovingMinimap(false);
+    isMovingMinimapRef.current = false;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {}
-  }, [isMovingMinimap]);
+  }, []);
 
   // Minimap Resize Handlers
+  const isResizingMinimapRef = useRef(false);
   const handleMinimapResizeDown = useCallback((e: React.PointerEvent<HTMLDivElement>, direction: 'bl' | 'br') => {
     e.preventDefault();
     e.stopPropagation();
@@ -4145,12 +4151,12 @@ export function BoardCanvas({
       startHeight: minimapSize.height,
     };
     resizeDirectionRef.current = direction;
-    setIsResizingMinimap(true);
+    isResizingMinimapRef.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
   }, [minimapSize]);
 
   const handleMinimapResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isResizingMinimap) return;
+    if (!isResizingMinimapRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     
@@ -4178,15 +4184,14 @@ export function BoardCanvas({
       newHeight = Math.max(80, Math.min(350, minimapResizeStartRef.current.startHeight + deltaY));
       setMinimapSize({ width: newWidth, height: newHeight });
     }
-  }, [isResizingMinimap, minimapSize]);
+  }, [minimapSize]);
 
   const handleMinimapResizeUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isResizingMinimap) return;
-    setIsResizingMinimap(false);
+    isResizingMinimapRef.current = false;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {}
-  }, [isResizingMinimap]);
+  }, []);
 
   // Minimap Navigation and Rendering Logic
   const renderMinimap = useCallback(() => {
