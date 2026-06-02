@@ -41,6 +41,15 @@ export interface BoardStroke {
   tableHorizontalLines?: boolean;
   tableVerticalLines?: boolean;
   imageUrl?: string;
+  textStyle?: 'normal' | 'italic';
+  textDecoration?: 'none' | 'underline' | 'line-through';
+  textBgColor?: string;
+  textBorderColor?: string;
+  textBorderWidth?: number;
+  textBorderStyle?: 'solid' | 'dashed' | 'dotted';
+  textPadding?: number;
+  textBorderRadius?: number;
+  textLineHeight?: number;
 }
 
 interface BoardNodeProps {
@@ -181,10 +190,110 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
         ctx.stroke();
       } else if (stroke.tool === 'text' && stroke.text && stroke.points.length >= 1) {
         const p = stroke.points[0];
-        ctx.fillStyle = stroke.color;
-        ctx.font = `${stroke.fontWeight || 'normal'} ${Math.max((stroke.fontSize || 16) * scale, 6)}px ${stroke.fontFamily || 'sans-serif'}`;
+        const lines = stroke.text.split('\n');
+        
+        ctx.save();
+        const fs = stroke.fontSize || 18;
+        const fw = stroke.fontWeight || 'normal';
+        const fStyle = stroke.textStyle || 'normal';
+        const ff = stroke.fontFamily || 'sans-serif';
+        ctx.font = `${fStyle} ${fw} ${Math.max(fs * scale, 6)}px ${ff}`;
+        
+        // Measure lines
+        let maxLineWidth = 0;
+        lines.forEach(line => {
+          const w = ctx.measureText(line).width;
+          if (w > maxLineWidth) maxLineWidth = w;
+        });
+        
+        const lineHeight = stroke.textLineHeight || 1.4;
+        const totalTextHeight = lines.length * Math.max(fs * scale, 6) * lineHeight;
+        
+        const padding = (stroke.textPadding !== undefined ? stroke.textPadding : 8) * scale;
+        const borderRadius = (stroke.textBorderRadius !== undefined ? stroke.textBorderRadius : 4) * scale;
+        
+        const boxW = maxLineWidth + padding * 2;
+        const boxH = totalTextHeight + padding * 2;
+        
+        const sx = p.x * scale + offsetX;
+        const sy = p.y * scale + offsetY;
+        
+        // Draw background
+        if (stroke.textBgColor) {
+          ctx.fillStyle = stroke.textBgColor;
+          ctx.beginPath();
+          if (ctx.roundRect) {
+            ctx.roundRect(sx, sy, boxW, boxH, borderRadius);
+          } else {
+            ctx.rect(sx, sy, boxW, boxH);
+          }
+          ctx.fill();
+        }
+        
+        // Draw border
+        if (stroke.textBorderColor && (stroke.textBorderWidth || 0) > 0) {
+          ctx.strokeStyle = stroke.textBorderColor;
+          ctx.lineWidth = Math.max((stroke.textBorderWidth || 1) * scale, 0.5);
+          if (stroke.textBorderStyle === 'dashed') {
+            ctx.setLineDash([6 * scale, 4 * scale]);
+          } else if (stroke.textBorderStyle === 'dotted') {
+            ctx.setLineDash([2 * scale, 2 * scale]);
+          } else {
+            ctx.setLineDash([]);
+          }
+          ctx.beginPath();
+          if (ctx.roundRect) {
+            ctx.roundRect(sx, sy, boxW, boxH, borderRadius);
+          } else {
+            ctx.rect(sx, sy, boxW, boxH);
+          }
+          ctx.stroke();
+        }
+        
+        // Draw text
+        ctx.textBaseline = 'top';
         ctx.textAlign = stroke.textAlign || 'left';
-        ctx.fillText(stroke.text, p.x * scale + offsetX, p.y * scale + offsetY);
+        ctx.fillStyle = stroke.color || '#ffffff';
+        
+        let startX = sx + padding;
+        if (stroke.textAlign === 'center') {
+          startX = sx + padding + maxLineWidth / 2;
+        } else if (stroke.textAlign === 'right') {
+          startX = sx + padding + maxLineWidth;
+        }
+        
+        lines.forEach((line, index) => {
+          const lineY = sy + padding + index * Math.max(fs * scale, 6) * lineHeight;
+          ctx.fillText(line, startX, lineY);
+          
+          if (stroke.textDecoration && stroke.textDecoration !== 'none') {
+            const textWidth = ctx.measureText(line).width;
+            let decoX = startX;
+            if (stroke.textAlign === 'center') {
+              decoX = startX - textWidth / 2;
+            } else if (stroke.textAlign === 'right') {
+              decoX = startX - textWidth;
+            }
+            
+            ctx.save();
+            ctx.strokeStyle = stroke.color || '#ffffff';
+            ctx.lineWidth = Math.max(1 * scale, 0.5);
+            ctx.beginPath();
+            if (stroke.textDecoration === 'underline') {
+              const decoY = lineY + Math.max(fs * scale, 6) * 0.95;
+              ctx.moveTo(decoX, decoY);
+              ctx.lineTo(decoX + textWidth, decoY);
+            } else if (stroke.textDecoration === 'line-through') {
+              const decoY = lineY + Math.max(fs * scale, 6) * 0.55;
+              ctx.moveTo(decoX, decoY);
+              ctx.lineTo(decoX + textWidth, decoY);
+            }
+            ctx.stroke();
+            ctx.restore();
+          }
+        });
+        
+        ctx.restore();
       } else if (stroke.tool === 'image' && stroke.imageUrl) {
         const p1 = stroke.points[0];
         const p2 = stroke.points[1] || { x: p1.x + 300, y: p1.y + 200 };

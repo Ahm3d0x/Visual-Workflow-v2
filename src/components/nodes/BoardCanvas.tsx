@@ -9,7 +9,7 @@ import {
   RotateCcw, PaintBucket, ChevronUp, Save, Users, Copy, Clipboard,
   Settings, Layers, StickyNote, Highlighter, Grid, AlignLeft, AlignCenter,
   AlignRight, Move, Check, FileDown, Plus, ChevronLeft, ChevronRight,
-  Image as ImageIcon, UserMinus
+  Image as ImageIcon, UserMinus, Bold, Italic, Underline, Strikethrough
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { playClickSound, playPopSound, playSweepSound } from '@/lib/audioSfx';
@@ -149,6 +149,16 @@ export function BoardCanvas({
   const [fontWeight, setFontWeight] = useState('normal');
   const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right'>('left');
   
+  const [textStyle, setTextStyle] = useState<'normal' | 'italic'>('normal');
+  const [textDecoration, setTextDecoration] = useState<'none' | 'underline' | 'line-through'>('none');
+  const [textBgColor, setTextBgColor] = useState<string>('');
+  const [textBorderColor, setTextBorderColor] = useState<string>('');
+  const [textBorderWidth, setTextBorderWidth] = useState<number>(0);
+  const [textBorderStyle, setTextBorderStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
+  const [textPadding, setTextPadding] = useState<number>(8);
+  const [textBorderRadius, setTextBorderRadius] = useState<number>(4);
+  const [textLineHeight, setTextLineHeight] = useState<number>(1.4);
+  
   const [strokes, setStrokes] = useState<BoardStroke[]>(initialStrokes);
   const [undoStack, setUndoStack] = useState<BoardStroke[][]>([]);
   const [redoStack, setRedoStack] = useState<BoardStroke[][]>([]);
@@ -183,6 +193,7 @@ export function BoardCanvas({
 
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
   const selectedStrokes = strokes.filter((s) => selectedStrokeIds.includes(s.id));
+  const hasTextSelected = tool === 'text' || selectedStrokes.some((s) => s.tool === 'text');
   const selectedTable = selectedStrokes.length === 1 && selectedStrokes[0].tool === 'table' ? selectedStrokes[0] : null;
   const [isDraggingObject, setIsDraggingObject] = useState(false);
   const [regionSelectStart, setRegionSelectStart] = useState<{ x: number; y: number } | null>(null);
@@ -544,7 +555,9 @@ export function BoardCanvas({
         });
       }
       setStrokes((prev) => {
-        if (prev.some((s) => s.id === payload.stroke.id)) return prev;
+        if (prev.some((s) => s.id === payload.stroke.id)) {
+          return prev.map((s) => s.id === payload.stroke.id ? payload.stroke : s);
+        }
         return [...prev, payload.stroke];
       });
     });
@@ -730,9 +743,39 @@ export function BoardCanvas({
   }, [view]);
 
   // Bounding box calculations
+  const getTextStrokeBoundingBox = useCallback((stroke: BoardStroke) => {
+    const p = stroke.points[0];
+    if (!p) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    
+    const fs = stroke.fontSize || 18;
+    const lines = (stroke.text || '').split('\n');
+    const lineHeight = stroke.textLineHeight || 1.4;
+    const padding = stroke.textPadding !== undefined ? stroke.textPadding : 8;
+    
+    let maxLen = 0;
+    lines.forEach(line => {
+      if (line.length > maxLen) maxLen = line.length;
+    });
+    const estWidth = maxLen * fs * 0.6;
+    const totalHeight = lines.length * fs * lineHeight;
+    
+    const boxW = estWidth + padding * 2;
+    const boxH = totalHeight + padding * 2;
+    
+    return {
+      minX: p.x,
+      minY: p.y,
+      maxX: p.x + boxW,
+      maxY: p.y + boxH
+    };
+  }, []);
+
   const getStrokeBoundingBox = useCallback((stroke: BoardStroke) => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     if (!stroke.points || stroke.points.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    if (stroke.tool === 'text') {
+      return getTextStrokeBoundingBox(stroke);
+    }
     if (stroke.tool === 'sticky' || stroke.tool === 'image') {
       const p1 = stroke.points[0];
       const p2 = stroke.points[1] || (stroke.tool === 'sticky' ? { x: p1.x + 160, y: p1.y + 160 } : { x: p1.x + 300, y: p1.y + 200 });
@@ -751,7 +794,7 @@ export function BoardCanvas({
     });
     const pad = (stroke.width || 2) + 5;
     return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
-  }, []);
+  }, [getTextStrokeBoundingBox]);
 
   const getCombinedBoundingBox = useCallback((ids: string[]) => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -1054,16 +1097,8 @@ export function BoardCanvas({
     if (stroke.tool === 'eraser') return false;
 
     if (stroke.tool === 'text') {
-      const p = stroke.points[0];
-      const fs = stroke.fontSize || 18;
-      const textLen = stroke.text ? stroke.text.length : 0;
-      const estWidth = textLen * fs * 0.6;
-      const estHeight = fs;
-      const align = stroke.textAlign || 'left';
-      let minX = p.x;
-      if (align === 'center') minX = p.x - estWidth / 2;
-      else if (align === 'right') minX = p.x - estWidth;
-      return x >= minX - tolerance && x <= minX + estWidth + tolerance && y >= p.y - estHeight - tolerance && y <= p.y + tolerance;
+      const box = getTextStrokeBoundingBox(stroke);
+      return x >= box.minX - tolerance && x <= box.maxX + tolerance && y >= box.minY - tolerance && y <= box.maxY + tolerance;
     }
 
     if (stroke.tool === 'table' && stroke.points.length >= 2) {
@@ -1190,7 +1225,7 @@ export function BoardCanvas({
       if (Math.sqrt((x - projX) ** 2 + (y - projY) ** 2) <= tolerance) return true;
     }
     return false;
-  }, []);
+  }, [getTextStrokeBoundingBox]);
 
   const hitTestSelectionHandle = useCallback((x: number, y: number): { type: string; nodeIndex?: number } | null => {
     if (selectedStrokeIds.length === 0) return null;
@@ -1306,6 +1341,51 @@ export function BoardCanvas({
   const handleTextAlignChange = useCallback((newAlign: 'left' | 'center' | 'right') => {
     setTextAlign(newAlign);
     updateSelectedStrokesProperty((s) => ({ ...s, textAlign: newAlign }));
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTextStyleChange = useCallback((newStyle: 'normal' | 'italic') => {
+    setTextStyle(newStyle);
+    updateSelectedStrokesProperty((s) => ({ ...s, textStyle: newStyle }));
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTextDecorationChange = useCallback((newDec: 'none' | 'underline' | 'line-through') => {
+    setTextDecoration(newDec);
+    updateSelectedStrokesProperty((s) => ({ ...s, textDecoration: newDec }));
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTextBgColorChange = useCallback((newColor: string) => {
+    setTextBgColor(newColor);
+    updateSelectedStrokesProperty((s) => ({ ...s, textBgColor: newColor || undefined }));
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTextBorderColorChange = useCallback((newColor: string) => {
+    setTextBorderColor(newColor);
+    updateSelectedStrokesProperty((s) => ({ ...s, textBorderColor: newColor || undefined }));
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTextBorderWidthChange = useCallback((newWidth: number) => {
+    setTextBorderWidth(newWidth);
+    updateSelectedStrokesProperty((s) => ({ ...s, textBorderWidth: newWidth }));
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTextBorderStyleChange = useCallback((newStyle: 'solid' | 'dashed' | 'dotted') => {
+    setTextBorderStyle(newStyle);
+    updateSelectedStrokesProperty((s) => ({ ...s, textBorderStyle: newStyle }));
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTextPaddingChange = useCallback((newPadding: number) => {
+    setTextPadding(newPadding);
+    updateSelectedStrokesProperty((s) => ({ ...s, textPadding: newPadding }));
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTextBorderRadiusChange = useCallback((newRadius: number) => {
+    setTextBorderRadius(newRadius);
+    updateSelectedStrokesProperty((s) => ({ ...s, textBorderRadius: newRadius }));
+  }, [updateSelectedStrokesProperty]);
+
+  const handleTextLineHeightChange = useCallback((newLineHeight: number) => {
+    setTextLineHeight(newLineHeight);
+    updateSelectedStrokesProperty((s) => ({ ...s, textLineHeight: newLineHeight }));
   }, [updateSelectedStrokesProperty]);
 
   const handleArrowTypeChange = useCallback((newType: 'straight' | 'curved' | 'elbow' | 'orthogonal') => {
@@ -1445,14 +1525,116 @@ export function BoardCanvas({
 
     } else if (stroke.tool === 'text') {
       const p = stroke.points[0];
-      ctx.fillStyle = stroke.color || '#ffffff';
+      const lines = (stroke.text || '').split('\n');
+      
+      ctx.save();
       const fs = stroke.fontSize || 18;
       const fw = stroke.fontWeight || 'normal';
+      const fStyle = stroke.textStyle || 'normal';
       const ff = stroke.fontFamily || 'Inter, sans-serif';
-      ctx.font = `${fw} ${fs}px ${ff}`;
+      ctx.font = `${fStyle} ${fw} ${fs}px ${ff}`;
+      
+      // Measure lines
+      let maxLineWidth = 0;
+      lines.forEach(line => {
+        const metrics = ctx.measureText(line);
+        if (metrics.width > maxLineWidth) {
+          maxLineWidth = metrics.width;
+        }
+      });
+      
+      const lineHeight = stroke.textLineHeight || 1.4;
+      const totalTextHeight = lines.length * fs * lineHeight;
+      
+      const padding = stroke.textPadding !== undefined ? stroke.textPadding : 8;
+      const borderRadius = stroke.textBorderRadius !== undefined ? stroke.textBorderRadius : 4;
+      
+      const boxW = maxLineWidth + padding * 2;
+      const boxH = totalTextHeight + padding * 2;
+      
+      // Draw background
+      if (stroke.textBgColor) {
+        ctx.fillStyle = stroke.textBgColor;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(p.x, p.y, boxW, boxH, borderRadius);
+        } else {
+          ctx.rect(p.x, p.y, boxW, boxH);
+        }
+        ctx.fill();
+      }
+      
+      // Draw border
+      if (stroke.textBorderColor && (stroke.textBorderWidth || 0) > 0) {
+        ctx.strokeStyle = stroke.textBorderColor;
+        ctx.lineWidth = stroke.textBorderWidth || 1;
+        if (stroke.textBorderStyle === 'dashed') {
+          ctx.setLineDash([6, 4]);
+        } else if (stroke.textBorderStyle === 'dotted') {
+          ctx.setLineDash([2, 2]);
+        } else {
+          ctx.setLineDash([]);
+        }
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(p.x, p.y, boxW, boxH, borderRadius);
+        } else {
+          ctx.rect(p.x, p.y, boxW, boxH);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+      
+      // Draw text
+      ctx.save();
+      ctx.textBaseline = 'top';
       ctx.textAlign = stroke.textAlign || 'left';
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillText(stroke.text || '', p.x, p.y);
+      ctx.fillStyle = stroke.color || '#ffffff';
+      
+      const fsVal = stroke.fontSize || 18;
+      const fwVal = stroke.fontWeight || 'normal';
+      const fStyleVal = stroke.textStyle || 'normal';
+      const ffVal = stroke.fontFamily || 'Inter, sans-serif';
+      ctx.font = `${fStyleVal} ${fwVal} ${fsVal}px ${ffVal}`;
+      
+      let startX = p.x + padding;
+      if (stroke.textAlign === 'center') {
+        startX = p.x + padding + maxLineWidth / 2;
+      } else if (stroke.textAlign === 'right') {
+        startX = p.x + padding + maxLineWidth;
+      }
+      
+      lines.forEach((line, index) => {
+        const lineY = p.y + padding + index * fsVal * lineHeight;
+        ctx.fillText(line, startX, lineY);
+        
+        if (stroke.textDecoration && stroke.textDecoration !== 'none') {
+          const textWidth = ctx.measureText(line).width;
+          let decoX = startX;
+          if (stroke.textAlign === 'center') {
+            decoX = startX - textWidth / 2;
+          } else if (stroke.textAlign === 'right') {
+            decoX = startX - textWidth;
+          }
+          
+          ctx.save();
+          ctx.strokeStyle = stroke.color || '#ffffff';
+          ctx.lineWidth = Math.max(1, fsVal / 14);
+          ctx.beginPath();
+          if (stroke.textDecoration === 'underline') {
+            const decoY = lineY + fsVal * 0.95;
+            ctx.moveTo(decoX, decoY);
+            ctx.lineTo(decoX + textWidth, decoY);
+          } else if (stroke.textDecoration === 'line-through') {
+            const decoY = lineY + fsVal * 0.55;
+            ctx.moveTo(decoX, decoY);
+            ctx.lineTo(decoX + textWidth, decoY);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
+      ctx.restore();
 
     } else if (stroke.tool === 'image' && stroke.imageUrl) {
       const p1 = stroke.points[0];
@@ -2595,6 +2777,15 @@ export function BoardCanvas({
         if (hit.fontFamily) setFontFamily(hit.fontFamily);
         if (hit.fontWeight) setFontWeight(hit.fontWeight);
         if (hit.textAlign) setTextAlign(hit.textAlign);
+        if (hit.textStyle) setTextStyle(hit.textStyle);
+        if (hit.textDecoration) setTextDecoration(hit.textDecoration);
+        if (hit.textBgColor !== undefined) setTextBgColor(hit.textBgColor || '');
+        if (hit.textBorderColor !== undefined) setTextBorderColor(hit.textBorderColor || '');
+        if (hit.textBorderWidth !== undefined) setTextBorderWidth(hit.textBorderWidth);
+        if (hit.textBorderStyle) setTextBorderStyle(hit.textBorderStyle);
+        if (hit.textPadding !== undefined) setTextPadding(hit.textPadding);
+        if (hit.textBorderRadius !== undefined) setTextBorderRadius(hit.textBorderRadius);
+        if (hit.textLineHeight !== undefined) setTextLineHeight(hit.textLineHeight);
         if (hit.arrowType) setArrowType(hit.arrowType);
         if (hit.arrowheadStart) setArrowheadStart(hit.arrowheadStart);
         if (hit.arrowheadEnd) setArrowheadEnd(hit.arrowheadEnd);
@@ -3144,6 +3335,15 @@ export function BoardCanvas({
         fontFamily: tool === 'sticky' ? 'sans-serif' : fontFamily,
         fontWeight: tool === 'sticky' ? 'bold' : fontWeight,
         textAlign: tool === 'sticky' ? 'center' : textAlign,
+        textStyle: tool === 'sticky' ? 'normal' : textStyle,
+        textDecoration: tool === 'sticky' ? 'none' : textDecoration,
+        textBgColor: tool === 'sticky' ? undefined : (textBgColor || undefined),
+        textBorderColor: tool === 'sticky' ? undefined : (textBorderColor || undefined),
+        textBorderWidth: tool === 'sticky' ? undefined : textBorderWidth,
+        textBorderStyle: tool === 'sticky' ? undefined : textBorderStyle,
+        textPadding: tool === 'sticky' ? undefined : textPadding,
+        textBorderRadius: tool === 'sticky' ? undefined : textBorderRadius,
+        textLineHeight: tool === 'sticky' ? undefined : textLineHeight,
       };
       setUndoStack((prev) => [...prev, strokes]);
       setRedoStack([]);
@@ -3158,7 +3358,7 @@ export function BoardCanvas({
 
     setTextInput({ active: false, x: 0, y: 0, clientX: 0, clientY: 0, value: '' });
     setEditingStrokeId(null);
-  }, [textInput, editingStrokeId, color, strokeWidth, fontSize, strokes, persistStrokes, tool, fillColor, opacity, fontFamily, fontWeight, textAlign, currentUserId]);
+  }, [textInput, editingStrokeId, color, strokeWidth, fontSize, strokes, persistStrokes, tool, fillColor, opacity, fontFamily, fontWeight, textAlign, currentUserId, textStyle, textDecoration, textBgColor, textBorderColor, textBorderWidth, textBorderStyle, textPadding, textBorderRadius, textLineHeight]);
 
   /* ─── Table Cell commit ─── */
   const commitCellEdit = useCallback(() => {
@@ -5349,7 +5549,7 @@ export function BoardCanvas({
                       }
                     }}
                     onBlur={commitText}
-                    className="outline-none p-2 border transition-all duration-150"
+                    className="outline-none border transition-all duration-150"
                     style={{
                       resize: (isSticky || isBoxShape) ? 'none' : 'horizontal',
                       overflow: (isSticky || isBoxShape) ? 'hidden' : 'hidden',
@@ -5360,16 +5560,43 @@ export function BoardCanvas({
                       fontSize: editingStroke ? `${editingStroke.fontSize || 18}px` : `${tool === 'sticky' ? 13 : fontSize}px`,
                       fontFamily: editingStroke ? editingStroke.fontFamily || 'Inter, sans-serif' : (tool === 'sticky' ? 'sans-serif' : fontFamily),
                       fontWeight: editingStroke ? editingStroke.fontWeight || 'normal' : (tool === 'sticky' ? 'bold' : fontWeight),
+                      fontStyle: (editingStroke?.textStyle || (!editingStroke && textStyle)) === 'italic' ? 'italic' : 'normal',
+                      textDecoration: editingStroke ? editingStroke.textDecoration || 'none' : textDecoration,
                       textAlign: editingStroke ? editingStroke.textAlign || 'center' : (tool === 'sticky' ? 'center' : textAlign),
                       color: editingStroke ? editingStroke.color || '#ffffff' : (tool === 'sticky' ? '#18181b' : color),
                       backgroundColor: isSticky
                         ? (editingStroke?.fillColor || fillColor || '#fef08a')
-                        : 'transparent',
-                      borderColor: (isSticky || isBoxShape) ? 'transparent' : 'rgba(99,102,241,0.6)',
+                        : (editingStroke ? editingStroke.textBgColor || 'transparent' : textBgColor || 'transparent'),
+                      borderColor: (isSticky || isBoxShape)
+                        ? 'transparent'
+                        : (editingStroke
+                            ? (editingStroke.textBorderColor || 'rgba(99,102,241,0.6)')
+                            : (textBorderColor || 'rgba(99,102,241,0.6)')),
+                      borderWidth: (isSticky || isBoxShape)
+                        ? '0px'
+                        : (editingStroke
+                            ? `${editingStroke.textBorderWidth ?? 1}px`
+                            : `${textBorderWidth || (textBorderColor ? 1 : 0)}px`),
+                      borderStyle: (isSticky || isBoxShape)
+                        ? 'none'
+                        : (editingStroke
+                            ? editingStroke.textBorderStyle || 'solid'
+                            : textBorderStyle),
                       boxShadow: isSticky ? '0 10px 15px -3px rgba(0,0,0,0.3)' : 'none',
-                      borderRadius: '8px',
-                      lineHeight: '1.4',
-                      caretColor: isSticky ? '#18181b' : color,
+                      padding: (isSticky || isBoxShape)
+                        ? '8px'
+                        : (editingStroke
+                            ? `${editingStroke.textPadding ?? 8}px`
+                            : `${textPadding}px`),
+                      borderRadius: (isSticky || isBoxShape)
+                        ? '8px'
+                        : (editingStroke
+                            ? `${editingStroke.textBorderRadius ?? 4}px`
+                            : `${textBorderRadius}px`),
+                      lineHeight: editingStroke
+                        ? `${editingStroke.textLineHeight || 1.4}`
+                        : `${textLineHeight}`,
+                      caretColor: isSticky ? '#18181b' : (editingStroke ? editingStroke.color || '#ffffff' : color),
                       wordBreak: 'break-word',
                       whiteSpace: (isSticky || isBoxShape) ? 'pre-wrap' : 'pre',
                     }}
@@ -5746,38 +5973,206 @@ export function BoardCanvas({
                   </select>
                 </div>
                 <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Weight & Alignment</label>
-                  <div className="flex gap-1">
+                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Text Style</label>
+                  <div className="flex gap-1 mb-2">
                     <button
                       onClick={() => handleFontWeightChange(fontWeight === 'bold' ? 'normal' : 'bold')}
-                      className={`flex-1 h-7 rounded-lg text-xs font-bold transition-all border cursor-pointer
+                      className={`flex-1 h-7 rounded-lg text-xs font-bold transition-all border cursor-pointer flex items-center justify-center
                         ${fontWeight === 'bold' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+                      title="Bold"
                     >
-                      B
+                      <Bold className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => handleTextAlignChange('left')}
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
-                        ${textAlign === 'left' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+                      onClick={() => handleTextStyleChange(textStyle === 'italic' ? 'normal' : 'italic')}
+                      className={`flex-1 h-7 rounded-lg text-xs transition-all border cursor-pointer flex items-center justify-center
+                        ${textStyle === 'italic' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+                      title="Italic"
                     >
-                      L
+                      <Italic className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleTextDecorationChange(textDecoration === 'underline' ? 'none' : 'underline')}
+                      className={`flex-1 h-7 rounded-lg text-xs transition-all border cursor-pointer flex items-center justify-center
+                        ${textDecoration === 'underline' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+                      title="Underline"
+                    >
+                      <Underline className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleTextDecorationChange(textDecoration === 'line-through' ? 'none' : 'line-through')}
+                      className={`flex-1 h-7 rounded-lg text-xs transition-all border cursor-pointer flex items-center justify-center
+                        ${textDecoration === 'line-through' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+                      title="Strikethrough"
+                    >
+                      <Strikethrough className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  
+                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Alignment</label>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => handleTextAlignChange('left')}
+                      className={`flex-1 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
+                        ${textAlign === 'left' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+                      title="Align Left"
+                    >
+                      <AlignLeft className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => handleTextAlignChange('center')}
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
+                      className={`flex-1 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
                         ${textAlign === 'center' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+                      title="Align Center"
                     >
-                      C
+                      <AlignCenter className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => handleTextAlignChange('right')}
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
+                      className={`flex-1 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
                         ${textAlign === 'right' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+                      title="Align Right"
                     >
-                      R
+                      <AlignRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
+
+                <div>
+                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Line Height</label>
+                  <input
+                    type="range"
+                    min={1.0}
+                    max={2.5}
+                    step={0.1}
+                    value={textLineHeight}
+                    onChange={(e) => handleTextLineHeightChange(Number(e.target.value))}
+                    className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+                  />
+                  <p className="text-[9px] text-zinc-400 text-center mt-1">{textLineHeight}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Text Box Styling (Visible only when text tool is selected or has text selected) */}
+            {hasTextSelected && (
+              <div className="space-y-3 pt-3 border-t border-zinc-800/80">
+                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Text Container</p>
+                
+                {/* Background color */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[8px] text-zinc-500 font-bold">Background Fill</label>
+                    {textBgColor && (
+                      <button
+                        onClick={() => handleTextBgColorChange('')}
+                        className="text-[8px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer bg-transparent border-none outline-none p-0"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="color"
+                      value={textBgColor || '#000000'}
+                      onChange={(e) => handleTextBgColorChange(e.target.value)}
+                      className="w-8 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer shrink-0"
+                    />
+                    <span className="text-[10px] text-zinc-400 font-mono">
+                      {textBgColor ? textBgColor.toUpperCase() : 'Transparent'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Border color */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[8px] text-zinc-500 font-bold">Border Color</label>
+                    {textBorderColor && (
+                      <button
+                        onClick={() => handleTextBorderColorChange('')}
+                        className="text-[8px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer bg-transparent border-none outline-none p-0"
+                      >
+                        None
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="color"
+                      value={textBorderColor || '#ffffff'}
+                      onChange={(e) => {
+                        handleTextBorderColorChange(e.target.value);
+                        if (textBorderWidth === 0) handleTextBorderWidthChange(1);
+                      }}
+                      className="w-8 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer shrink-0"
+                    />
+                    <span className="text-[10px] text-zinc-400 font-mono">
+                      {textBorderColor ? textBorderColor.toUpperCase() : 'None'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Border width */}
+                <div>
+                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Border Width</label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={10}
+                    value={textBorderWidth}
+                    onChange={(e) => handleTextBorderWidthChange(Number(e.target.value))}
+                    className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+                  />
+                  <p className="text-[9px] text-zinc-400 text-center mt-1">{textBorderWidth}px</p>
+                </div>
+
+                {/* Border style */}
+                {textBorderWidth > 0 && (
+                  <div>
+                    <label className="text-[8px] text-zinc-500 font-bold block mb-1">Border Style</label>
+                    <select
+                      value={textBorderStyle}
+                      onChange={(e) => handleTextBorderStyleChange(e.target.value as any)}
+                      className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+                    >
+                      <option value="solid">Solid</option>
+                      <option value="dashed">Dashed</option>
+                      <option value="dotted">Dotted</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* Padding */}
+                <div>
+                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Padding</label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={40}
+                    value={textPadding}
+                    onChange={(e) => handleTextPaddingChange(Number(e.target.value))}
+                    className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+                  />
+                  <p className="text-[9px] text-zinc-400 text-center mt-1">{textPadding}px</p>
+                </div>
+
+                {/* Border Radius */}
+                {(textBgColor || textBorderColor) && (
+                  <div>
+                    <label className="text-[8px] text-zinc-500 font-bold block mb-1">Corner Radius</label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={30}
+                      value={textBorderRadius}
+                      onChange={(e) => handleTextBorderRadiusChange(Number(e.target.value))}
+                      className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+                    />
+                    <p className="text-[9px] text-zinc-400 text-center mt-1">{textBorderRadius}px</p>
+                  </div>
+                )}
               </div>
             )}
 
