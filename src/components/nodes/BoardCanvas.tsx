@@ -18,6 +18,18 @@ import { type BoardStroke } from './BoardNode';
 import { useDialogStore } from '@/stores/dialogStore';
 import { jsPDF } from 'jspdf';
 
+/* ─────────────────────── Helper Functions ─────────────────────── */
+function generateUUID(): string {
+  if (typeof window !== 'undefined' && window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 /* ─────────────────────── Types ─────────────────────── */
 type Tool = 'select' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'triangle' | 'text' | 'sticky' |
              'rounded-rect' | 'ellipse' | 'diamond' | 'hexagon' |
@@ -2430,15 +2442,31 @@ export function BoardCanvas({
     // Close any floating windows/menus when clicking on the board canvas
     closeAllFloatingMenus();
 
+    const { x, y } = toCanvasCoords(e.clientX, e.clientY);
+    const clientX = e.clientX;
+    const clientY = e.clientY;
+
     if (textInput.active) {
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
-      return;
+      if (tool === 'text' || tool === 'sticky') {
+        setTimeout(() => {
+          setTextInput({
+            active: true,
+            x,
+            y,
+            clientX,
+            clientY,
+            value: '',
+          });
+          setEditingStrokeId(null);
+        }, 0);
+        return;
+      }
     }
 
     e.currentTarget.setPointerCapture(e.pointerId);
-    const { x, y } = toCanvasCoords(e.clientX, e.clientY);
 
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
@@ -2960,7 +2988,7 @@ export function BoardCanvas({
 
     const currentStrokeTool = activeDrawingToolRef.current;
     const newStroke: BoardStroke = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       tool: currentStrokeTool as BoardStroke['tool'],
       points: currentPen,
       color,
@@ -3006,6 +3034,7 @@ export function BoardCanvas({
 
   /* ─── Text commit ─── */
   const commitText = useCallback(() => {
+    if (!textInput.active) return;
     if (!textInput.value.trim()) {
       if (editingStrokeId) {
         setStrokes((prev) => {
@@ -3047,7 +3076,7 @@ export function BoardCanvas({
       playClickSound();
     } else {
       const newStroke: BoardStroke = {
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         tool: (tool === 'sticky' ? 'sticky' : 'text') as BoardStroke['tool'],
         points: tool === 'sticky' ? [{ x: textInput.x, y: textInput.y }, { x: textInput.x + 160, y: textInput.y + 160 }] : [{ x: textInput.x, y: textInput.y }],
         color: tool === 'sticky' ? '#18181b' : color,
@@ -3146,7 +3175,7 @@ export function BoardCanvas({
     const halfH = defaultH / 2;
 
     const newStroke: BoardStroke = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       tool: 'image',
       points: [
         { x: cx - halfW, y: cy - halfH },
@@ -3376,7 +3405,7 @@ export function BoardCanvas({
       }));
       return {
         ...orig,
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         points: newPoints,
       };
     });
@@ -3411,7 +3440,7 @@ export function BoardCanvas({
       const newPoints = orig.points.map((p) => ({ x: p.x + 40, y: p.y + 40 }));
       return {
         ...orig,
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         points: newPoints,
       };
     });
@@ -3497,7 +3526,7 @@ export function BoardCanvas({
   // Group / Ungroup
   const handleGroupStrokes = useCallback(() => {
     if (selectedStrokeIds.length < 2) return;
-    const newGroupId = crypto.randomUUID();
+    const newGroupId = generateUUID();
     setUndoStack((prev) => [...prev, strokes]);
     setStrokes((prev) => {
       const next = prev.map((s) => {
