@@ -140,8 +140,16 @@ export function BoardCanvas({
   const [view, setView] = useState<ViewTransform>({ scale: 1, offsetX: 0, offsetY: 0 });
   const minimapRef = useRef<HTMLCanvasElement>(null);
   const [showMinimap, setShowMinimap] = useState(true);
-  const [minimapPos, setMinimapPos] = useState<{ x: number; y: number } | null>(null);
-  const [minimapSize, setMinimapSize] = useState({ width: 160, height: 110 });
+  const minimapSize = { width: 160, height: 110 };
+
+  const [showProperties, setShowProperties] = useState(true);
+  const [propertiesPos, setPropertiesPos] = useState<{ x: number; y: number } | null>(null);
+  const [propertiesSize, setPropertiesSize] = useState({ width: 220, height: 480 });
+  const propertiesDragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
+  const propertiesResizeStartRef = useRef({ mouseX: 0, mouseY: 0, startWidth: 0, startHeight: 0 });
+  const propertiesResizeDirectionRef = useRef<'bl' | 'br'>('bl');
+  const isMovingPropertiesRef = useRef(false);
+  const isResizingPropertiesRef = useRef(false);
 
   const [gridType, setGridType] = useState<'grid' | 'lines' | 'none'>('grid');
   const [snapToGrid, setSnapToGrid] = useState(false);
@@ -238,9 +246,6 @@ export function BoardCanvas({
   const lastPastePosRef = useRef<{ x: number; y: number } | null>(null);
   const consecutivePasteCountRef = useRef<number>(0);
 
-  const minimapDragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
-  const minimapResizeStartRef = useRef({ mouseX: 0, mouseY: 0, startWidth: 0, startHeight: 0 });
-  const resizeDirectionRef = useRef<'bl' | 'br'>('bl');
   const activeDrawingToolRef = useRef<Tool>('pen');
 
   const dragStartRef = useRef<{
@@ -4259,12 +4264,11 @@ export function BoardCanvas({
     persistStrokes(next);
   }, [color, strokeWidth, opacity, useFill, fillColor, strokes, persistStrokes, setUndoStack, setRedoStack, setStrokes, setSelectedStrokeIds, setTool, setContextMenu]);
 
-  // Minimap Move Handlers
-  const isMovingMinimapRef = useRef(false);
-  const handleMinimapMoveDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  // Properties Move Handlers
+  const handlePropertiesMoveDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    const container = e.currentTarget.closest('.minimap-container');
+    const container = e.currentTarget.closest('.properties-container');
     const parent = container?.parentElement;
     if (!container || !parent) return;
 
@@ -4274,105 +4278,104 @@ export function BoardCanvas({
     const currentX = rect.left - parentRect.left;
     const currentY = rect.top - parentRect.top;
 
-    minimapDragStartRef.current = {
+    propertiesDragStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
       startX: currentX,
       startY: currentY,
     };
-    isMovingMinimapRef.current = true;
+    isMovingPropertiesRef.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
   }, []);
 
-  const handleMinimapMoveMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isMovingMinimapRef.current) return;
+  const handlePropertiesMoveMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMovingPropertiesRef.current) return;
     e.preventDefault();
     e.stopPropagation();
-    const deltaX = e.clientX - minimapDragStartRef.current.mouseX;
-    const deltaY = e.clientY - minimapDragStartRef.current.mouseY;
+    const deltaX = e.clientX - propertiesDragStartRef.current.mouseX;
+    const deltaY = e.clientY - propertiesDragStartRef.current.mouseY;
 
     const wrap = wrapRef.current;
     if (!wrap) return;
     const wrapRect = wrap.getBoundingClientRect();
     
-    let newX = minimapDragStartRef.current.startX + deltaX;
-    let newY = minimapDragStartRef.current.startY + deltaY;
+    let newX = propertiesDragStartRef.current.startX + deltaX;
+    let newY = propertiesDragStartRef.current.startY + deltaY;
 
-    const minimapW = minimapSize.width + 24; 
-    const minimapH = minimapSize.height + 40; 
-    newX = Math.max(0, Math.min(newX, wrapRect.width - minimapW));
-    newY = Math.max(0, Math.min(newY, wrapRect.height - minimapH));
+    const panelW = propertiesSize.width;
+    const panelH = propertiesSize.height;
+    newX = Math.max(0, Math.min(newX, wrapRect.width - panelW));
+    newY = Math.max(0, Math.min(newY, wrapRect.height - panelH));
 
-    setMinimapPos({ x: newX, y: newY });
-  }, [minimapSize]);
+    setPropertiesPos({ x: newX, y: newY });
+  }, [propertiesSize]);
 
-  const handleMinimapMoveUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    isMovingMinimapRef.current = false;
+  const handlePropertiesMoveUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    isMovingPropertiesRef.current = false;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {}
   }, []);
 
-  // Minimap Resize Handlers
-  const isResizingMinimapRef = useRef(false);
-  const handleMinimapResizeDown = useCallback((e: React.PointerEvent<HTMLDivElement>, direction: 'bl' | 'br') => {
+  // Properties Resize Handlers
+  const handlePropertiesResizeDown = useCallback((e: React.PointerEvent<HTMLDivElement>, direction: 'bl' | 'br') => {
     e.preventDefault();
     e.stopPropagation();
     
-    const container = e.currentTarget.closest('.minimap-container');
+    const container = e.currentTarget.closest('.properties-container');
     const parent = container?.parentElement;
     if (container && parent) {
       const parentRect = parent.getBoundingClientRect();
       const rect = container.getBoundingClientRect();
       const currentX = rect.left - parentRect.left;
       const currentY = rect.top - parentRect.top;
-      setMinimapPos({ x: currentX, y: currentY });
+      setPropertiesPos({ x: currentX, y: currentY });
     }
     
-    minimapResizeStartRef.current = {
+    propertiesResizeStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
-      startWidth: minimapSize.width,
-      startHeight: minimapSize.height,
+      startWidth: propertiesSize.width,
+      startHeight: propertiesSize.height,
     };
-    resizeDirectionRef.current = direction;
-    isResizingMinimapRef.current = true;
+    propertiesResizeDirectionRef.current = direction;
+    isResizingPropertiesRef.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
-  }, [minimapSize]);
+  }, [propertiesSize]);
 
-  const handleMinimapResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isResizingMinimapRef.current) return;
+  const handlePropertiesResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isResizingPropertiesRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     
-    const deltaX = e.clientX - minimapResizeStartRef.current.mouseX;
-    const deltaY = e.clientY - minimapResizeStartRef.current.mouseY;
+    const deltaX = e.clientX - propertiesResizeStartRef.current.mouseX;
+    const deltaY = e.clientY - propertiesResizeStartRef.current.mouseY;
     
-    let newWidth = minimapSize.width;
-    let newHeight = minimapSize.height;
+    let newWidth = propertiesSize.width;
+    let newHeight = propertiesSize.height;
     
-    if (resizeDirectionRef.current === 'bl') {
-      newWidth = Math.max(120, Math.min(450, minimapResizeStartRef.current.startWidth - deltaX));
-      newHeight = Math.max(80, Math.min(350, minimapResizeStartRef.current.startHeight + deltaY));
+    if (propertiesResizeDirectionRef.current === 'bl') {
+      newWidth = Math.max(180, Math.min(450, propertiesResizeStartRef.current.startWidth - deltaX));
+      newHeight = Math.max(250, Math.min(650, propertiesResizeStartRef.current.startHeight + deltaY));
       
-      setMinimapSize({ width: newWidth, height: newHeight });
-      setMinimapPos((prev) => {
+      setPropertiesSize({ width: newWidth, height: newHeight });
+      setPropertiesPos((prev) => {
         if (!prev) return null;
-        const widthChange = newWidth - minimapResizeStartRef.current.startWidth;
+        const widthChange = newWidth - propertiesResizeStartRef.current.startWidth;
         return {
           x: prev.x - widthChange,
           y: prev.y
         };
       });
     } else { // 'br'
-      newWidth = Math.max(120, Math.min(450, minimapResizeStartRef.current.startWidth + deltaX));
-      newHeight = Math.max(80, Math.min(350, minimapResizeStartRef.current.startHeight + deltaY));
-      setMinimapSize({ width: newWidth, height: newHeight });
+      newWidth = Math.max(180, Math.min(450, propertiesResizeStartRef.current.startWidth + deltaX));
+      newHeight = Math.max(250, Math.min(650, propertiesResizeStartRef.current.startHeight + deltaY));
+      setPropertiesSize({ width: newWidth, height: newHeight });
     }
-  }, [minimapSize]);
+  }, [propertiesSize]);
 
-  const handleMinimapResizeUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    isResizingMinimapRef.current = false;
+  const handlePropertiesResizeUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    isResizingPropertiesRef.current = false;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {}
@@ -4852,6 +4855,17 @@ export function BoardCanvas({
 
           {/* Right: Collaborators + Close */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowProperties((prev) => !prev)}
+              className={`h-8 w-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer ${
+                showProperties 
+                  ? 'bg-fuchsia-500 text-white border-fuchsia-400 shadow-lg shadow-fuchsia-500/30' 
+                  : 'bg-zinc-800/60 hover:bg-zinc-800 border border-zinc-700/50 text-zinc-400 hover:text-white'
+              }`}
+              title={showProperties ? 'Hide Properties Panel' : 'Show Properties Panel'}
+            >
+              <Settings className="w-4 h-4" />
+            </button>
             <div className="relative">
               <button
                 onClick={() => setShowCollaboratorsMenu(!showCollaboratorsMenu)}
@@ -5398,35 +5412,17 @@ export function BoardCanvas({
               );
             })()}
 
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              className="hidden"
-              onChange={handleImageUpload}
-            />
-
-            {/* Whiteboard Minimap (Map) */}
+            {/* Whiteboard Minimap (Map) - Fixed and Normal */}
             {showMinimap && (
               <div 
-                className="absolute bg-zinc-950/90 border border-zinc-800 shadow-2xl rounded-2xl p-2.5 z-40 select-none backdrop-blur-md animate-fadeIn flex flex-col gap-1.5 minimap-container"
+                className="absolute bg-zinc-950/90 border border-zinc-800 shadow-2xl rounded-2xl p-2.5 z-40 select-none backdrop-blur-md animate-fadeIn flex flex-col gap-1.5"
                 onPointerDown={(e) => e.stopPropagation()}
-                style={minimapPos ? {
-                  left: `${minimapPos.x}px`,
-                  top: `${minimapPos.y}px`,
-                  bottom: 'auto',
-                  right: 'auto',
-                } : {
+                style={{
                   bottom: '1rem',
                   right: '1rem',
                 }}
               >
-                <div 
-                  className="flex items-center justify-between gap-4 px-0.5 cursor-grab active:cursor-grabbing border-b border-zinc-800/30 pb-1"
-                  onPointerDown={handleMinimapMoveDown}
-                  onPointerMove={handleMinimapMoveMove}
-                  onPointerUp={handleMinimapMoveUp}
-                >
+                <div className="flex items-center justify-between gap-4 px-0.5 border-b border-zinc-800/30 pb-1">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Board Map</span>
                   <button 
                     onClick={() => setShowMinimap(false)}
@@ -5445,31 +5441,6 @@ export function BoardCanvas({
                   onPointerMove={onMinimapPointerMove}
                   onPointerUp={onMinimapPointerUp}
                 />
-                
-                {/* Resize handles */}
-                {/* Bottom-left handle */}
-                <div
-                  className="absolute bottom-1 left-1 w-3.5 h-3.5 cursor-nesw-resize flex items-end justify-start group text-zinc-600 hover:text-zinc-400 transition-colors z-50"
-                  onPointerDown={(e) => handleMinimapResizeDown(e, 'bl')}
-                  onPointerMove={handleMinimapResizeMove}
-                  onPointerUp={handleMinimapResizeUp}
-                >
-                  <svg className="w-2 h-2 rotate-90" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 19H5M19 12H12M19 5H19" />
-                  </svg>
-                </div>
-
-                {/* Bottom-right handle */}
-                <div
-                  className="absolute bottom-1 right-1 w-3.5 h-3.5 cursor-nwse-resize flex items-end justify-end group text-zinc-600 hover:text-zinc-400 transition-colors z-50"
-                  onPointerDown={(e) => handleMinimapResizeDown(e, 'br')}
-                  onPointerMove={handleMinimapResizeMove}
-                  onPointerUp={handleMinimapResizeUp}
-                >
-                  <svg className="w-2 h-2" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 19H5M19 12H12M19 5H19" />
-                  </svg>
-                </div>
               </div>
             )}
 
@@ -5484,10 +5455,44 @@ export function BoardCanvas({
                 <span>Map</span>
               </button>
             )}
-          </div>
+            {/* Floating Properties Panel */}
+            {showProperties && (
+              <div 
+                className="absolute bg-zinc-950/95 border border-zinc-800 shadow-2xl rounded-2xl p-3 z-40 select-none backdrop-blur-md animate-fadeIn flex flex-col gap-3 properties-container"
+                onPointerDown={(e) => e.stopPropagation()}
+                style={propertiesPos ? {
+                  left: `${propertiesPos.x}px`,
+                  top: `${propertiesPos.y}px`,
+                  width: `${propertiesSize.width}px`,
+                  height: `${propertiesSize.height}px`,
+                  maxHeight: 'calc(100% - 2rem)',
+                } : {
+                  top: '1rem',
+                  right: '1rem',
+                  width: `${propertiesSize.width}px`,
+                  height: `${propertiesSize.height}px`,
+                  maxHeight: 'calc(100% - 2rem)',
+                }}
+              >
+                {/* Drag Handle Header */}
+                <div 
+                  className="flex items-center justify-between gap-4 px-0.5 cursor-grab active:cursor-grabbing border-b border-zinc-800/60 pb-1.5 shrink-0 select-none"
+                  onPointerDown={handlePropertiesMoveDown}
+                  onPointerMove={handlePropertiesMoveMove}
+                  onPointerUp={handlePropertiesMoveUp}
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Properties</span>
+                  <button 
+                    onClick={() => setShowProperties(false)}
+                    className="p-1 rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all cursor-pointer"
+                    title="Minimize Properties"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
 
-          {/* ── RIGHT PROPERTIES PANEL ── */}
-          <div className="w-[200px] shrink-0 bg-zinc-900/90 backdrop-blur-md border-l border-zinc-800/80 flex flex-col py-4 px-3 gap-4 z-20 overflow-y-auto custom-scrollbar">
+                {/* Properties scrollable content */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3 pr-0.5">
             {/* Multi-Selection alignment/grouping panel */}
             {selectedStrokeIds.length > 0 && (
               <div className="space-y-3 pb-3 border-b border-zinc-800/80">
@@ -6195,8 +6200,29 @@ export function BoardCanvas({
                 </div>
               </div>
             )}
+
+            {/* Resize Handles */}
+            <div 
+              className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize z-50 flex items-end justify-start p-0.5"
+              onPointerDown={(e) => handlePropertiesResizeDown(e, 'bl')}
+              onPointerMove={handlePropertiesResizeMove}
+              onPointerUp={handlePropertiesResizeUp}
+            >
+              <div className="w-1.5 h-1.5 border-b-2 border-l-2 border-zinc-500 rounded-bl-sm" />
+            </div>
+            <div 
+              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-50 flex items-end justify-end p-0.5"
+              onPointerDown={(e) => handlePropertiesResizeDown(e, 'br')}
+              onPointerMove={handlePropertiesResizeMove}
+              onPointerUp={handlePropertiesResizeUp}
+            >
+              <div className="w-1.5 h-1.5 border-b-2 border-r-2 border-zinc-500 rounded-br-sm" />
+            </div>
+            </div>
           </div>
-        </div>
+        )}
+      </div>
+    </div>
 
         {/* ═══ BOTTOM STATUS ═══ */}
         <div className="h-8 shrink-0 flex items-center justify-between px-4 border-t border-zinc-800/80 bg-zinc-900/90 text-[10px] text-zinc-500">
