@@ -2320,15 +2320,31 @@ export function BoardCanvas({
     totalSheets: number,
     isEditorView: boolean
   ) => {
-    // Calculate grid size
+    const x = isEditorView ? sheet.x : 0;
+    const y = isEditorView ? sheet.y : 0;
+
+    // 1. Draw page background (rounded rect for editor, sharp rect for exports)
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    if (isEditorView && ctx.roundRect) {
+      ctx.roundRect(x, y, sheet.width, sheet.height, 6);
+    } else {
+      ctx.rect(x, y, sheet.width, sheet.height);
+    }
+    ctx.fill();
+    ctx.restore();
+
+    // 2. Calculate grid size and draw grid (clipped to the sheet bounds to prevent edge bleeding)
     const pageGridType = sheet.gridType || gridType;
     if (pageGridType !== 'none') {
       ctx.save();
-      const x = isEditorView ? sheet.x : 0;
-      const y = isEditorView ? sheet.y : 0;
-      
       ctx.beginPath();
-      ctx.rect(x, y, sheet.width, sheet.height);
+      if (isEditorView && ctx.roundRect) {
+        ctx.roundRect(x, y, sheet.width, sheet.height, 6);
+      } else {
+        ctx.rect(x, y, sheet.width, sheet.height);
+      }
       ctx.clip();
 
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
@@ -2356,16 +2372,20 @@ export function BoardCanvas({
       ctx.restore();
     }
 
-    // 2. Draw border
-    const x = isEditorView ? sheet.x : 0;
-    const y = isEditorView ? sheet.y : 0;
+    // 3. Draw border
     const showBorder = sheet.showBorder !== false;
     
     if (showBorder) {
       ctx.save();
       ctx.strokeStyle = sheet.borderColor || '#cbd5e1';
       ctx.lineWidth = sheet.borderWidth || 1;
-      ctx.strokeRect(x, y, sheet.width, sheet.height);
+      ctx.beginPath();
+      if (isEditorView && ctx.roundRect) {
+        ctx.roundRect(x, y, sheet.width, sheet.height, 6);
+      } else {
+        ctx.rect(x, y, sheet.width, sheet.height);
+      }
+      ctx.stroke();
       ctx.restore();
     } else if (isEditorView) {
       // Dash border indicator in editor view
@@ -2373,7 +2393,13 @@ export function BoardCanvas({
       ctx.strokeStyle = 'rgba(99, 102, 241, 0.35)';
       ctx.lineWidth = 1;
       ctx.setLineDash([5, 5]);
-      ctx.strokeRect(x, y, sheet.width, sheet.height);
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(x, y, sheet.width, sheet.height, 6);
+      } else {
+        ctx.rect(x, y, sheet.width, sheet.height);
+      }
+      ctx.stroke();
       ctx.restore();
     }
 
@@ -2567,24 +2593,31 @@ export function BoardCanvas({
         ctx.translate(view.offsetX, view.offsetY);
         ctx.scale(view.scale, view.scale);
 
-        // Page Shadow
+        // Page Drop Shadow (crisp, multi-layered simulated shadow that scales beautifully without pixelation)
         ctx.save();
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
-        ctx.shadowBlur = 15;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 4;
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(activeSheetObj.x, activeSheetObj.y, activeSheetObj.width, activeSheetObj.height, 4);
-        } else {
-          ctx.rect(activeSheetObj.x, activeSheetObj.y, activeSheetObj.width, activeSheetObj.height);
-        }
-        ctx.fill();
+        const shadowLayers = [
+          { xOff: 1, yOff: 3, blur: 4, alpha: 0.04 },
+          { xOff: 3, yOff: 8, blur: 12, alpha: 0.06 },
+          { xOff: 6, yOff: 16, blur: 24, alpha: 0.08 }
+        ];
+        shadowLayers.forEach(sl => {
+          ctx.fillStyle = `rgba(0, 0, 0, ${sl.alpha})`;
+          ctx.beginPath();
+          const r = 6 + sl.blur / 2;
+          const sx = activeSheetObj.x + sl.xOff - sl.blur / 2;
+          const sy = activeSheetObj.y + sl.yOff - sl.blur / 2;
+          const sw = activeSheetObj.width + sl.blur;
+          const sh = activeSheetObj.height + sl.blur;
+          if (ctx.roundRect) {
+            ctx.roundRect(sx, sy, sw, sh, r);
+          } else {
+            ctx.rect(sx, sy, sw, sh);
+          }
+          ctx.fill();
+        });
         ctx.restore();
 
-        // Draw page grid, border, header, and footer templates
+        // Draw page background, grid, border, header, and footer templates
         drawSheetBackgroundAndLayout(ctx, activeSheetObj, activeIdx, sheets.length, true);
 
         ctx.restore();
@@ -2624,7 +2657,7 @@ export function BoardCanvas({
     }
 
     ctx.restore();
-  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout, redrawTrigger]);
+  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout, redrawTrigger, canvasSize]);
 
   // Schedule canvas redraw via rAF instead of blocking synchronously
   useLayoutEffect(() => {
@@ -4333,7 +4366,7 @@ export function BoardCanvas({
       // Tool shortcuts
       const toolMap: Record<string, Tool> = {
         'p': 'pen', 'h': 'highlighter', 'e': 'eraser', 'l': 'line', 'r': 'rect', 'c': 'circle',
-        'y': 'triangle', 'a': 'arrow', 't': 'text', 's': 'select', 'v': 'select',
+        'y': 'triangle', 'a': 'arrow', 't': 'text', 's': 'select', 'v': 'select', 'n': 'sticky',
       };
       if (canDrawLocal && !e.ctrlKey && !e.metaKey && toolMap[e.key.toLowerCase()]) {
         setTool(toolMap[e.key.toLowerCase()]);
@@ -4866,6 +4899,8 @@ export function BoardCanvas({
     { id: 'highlighter', icon: <Highlighter className="w-4 h-4" />, label: 'Highlighter', key: 'H' },
     { id: 'eraser', icon: <Eraser className="w-4 h-4" />, label: 'Eraser', key: 'E' },
     { id: 'line', icon: <Minus className="w-4 h-4" />, label: 'Line / Connector', key: 'L' },
+    { id: 'text', icon: <Type className="w-4 h-4" />, label: 'Text Box', key: 'T' },
+    { id: 'sticky', icon: <StickyNote className="w-4 h-4" />, label: 'Sticky Note', key: 'N' },
     { id: 'image', icon: <ImageIcon className="w-4 h-4" />, label: 'Image / Photo', key: 'I' },
   ];
 
@@ -5039,7 +5074,7 @@ export function BoardCanvas({
             <button
               onClick={handleZoomReset}
               className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer"
-              title="Reset View"
+              title={isSheetsMode ? "Fit Page to Screen" : "Reset View"}
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -6912,7 +6947,7 @@ export function BoardCanvas({
                   onClick={() => { handleZoomReset(); setContextMenu(null); }}
                   className="w-full text-start px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 hover:text-white text-zinc-300 transition-all cursor-pointer flex items-center gap-2 text-xs font-medium"
                 >
-                  <RotateCcw className="w-3.5 h-3.5 text-zinc-400" /><span>Reset Zoom</span>
+                  <RotateCcw className="w-3.5 h-3.5 text-zinc-400" /><span>{isSheetsMode ? "Fit Page to Screen" : "Reset Zoom"}</span>
                 </button>
 
                 <button
