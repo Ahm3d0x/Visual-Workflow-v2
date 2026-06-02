@@ -2194,6 +2194,28 @@ export function BoardCanvas({
 
         if (toolInUse === 'rect' || toolInUse === 'flow-process') {
           ctx.rect(px, py, pw, ph);
+        } else if (toolInUse === 'sticky') {
+          ctx.fillStyle = fillColor || '#fef08a';
+          ctx.globalAlpha = opacity * 0.7;
+          if (ctx.roundRect) {
+            ctx.roundRect(px, py, pw, ph, 8);
+          } else {
+            ctx.rect(px, py, pw, ph);
+          }
+          ctx.fill();
+          ctx.strokeStyle = '#eab308';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        } else if (toolInUse === 'text') {
+          ctx.strokeStyle = textBorderColor || 'rgba(99, 102, 241, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 4]);
+          if (ctx.roundRect) {
+            ctx.roundRect(px, py, pw, ph, textBorderRadius || 4);
+          } else {
+            ctx.rect(px, py, pw, ph);
+          }
+          ctx.stroke();
         } else if (toolInUse === 'rounded-rect' || toolInUse === 'flow-terminator') {
           const r = toolInUse === 'flow-terminator' ? ph / 2 : 8;
           if (ctx.roundRect) {
@@ -2295,7 +2317,7 @@ export function BoardCanvas({
     }
 
     ctx.restore();
-  }, [color, fillColor, strokeWidth, tool, useFill, opacity, view, arrowType, arrowheadStart, arrowheadEnd]);
+  }, [color, fillColor, strokeWidth, tool, useFill, opacity, view, arrowType, arrowheadStart, arrowheadEnd, textBorderColor, textBorderRadius]);
 
   /* ─── Canvas size on mount ─── */
   useEffect(() => {
@@ -2689,20 +2711,6 @@ export function BoardCanvas({
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
-      if (tool === 'text' || tool === 'sticky') {
-        setTimeout(() => {
-          setTextInput({
-            active: true,
-            x,
-            y,
-            clientX,
-            clientY,
-            value: '',
-          });
-          setEditingStrokeId(null);
-        }, 0);
-        return;
-      }
     }
 
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -2733,19 +2741,6 @@ export function BoardCanvas({
           offsetY: view.offsetY,
         }
       };
-      return;
-    }
-
-    if (tool === 'text' || tool === 'sticky') {
-      setTextInput({
-        active: true,
-        x: x, // canvas x
-        y: y, // canvas y
-        clientX: e.clientX,
-        clientY: e.clientY,
-        value: '',
-      });
-      setEditingStrokeId(null);
       return;
     }
 
@@ -3257,6 +3252,95 @@ export function BoardCanvas({
     }
 
     const currentStrokeTool = activeDrawingToolRef.current;
+
+    if (currentStrokeTool === 'text' || currentStrokeTool === 'sticky') {
+      const p1 = currentPenRef.current[0];
+      const p2 = currentPenRef.current[1] || { x: p1.x, y: p1.y };
+      const dx = Math.abs(p2.x - p1.x);
+      const dy = Math.abs(p2.y - p1.y);
+      const minX = Math.min(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      
+      let width = dx;
+      let height = dy;
+      
+      const isSticky = currentStrokeTool === 'sticky';
+      
+      if (width < 10 && height < 10) {
+        width = isSticky ? 160 : 220;
+        height = isSticky ? 160 : 80;
+      } else {
+        if (isSticky) {
+          const size = Math.max(120, Math.max(width, height));
+          width = size;
+          height = size;
+        } else {
+          width = Math.max(100, width);
+          height = Math.max(38, height);
+        }
+      }
+
+      const newStrokeId = generateUUID();
+      const newStroke: BoardStroke = {
+        id: newStrokeId,
+        tool: currentStrokeTool,
+        points: [{ x: minX, y: minY }, { x: minX + width, y: minY + height }],
+        color: isSticky ? '#18181b' : color,
+        fillColor: isSticky ? fillColor || '#fef08a' : undefined,
+        width: strokeWidth,
+        text: '',
+        fontSize: isSticky ? 13 : fontSize,
+        fill: isSticky ? true : false,
+        opacity,
+        fontFamily: isSticky ? 'sans-serif' : fontFamily,
+        fontWeight: isSticky ? 'bold' : fontWeight,
+        textAlign: isSticky ? 'center' : textAlign,
+        textStyle: isSticky ? 'normal' : textStyle,
+        textDecoration: isSticky ? 'none' : textDecoration,
+        textBgColor: isSticky ? undefined : (textBgColor || undefined),
+        textBorderColor: isSticky ? undefined : (textBorderColor || undefined),
+        textBorderWidth: isSticky ? undefined : textBorderWidth,
+        textBorderStyle: isSticky ? undefined : textBorderStyle,
+        textPadding: isSticky ? undefined : textPadding,
+        textBorderRadius: isSticky ? undefined : textBorderRadius,
+        textLineHeight: isSticky ? undefined : textLineHeight,
+      };
+
+      setUndoStack((prev) => [...prev, strokes]);
+      setRedoStack([]);
+      const newStrokes = [...strokes, newStroke];
+      setStrokes(newStrokes);
+      persistStrokes(newStrokes);
+
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = minX * view.scale + rect.left + view.offsetX;
+        const clientY = minY * view.scale + rect.top + view.offsetY;
+        
+        setTextInput({
+          active: true,
+          x: minX,
+          y: minY,
+          clientX,
+          clientY,
+          value: '',
+        });
+        setEditingStrokeId(newStrokeId);
+      }
+
+      currentPenRef.current = [];
+      pointerRef.current = { ...pointerRef.current, down: false };
+      setCurrentPen([]);
+      setPointer((p) => ({ ...p, down: false }));
+      
+      const overlay = overlayRef.current;
+      if (overlay) {
+        const ctx = overlay.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
+      }
+      return;
+    }
     const newStroke: BoardStroke = {
       id: generateUUID(),
       tool: currentStrokeTool as BoardStroke['tool'],
@@ -5562,7 +5646,13 @@ export function BoardCanvas({
                   }}
                 >
                   <textarea
-                    autoFocus
+                    ref={(el) => {
+                      if (el) {
+                        el.focus();
+                        const len = el.value.length;
+                        el.setSelectionRange(len, len);
+                      }
+                    }}
                     dir="auto"
                     value={textInput.value}
                     onChange={(e) => {
