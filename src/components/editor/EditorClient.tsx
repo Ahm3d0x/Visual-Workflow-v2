@@ -43,6 +43,7 @@ import { AIAssistantPanel } from './AIAssistantPanel';
 import { ShareDialog } from './ShareDialog';
 import { useWindowSize } from '@/hooks/useWindowSize';
 import { MobileEditorView } from './MobileEditorView';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface EditorClientProps {
   workflow: {
@@ -2104,7 +2105,12 @@ function EditorInner({
 export function EditorClient(props: EditorClientProps) {
   return (
     <ReactFlowProvider>
-      <EditorInner {...props} />
+      <ErrorBoundary
+        fallbackTitle="Editor crashed"
+        fallbackMessage="The workflow editor encountered an error. Click retry to recover."
+      >
+        <EditorInner {...props} />
+      </ErrorBoundary>
     </ReactFlowProvider>
   );
 }

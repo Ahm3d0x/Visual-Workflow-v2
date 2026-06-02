@@ -6,6 +6,7 @@ import { Handle, Position } from '@xyflow/react';
 import { PenLine, Maximize2, MessageSquare, Users } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { BoardCanvas } from './BoardCanvas';
+import { ErrorBoundary } from '@/components/editor/ErrorBoundary';
 
 export const imageCache = new Map<string, HTMLImageElement>();
 
@@ -486,15 +487,20 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
 
       {/* Full Board Modal */}
       {isOpen && createPortal(
-        <BoardCanvas
-          nodeId={id}
-          label={data.label || 'Board'}
-          initialStrokes={(data.boardStrokes as BoardStroke[]) || []}
-          initialBg={data.boardBg as string | undefined}
-          initialSheets={data.boardSheets as any[] | undefined}
-          initialIsSheetsMode={data.isSheetsMode as boolean | undefined}
-          onClose={() => setIsOpen(false)}
-        />,
+        <ErrorBoundary
+          fallbackTitle="Board crashed"
+          fallbackMessage="The whiteboard encountered an error. Click retry to recover your work."
+        >
+          <BoardCanvas
+            nodeId={id}
+            label={data.label || 'Board'}
+            initialStrokes={(data.boardStrokes as BoardStroke[]) || []}
+            initialBg={data.boardBg as string | undefined}
+            initialSheets={data.boardSheets as any[] | undefined}
+            initialIsSheetsMode={data.isSheetsMode as boolean | undefined}
+            onClose={() => setIsOpen(false)}
+          />
+        </ErrorBoundary>,
         document.body
       )}
     </>

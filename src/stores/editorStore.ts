@@ -208,8 +208,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   pushToUndo: () => {
     const snapshot = {
-      nodes: JSON.parse(JSON.stringify(get().nodes)),
-      edges: JSON.parse(JSON.stringify(get().edges)),
+      nodes: structuredClone(get().nodes),
+      edges: structuredClone(get().edges),
     };
     const undoStack = [snapshot, ...get().undoStack].slice(0, 50);
     set({ undoStack, redoStack: [] });
@@ -396,8 +396,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const [prev, ...rest] = undoStack;
     const currentSnapshot = {
-      nodes: JSON.parse(JSON.stringify(nodes)),
-      edges: JSON.parse(JSON.stringify(edges)),
+      nodes: structuredClone(nodes),
+      edges: structuredClone(edges),
     };
 
     set({
@@ -415,8 +415,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const [next, ...rest] = redoStack;
     const currentSnapshot = {
-      nodes: JSON.parse(JSON.stringify(nodes)),
-      edges: JSON.parse(JSON.stringify(edges)),
+      nodes: structuredClone(nodes),
+      edges: structuredClone(edges),
     };
 
     set({

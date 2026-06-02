@@ -119,6 +119,15 @@ export function BoardCanvas({
   const wrapRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /* ── Performance: rAF + hot-path refs ── */
+  const rafIdRef = useRef<number>(0);
+  const pointerRef = useRef<PointerState>({ down: false, x: 0, y: 0, startX: 0, startY: 0 });
+  const currentPenRef = useRef<{ x: number; y: number }[]>([]);
+  const overlayRafIdRef = useRef<number>(0);
+  const pendingOverlayPtsRef = useRef<{ x: number; y: number }[] | null>(null);
+  // During drag/resize/rotate, accumulate delta in ref and only commit to state on pointerUp
+  const dragDeltaRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+
   /* ── State ── */
   const [redrawTrigger, setRedrawTrigger] = useState(0);
   const [tool, setTool] = useState<Tool>('pen');
@@ -143,6 +152,7 @@ export function BoardCanvas({
   const [strokes, setStrokes] = useState<BoardStroke[]>(initialStrokes);
   const [undoStack, setUndoStack] = useState<BoardStroke[][]>([]);
   const [redoStack, setRedoStack] = useState<BoardStroke[][]>([]);
+  // pointer & currentPen are now ref-based for hot-path perf; state kept only for UI reads
   const [pointer, setPointer] = useState<PointerState>({ down: false, x: 0, y: 0, startX: 0, startY: 0 });
   const [currentPen, setCurrentPen] = useState<{ x: number; y: number }[]>([]);
   const [textInput, setTextInput] = useState<TextInput>({ active: false, x: 0, y: 0, clientX: 0, clientY: 0, value: '' });
@@ -2434,8 +2444,21 @@ export function BoardCanvas({
     ctx.restore();
   }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout, redrawTrigger]);
 
+  // Schedule canvas redraw via rAF instead of blocking synchronously
   useLayoutEffect(() => {
-    renderCanvasMain();
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+    }
+    rafIdRef.current = requestAnimationFrame(() => {
+      renderCanvasMain();
+      rafIdRef.current = 0;
+    });
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = 0;
+      }
+    };
   }, [renderCanvasMain]);
 
   /* ─── Pointer Input Observers ─── */
@@ -2607,6 +2630,9 @@ export function BoardCanvas({
 
     setPointer({ down: true, x: startX, y: startY, startX, startY });
     setCurrentPen([{ x: startX, y: startY }]);
+    // Sync refs for hot-path perf (onPointerMove reads from refs)
+    pointerRef.current = { down: true, x: startX, y: startY, startX, startY };
+    currentPenRef.current = [{ x: startX, y: startY }];
     renderOverlay([{ x: startX, y: startY }]);
   }, [tool, toCanvasCoords, strokes, selectedStrokeIds, hitTestStroke, hitTestSelectionHandle, getCombinedBoundingBox, snapToGrid, gridSize, view, color, fillColor, opacity, fontSize, fontFamily, fontWeight, textAlign, arrowType, arrowheadStart, arrowheadEnd, renderOverlay, closeAllFloatingMenus, textInput]);
 
@@ -2799,18 +2825,18 @@ export function BoardCanvas({
       return;
     }
 
-    if (pointer.down) {
+    if (pointerRef.current.down) {
       let drawX = x;
       let drawY = y;
       const currentStrokeTool = activeDrawingToolRef.current;
 
       // Angle snapping (constrained drawing) when holding Shift key for lines and arrows
       if ((currentStrokeTool === 'line' || currentStrokeTool === 'arrow') && e.shiftKey) {
-        let cx = pointer.startX;
-        let cy = pointer.startY;
+        let cx = pointerRef.current.startX;
+        let cy = pointerRef.current.startY;
 
-        if (currentStrokeTool === 'line' && arrowType === 'curved-multi' && currentPen.length > 0) {
-          const anchor = currentPen.length >= 2 ? currentPen[currentPen.length - 2] : currentPen[0];
+        if (currentStrokeTool === 'line' && arrowType === 'curved-multi' && currentPenRef.current.length > 0) {
+          const anchor = currentPenRef.current.length >= 2 ? currentPenRef.current[currentPenRef.current.length - 2] : currentPenRef.current[0];
           cx = anchor.x;
           cy = anchor.y;
         }
@@ -2841,21 +2867,21 @@ export function BoardCanvas({
 
       let newPts: { x: number; y: number }[] = [];
       if (currentStrokeTool === 'pen' || currentStrokeTool === 'highlighter' || currentStrokeTool === 'eraser') {
-        newPts = [...currentPen, { x: drawX, y: drawY }];
+        newPts = [...currentPenRef.current, { x: drawX, y: drawY }];
       } else if (currentStrokeTool === 'line' && arrowType === 'curved-multi') {
-        const last = currentPen[currentPen.length - 1];
+        const last = currentPenRef.current[currentPenRef.current.length - 1];
         if (last) {
           const dist = Math.hypot(drawX - last.x, drawY - last.y);
           if (dist > 40) {
-            newPts = [...currentPen, { x: drawX, y: drawY }];
+            newPts = [...currentPenRef.current, { x: drawX, y: drawY }];
           } else {
-            newPts = [...currentPen.slice(0, -1), { x: drawX, y: drawY }];
+            newPts = [...currentPenRef.current.slice(0, -1), { x: drawX, y: drawY }];
           }
         } else {
           newPts = [{ x: drawX, y: drawY }];
         }
       } else {
-        newPts = [{ x: pointer.startX, y: pointer.startY }, { x: drawX, y: drawY }];
+        newPts = [{ x: pointerRef.current.startX, y: pointerRef.current.startY }, { x: drawX, y: drawY }];
       }
 
       if (snapToGrid && !['pen', 'highlighter', 'eraser', 'line'].includes(currentStrokeTool) && !e.shiftKey) {
@@ -2866,9 +2892,21 @@ export function BoardCanvas({
         }
       }
 
-      setCurrentPen(newPts);
-      renderOverlay(newPts);
-      setPointer((p) => ({ ...p, x: drawX, y: drawY }));
+      // Update refs immediately (no React re-render)
+      currentPenRef.current = newPts;
+      pointerRef.current = { ...pointerRef.current, x: drawX, y: drawY };
+
+      // Schedule overlay render via rAF (coalesce multiple events per frame)
+      pendingOverlayPtsRef.current = newPts;
+      if (!overlayRafIdRef.current) {
+        overlayRafIdRef.current = requestAnimationFrame(() => {
+          overlayRafIdRef.current = 0;
+          if (pendingOverlayPtsRef.current) {
+            renderOverlay(pendingOverlayPtsRef.current);
+            pendingOverlayPtsRef.current = null;
+          }
+        });
+      }
 
       // Throttle broadcast
       const now = Date.now();
@@ -2915,7 +2953,7 @@ export function BoardCanvas({
         }
       }
     }
-  }, [tool, selectedStrokeIds, pointer.down, currentPen, snapToGrid, gridSize, toCanvasCoords, renderOverlay, getCombinedBoundingBox, currentUserId, userName, userColor, color, strokeWidth, useFill, fillColor, opacity, arrowType, arrowheadStart, arrowheadEnd]);
+  }, [tool, selectedStrokeIds, snapToGrid, gridSize, toCanvasCoords, renderOverlay, getCombinedBoundingBox, currentUserId, userName, userColor, color, strokeWidth, useFill, fillColor, opacity, arrowType, arrowheadStart, arrowheadEnd]);
 
   const onPointerUp = useCallback(() => {
     const drag = dragStartRef.current;
@@ -2974,19 +3012,22 @@ export function BoardCanvas({
       return;
     }
 
-    if (!pointer.down || currentPen.length < 1) {
+    if (!pointerRef.current.down || currentPenRef.current.length < 1) {
+      pointerRef.current = { ...pointerRef.current, down: false };
       setPointer((p) => ({ ...p, down: false }));
       return;
     }
 
     // Discard single-point lines/arrows
-    if ((tool === 'line' || tool === 'arrow') && currentPen.length < 2) {
+    if ((tool === 'line' || tool === 'arrow') && currentPenRef.current.length < 2) {
+      pointerRef.current = { ...pointerRef.current, down: false };
       setPointer((p) => ({ ...p, down: false }));
       const overlay = overlayRef.current;
       if (overlay) {
         const ctx = overlay.getContext('2d');
         if (ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
       }
+      currentPenRef.current = [];
       setCurrentPen([]);
       return;
     }
@@ -2995,7 +3036,7 @@ export function BoardCanvas({
     const newStroke: BoardStroke = {
       id: generateUUID(),
       tool: currentStrokeTool as BoardStroke['tool'],
-      points: currentPen,
+      points: currentPenRef.current,
       color,
       width: strokeWidth,
       fill: useFill,
@@ -3026,6 +3067,12 @@ export function BoardCanvas({
       });
     }
 
+    // Cancel any pending overlay rAF
+    if (overlayRafIdRef.current) {
+      cancelAnimationFrame(overlayRafIdRef.current);
+      overlayRafIdRef.current = 0;
+    }
+
     // Clear overlay
     const overlay = overlayRef.current;
     if (overlay) {
@@ -3033,9 +3080,12 @@ export function BoardCanvas({
       if (ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
     }
 
+    // Sync refs and state
+    currentPenRef.current = [];
+    pointerRef.current = { ...pointerRef.current, down: false };
     setCurrentPen([]);
     setPointer((p) => ({ ...p, down: false }));
-  }, [pointer.down, currentPen, tool, color, strokeWidth, useFill, fillColor, opacity, arrowType, arrowheadStart, arrowheadEnd, strokes, selectedStrokeIds, regionSelectStart, regionSelectCurrent, getStrokeBoundingBox, persistStrokes, currentUserId]);
+  }, [tool, color, strokeWidth, useFill, fillColor, opacity, arrowType, arrowheadStart, arrowheadEnd, strokes, selectedStrokeIds, regionSelectStart, regionSelectCurrent, getStrokeBoundingBox, persistStrokes, currentUserId]);
 
   /* ─── Text commit ─── */
   const commitText = useCallback(() => {
