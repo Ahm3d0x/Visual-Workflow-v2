@@ -101,6 +101,7 @@ function EditorInner({
     setPendingConnection,
     togglePanel,
     preferences,
+    setUserRole,
   } = useEditorStore();
 
   // Dynamically map edge types and animations based on user settings
@@ -219,6 +220,11 @@ function EditorInner({
       active = false;
     };
   }, [userId, userRole, supabase]);
+
+  // Sync workspace role to global editor store
+  useEffect(() => {
+    setUserRole(userRole);
+  }, [userRole, setUserRole]);
 
   // Sync and fetch all comments from Supabase on workflow mount
   useEffect(() => {

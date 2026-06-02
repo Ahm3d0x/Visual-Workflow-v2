@@ -125,6 +125,10 @@ export interface EditorState {
   setComments: (comments: EditorComment[]) => void;
   addComment: (comment: EditorComment) => void;
   updateComment: (id: string, updates: Partial<EditorComment>) => void;
+
+  // User Role
+  userRole: string | null;
+  setUserRole: (role: string | null) => void;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -156,6 +160,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   pendingConnection: null,
   setPendingConnection: (pendingConnection) => set({ pendingConnection }),
+  userRole: null,
+  setUserRole: (userRole) => set({ userRole }),
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),

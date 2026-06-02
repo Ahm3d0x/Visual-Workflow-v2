@@ -9,7 +9,7 @@ import {
   RotateCcw, PaintBucket, ChevronUp, Save, Users, Copy, Clipboard,
   Settings, Layers, StickyNote, Highlighter, Grid, AlignLeft, AlignCenter,
   AlignRight, Move, Check, FileDown, Plus, ChevronLeft, ChevronRight,
-  Image as ImageIcon
+  Image as ImageIcon, UserMinus
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { playClickSound, playPopSound, playSweepSound } from '@/lib/audioSfx';
@@ -170,7 +170,25 @@ export function BoardCanvas({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number; strokeId?: string; strokeTool?: string } | null>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
   
-  const [collaborators, setCollaborators] = useState<Record<string, { x: number; y: number; color: string; name: string }>>({});
+  const userRole = useEditorStore((s) => s.userRole) || 'viewer';
+  const [canDrawLocal, setCanDrawLocal] = useState<boolean>(true);
+  const [followingUserId, setFollowingUserId] = useState<string | null>(null);
+  const [showCollaboratorsMenu, setShowCollaboratorsMenu] = useState<boolean>(false);
+  const followingUserIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    followingUserIdRef.current = followingUserId;
+  }, [followingUserId]);
+
+  const [collaborators, setCollaborators] = useState<Record<string, {
+    x: number;
+    y: number;
+    color: string;
+    name: string;
+    role?: string;
+    view?: ViewTransform;
+    canDraw?: boolean;
+  }>>({});
   const [remoteDrawings, setRemoteDrawings] = useState<Record<string, BoardStroke>>({});
   const [currentUserId, setCurrentUserId] = useState<string>('collaborator');
   const [userName, setUserName] = useState<string>('Collaborator');
@@ -239,6 +257,16 @@ export function BoardCanvas({
   const updateNode = useEditorStore((s) => s.updateNode);
   const supabase = createClient();
   const channelRef = useRef<any>(null);
+
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  const canDrawLocalRef = useRef(canDrawLocal);
+  useEffect(() => {
+    canDrawLocalRef.current = canDrawLocal;
+  }, [canDrawLocal]);
 
   const closeAllFloatingMenus = useCallback(() => {
     setShowLineMenu(false);
@@ -350,17 +378,87 @@ export function BoardCanvas({
       config: { broadcast: { self: false } }
     });
 
+    ch.on('presence', { event: 'sync' }, () => {
+      const presenceState = ch.presenceState();
+      
+      setCollaborators((prev) => {
+        const nextCollaborators: Record<string, {
+          x: number;
+          y: number;
+          color: string;
+          name: string;
+          role?: string;
+          view?: ViewTransform;
+          canDraw?: boolean;
+        }> = {};
+
+        Object.keys(presenceState).forEach((key) => {
+          const presenceList = presenceState[key];
+          presenceList.forEach((presence: any) => {
+            if (presence.userId !== currentUserId) {
+              const existing = prev[presence.userId] || { x: 0, y: 0 };
+              nextCollaborators[presence.userId] = {
+                x: existing.x,
+                y: existing.y,
+                color: presence.color || '#ec4899',
+                name: presence.name || presence.fullName || 'Collaborator',
+                role: presence.role,
+                view: presence.view,
+                canDraw: presence.canDraw !== false,
+              };
+            }
+          });
+        });
+
+        if (followingUserIdRef.current && !nextCollaborators[followingUserIdRef.current]) {
+          setTimeout(() => {
+            setFollowingUserId(null);
+            useDialogStore.getState().showNotification('User left. Stopped tracking.', 'info', 3000);
+          }, 0);
+        }
+
+        return nextCollaborators;
+      });
+    });
+
+    ch.on('broadcast', { event: 'viewport_sync' }, ({ payload }) => {
+      if (payload?.userId === followingUserIdRef.current && payload?.view) {
+        setView(payload.view);
+      }
+    });
+
+    ch.on('broadcast', { event: 'toggle_drawing' }, ({ payload }) => {
+      if (payload?.userId === currentUserId) {
+        setCanDrawLocal(payload.canDraw);
+        if (!payload.canDraw) {
+          useDialogStore.getState().showNotification('Your drawing permission has been disabled by the owner', 'warning', 4000);
+          setTool('select');
+        } else {
+          useDialogStore.getState().showNotification('Your drawing permission has been enabled by the owner', 'success', 3000);
+        }
+      }
+    });
+
+    ch.on('broadcast', { event: 'kick_user' }, ({ payload }) => {
+      if (payload?.userId === currentUserId) {
+        useDialogStore.getState().showNotification('You have been kicked from the board by the owner', 'error', 5000);
+        onCloseRef.current();
+      }
+    });
+
     ch.on('broadcast', { event: 'pointer_sync' }, ({ payload }) => {
       if (!payload?.userId) return;
-      setCollaborators((prev) => ({
-        ...prev,
-        [payload.userId]: {
-          x: payload.x,
-          y: payload.y,
-          color: payload.color || '#ec4899',
-          name: payload.name || 'User',
-        },
-      }));
+      setCollaborators((prev) => {
+        const existing = prev[payload.userId] || { name: 'Collaborator', color: '#ec4899' };
+        return {
+          ...prev,
+          [payload.userId]: {
+            ...existing,
+            x: payload.x,
+            y: payload.y,
+          },
+        };
+      });
       if (payload.drawing) {
         setRemoteDrawings((prev) => ({
           ...prev,
@@ -378,10 +476,17 @@ export function BoardCanvas({
 
     ch.on('broadcast', { event: 'cursor' }, ({ payload }) => {
       if (payload?.userId) {
-        setCollaborators((prev) => ({
-          ...prev,
-          [payload.userId]: { x: payload.x, y: payload.y, color: payload.color || '#6366f1', name: payload.name || 'User' }
-        }));
+        setCollaborators((prev) => {
+          const existing = prev[payload.userId] || { name: 'Collaborator', color: '#ec4899' };
+          return {
+            ...prev,
+            [payload.userId]: {
+              ...existing,
+              x: payload.x,
+              y: payload.y,
+            },
+          };
+        });
       }
     });
 
@@ -443,12 +548,80 @@ export function BoardCanvas({
       }
     });
 
-    ch.subscribe();
+    ch.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await ch.track({
+          userId: currentUserId,
+          name: userName,
+          color: userColor,
+          role: userRole,
+          canDraw: canDrawLocalRef.current,
+        });
+      }
+    });
+
     channelRef.current = ch;
     return () => {
       supabase.removeChannel(ch);
     };
-  }, [nodeId, supabase]);
+  }, [nodeId, supabase, currentUserId, userName, userColor, userRole]);
+
+  // Sync presence state when credentials or drawing rights change
+  useEffect(() => {
+    const ch = channelRef.current;
+    if (ch && ch.state === 'joined') {
+      ch.track({
+        userId: currentUserId,
+        name: userName,
+        color: userColor,
+        role: userRole,
+        canDraw: canDrawLocal,
+      });
+    }
+  }, [canDrawLocal, currentUserId, userName, userColor, userRole]);
+
+  const stopFollowing = useCallback(() => {
+    if (followingUserIdRef.current) {
+      setFollowingUserId(null);
+    }
+  }, []);
+
+  const handleKickUser = useCallback((targetId: string) => {
+    if (userRole !== 'owner') return;
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'kick_user',
+        payload: { userId: targetId }
+      });
+    }
+  }, [userRole]);
+
+  const handleToggleDrawing = useCallback((targetId: string, currentVal: boolean) => {
+    if (userRole !== 'owner') return;
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'toggle_drawing',
+        payload: { userId: targetId, canDraw: !currentVal }
+      });
+    }
+  }, [userRole]);
+
+  const lastViewportBroadcastTimeRef = useRef(0);
+  useEffect(() => {
+    if (!followingUserId && channelRef.current?.state === 'joined') {
+      const now = Date.now();
+      if (now - lastViewportBroadcastTimeRef.current > 40) {
+        lastViewportBroadcastTimeRef.current = now;
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'viewport_sync',
+          payload: { userId: currentUserId, view }
+        });
+      }
+    }
+  }, [view, currentUserId, followingUserId]);
 
   /* ─── Persist strokes to node data (debounced) ─── */
   const persistStrokesRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2266,6 +2439,7 @@ export function BoardCanvas({
     const isSelectBgPan = tool === 'select' && e.button === 0 && !hit;
 
     if (isMiddleClick || isSpacePan || isSelectBgPan) {
+      stopFollowing();
       setIsPanning(true);
       dragStartRef.current = {
         mode: 'pan',
@@ -3066,6 +3240,7 @@ export function BoardCanvas({
 
   /* ─── Undo / Redo ─── */
   const handleUndo = useCallback(() => {
+    if (!canDrawLocal) return;
     if (undoStack.length === 0) return;
     const prev = undoStack[undoStack.length - 1];
     setRedoStack((r) => [...r, strokes]);
@@ -3073,9 +3248,10 @@ export function BoardCanvas({
     setUndoStack((u) => u.slice(0, -1));
     persistStrokes(prev);
     playClickSound();
-  }, [undoStack, strokes, persistStrokes]);
+  }, [undoStack, strokes, persistStrokes, canDrawLocal]);
 
   const handleRedo = useCallback(() => {
+    if (!canDrawLocal) return;
     if (redoStack.length === 0) return;
     const next = redoStack[redoStack.length - 1];
     setUndoStack((u) => [...u, strokes]);
@@ -3083,10 +3259,11 @@ export function BoardCanvas({
     setRedoStack((r) => r.slice(0, -1));
     persistStrokes(next);
     playClickSound();
-  }, [redoStack, strokes, persistStrokes]);
+  }, [redoStack, strokes, persistStrokes, canDrawLocal]);
 
   /* ─── Clear all ─── */
   const handleClearAll = useCallback(async () => {
+    if (!canDrawLocal) return;
     const confirmed = await useDialogStore.getState().showConfirm(
       'Clear Board',
       'Are you sure you want to clear all drawings on this board?',
@@ -3101,10 +3278,11 @@ export function BoardCanvas({
       channelRef.current.send({ type: 'broadcast', event: 'strokes_clear', payload: {} });
     }
     playSweepSound();
-  }, [strokes, persistStrokes]);
+  }, [strokes, persistStrokes, canDrawLocal]);
 
   /* ─── Delete selected strokes ─── */
   const handleDeleteSelected = useCallback(() => {
+    if (!canDrawLocal) return;
     if (selectedStrokeIds.length === 0) return;
     const newStrokes = strokes.filter((s) => !selectedStrokeIds.includes(s.id));
     setUndoStack((prev) => [...prev, strokes]);
@@ -3118,7 +3296,7 @@ export function BoardCanvas({
     }
     setSelectedStrokeIds([]);
     playPopSound();
-  }, [selectedStrokeIds, strokes, persistStrokes]);
+  }, [selectedStrokeIds, strokes, persistStrokes, canDrawLocal]);
 
   // Clipboard operations
   const handleCopyStrokes = useCallback(() => {
@@ -3129,6 +3307,7 @@ export function BoardCanvas({
   }, [selectedStrokeIds, strokes]);
 
   const handleCutStrokes = useCallback(() => {
+    if (!canDrawLocal) return;
     if (selectedStrokeIds.length === 0) return;
     const selected = strokes.filter(s => selectedStrokeIds.includes(s.id));
     setCopiedStrokes(JSON.parse(JSON.stringify(selected)));
@@ -3145,9 +3324,10 @@ export function BoardCanvas({
     }
     setSelectedStrokeIds([]);
     useDialogStore.getState().showNotification(`${selected.length} shape(s) cut`, 'success', 2000);
-  }, [selectedStrokeIds, strokes, persistStrokes]);
+  }, [selectedStrokeIds, strokes, persistStrokes, canDrawLocal]);
 
   const handlePasteStrokes = useCallback((clientX: number, clientY: number) => {
+    if (!canDrawLocal) return;
     if (copiedStrokes.length === 0) return;
     const { x: flowX, y: flowY } = toCanvasCoords(clientX, clientY);
 
@@ -3208,9 +3388,10 @@ export function BoardCanvas({
 
     setSelectedStrokeIds(newStrokesToAdd.map(s => s.id));
     useDialogStore.getState().showNotification(`${newStrokesToAdd.length} shape(s) pasted`, 'success', 1000);
-  }, [copiedStrokes, toCanvasCoords, strokes, persistStrokes, currentUserId]);
+  }, [copiedStrokes, toCanvasCoords, strokes, persistStrokes, currentUserId, canDrawLocal]);
 
   const handleDuplicateStrokesDirect = useCallback(() => {
+    if (!canDrawLocal) return;
     if (selectedStrokeIds.length === 0) return;
     const selected = strokes.filter(s => selectedStrokeIds.includes(s.id));
     
@@ -3240,7 +3421,7 @@ export function BoardCanvas({
       });
     }
     setSelectedStrokeIds(newStrokesToAdd.map(s => s.id));
-  }, [selectedStrokeIds, strokes, persistStrokes, currentUserId]);
+  }, [selectedStrokeIds, strokes, persistStrokes, currentUserId, canDrawLocal]);
 
   // Layers ordering
   const handleBringToFront = useCallback(() => {
@@ -3655,6 +3836,7 @@ export function BoardCanvas({
 
   /* ─── Shared zoom logic ─── */
   const zoomAt = useCallback((factor: number, clientX?: number, clientY?: number) => {
+    stopFollowing();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -3834,6 +4016,7 @@ export function BoardCanvas({
 
       // Arrow keys nudge selected elements
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && selectedStrokeIds.length > 0) {
+        if (!canDrawLocal) return;
         e.preventDefault();
         const step = e.shiftKey ? 10 : 2;
         let dx = 0, dy = 0;
@@ -3856,12 +4039,13 @@ export function BoardCanvas({
         'p': 'pen', 'h': 'highlighter', 'e': 'eraser', 'l': 'line', 'r': 'rect', 'c': 'circle',
         'y': 'triangle', 'a': 'arrow', 't': 'text', 's': 'select', 'v': 'select',
       };
-      if (!e.ctrlKey && !e.metaKey && toolMap[e.key.toLowerCase()]) {
+      if (canDrawLocal && !e.ctrlKey && !e.metaKey && toolMap[e.key.toLowerCase()]) {
         setTool(toolMap[e.key.toLowerCase()]);
       }
     };
 
     const onPaste = (e: ClipboardEvent) => {
+      if (!canDrawLocal) return;
       if (textInput.active) return;
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.hasAttribute('contenteditable')) {
         return;
@@ -3947,10 +4131,11 @@ export function BoardCanvas({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('paste', onPaste);
     };
-  }, [textInput.active, selectedStrokeIds, strokes, handleUndo, handleRedo, handleDeleteSelected, handleCopyStrokes, handlePasteStrokes, handleDuplicateStrokesDirect, handleCutStrokes, persistStrokes, handleCloseConfirm, copiedStrokes, insertImage]);
+  }, [textInput.active, selectedStrokeIds, strokes, handleUndo, handleRedo, handleDeleteSelected, handleCopyStrokes, handlePasteStrokes, handleDuplicateStrokesDirect, handleCutStrokes, persistStrokes, handleCloseConfirm, copiedStrokes, insertImage, canDrawLocal, zoomAt]);
 
   /* ─── Double click to edit shape ─── */
   const onDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canDrawLocal) return;
     if (tool !== 'select') return;
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
     
@@ -4021,7 +4206,7 @@ export function BoardCanvas({
         }
       }
     }
-  }, [tool, strokes, hitTestStroke, toCanvasCoords, view]);
+  }, [tool, strokes, hitTestStroke, toCanvasCoords, view, canDrawLocal]);
 
   // Context Menu
   const onContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -4667,19 +4852,99 @@ export function BoardCanvas({
 
           {/* Right: Collaborators + Close */}
           <div className="flex items-center gap-2">
-            {collaboratorList.length > 0 && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800/60 border border-zinc-700/50">
-                <Users className="w-3 h-3 text-zinc-400" />
-                <span className="text-[10px] text-zinc-400 font-semibold">{collaboratorList.length} live</span>
-                <div className="flex -space-x-1.5">
-                  {collaboratorList.slice(0, 4).map(([uid, col]) => (
-                    <div key={uid} className="w-4 h-4 rounded-full border border-zinc-900 shrink-0"
+            <div className="relative">
+              <button
+                onClick={() => setShowCollaboratorsMenu(!showCollaboratorsMenu)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-800/60 hover:bg-zinc-800 border border-zinc-700/50 hover:border-zinc-700 transition-all text-zinc-300 hover:text-white cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-semibold">
+                  {collaboratorList.length > 0 ? `${collaboratorList.length} Live` : 'Collaborators'}
+                </span>
+                <div className="flex -space-x-1">
+                  {collaboratorList.slice(0, 3).map(([uid, col]) => (
+                    <div key={uid} className="w-3.5 h-3.5 rounded-full border border-zinc-950 shrink-0"
                       style={{ backgroundColor: col.color }} title={col.name}
                     />
                   ))}
                 </div>
-              </div>
-            )}
+              </button>
+
+              {showCollaboratorsMenu && (
+                <div className="absolute right-0 top-10 bg-zinc-950 border border-zinc-850 rounded-xl shadow-2xl z-50 overflow-hidden min-w-[280px] p-2 flex flex-col gap-1 text-zinc-200">
+                  <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-zinc-400 border-b border-zinc-850 mb-1">
+                    Live Members ({collaboratorList.length})
+                  </div>
+                  
+                  {collaboratorList.length === 0 ? (
+                    <div className="text-center text-xs text-zinc-500 py-3">No other users online</div>
+                  ) : (
+                    collaboratorList.map(([uid, col]) => {
+                      const isFollowed = followingUserId === uid;
+                      const canDraw = col.canDraw !== false;
+                      
+                      return (
+                        <div key={uid} className="flex items-center justify-between gap-3 p-1.5 rounded-lg hover:bg-zinc-850 transition-colors">
+                          <div className="flex items-center gap-2 overflow-hidden">
+                            <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                              style={{ backgroundColor: col.color }}
+                            >
+                              {col.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-xs font-semibold text-zinc-200 truncate leading-snug">{col.name}</span>
+                              <span className="text-[9px] text-zinc-500 uppercase font-mono leading-none mt-0.5">{col.role || 'collaborator'}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-1 shrink-0">
+                            {/* Follow Button */}
+                            <button
+                              onClick={() => { setFollowingUserId(isFollowed ? null : uid); setShowCollaboratorsMenu(false); }}
+                              className={`h-7 px-2 rounded-lg flex items-center gap-1 transition-all text-[10px] font-bold cursor-pointer ${
+                                isFollowed 
+                                  ? 'bg-fuchsia-500/20 text-fuchsia-400 border border-fuchsia-500/30' 
+                                  : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+                              }`}
+                              title={isFollowed ? 'Stop following' : 'Follow screen'}
+                            >
+                              {isFollowed ? 'Following' : 'Follow'}
+                            </button>
+
+                            {/* Owner Controls */}
+                            {userRole === 'owner' && (
+                              <>
+                                {/* Perm toggle */}
+                                <button
+                                  onClick={() => handleToggleDrawing(uid, canDraw)}
+                                  className={`h-7 w-7 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                                    canDraw 
+                                      ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' 
+                                      : 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                                  }`}
+                                  title={canDraw ? 'Disable drawing rights' : 'Enable drawing rights'}
+                                >
+                                  {canDraw ? <Pen className="w-3.5 h-3.5" /> : <Eraser className="w-3.5 h-3.5" />}
+                                </button>
+                                
+                                {/* Kick Button */}
+                                <button
+                                  onClick={() => handleKickUser(uid)}
+                                  className="h-7 w-7 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center justify-center transition-all cursor-pointer"
+                                  title="Kick user from board"
+                                >
+                                  <UserMinus className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
             <button
               onClick={handleCloseConfirm}
               className="h-8 w-8 rounded-lg flex items-center justify-center hover:bg-zinc-800 text-zinc-400 hover:text-white transition-all cursor-pointer"
@@ -4692,59 +4957,89 @@ export function BoardCanvas({
 
         {/* ═══ MAIN AREA ═══ */}
         <div className="flex-1 flex overflow-hidden relative">
+          {/* Viewport Sync Tracking Banner */}
+          {followingUserId && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-fuchsia-600 border border-fuchsia-500/40 text-white px-4 py-1.5 rounded-full shadow-2xl z-40 flex items-center gap-3 animate-slideDown">
+              <span className="text-[10px] uppercase font-bold tracking-widest bg-white/20 px-2 py-0.5 rounded-full">
+                live syncing
+              </span>
+              <span className="text-xs font-semibold">
+                Following {collaborators[followingUserId]?.name || 'Collaborator'}
+              </span>
+              <button
+                onClick={() => setFollowingUserId(null)}
+                className="w-5 h-5 rounded-full bg-black/20 hover:bg-black/35 flex items-center justify-center transition-colors cursor-pointer text-white"
+                title="Stop Following"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
           {/* ── LEFT TOOLS PALETTE ── */}
           <div 
             className="w-14 h-full shrink-0 bg-zinc-900/90 backdrop-blur-md border-r border-zinc-800/80 flex flex-col items-center py-3 gap-1.5 z-20 overflow-y-auto"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
-            {toolsList.map((t) => (
-              <div key={t.id} className="relative">
-                <button
-                  onClick={() => { 
-                    if (t.id === 'image') {
-                      fileInputRef.current?.click();
-                    } else {
-                      setTool(t.id); 
-                      setShowShapesMenu(false); 
-                      setShowLineMenu(false);
-                    }
-                  }}
-                  onContextMenu={(e) => {
-                    if (t.id === 'line') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setShowLineMenu((prev) => !prev);
-                      setShowShapesMenu(false);
-                    }
-                  }}
-                  title={`${t.label} (${t.key})${t.id === 'line' ? ' · Right-click for options' : ''}`}
-                  className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer group relative
-                    ${(tool === t.id || (t.id === 'line' && ['line', 'arrow'].includes(tool))) && !showShapesMenu && !showLineMenu
-                      ? 'bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/30 scale-105'
-                      : 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200'
-                    }`}
-                >
-                  {t.icon}
-                  <span className="absolute left-[52px] bg-zinc-800 text-white text-[10px] font-semibold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none transition-opacity border border-zinc-700 shadow-lg">
-                    {t.label}
-                    <span className="ml-1.5 text-zinc-500 font-mono">{t.key}</span>
-                  </span>
-                </button>
-              </div>
-            ))}
+            {toolsList.map((t) => {
+              const disabled = !canDrawLocal && t.id !== 'select';
+              return (
+                <div key={t.id} className="relative">
+                  <button
+                    disabled={disabled}
+                    onClick={() => { 
+                      if (t.id === 'image') {
+                        fileInputRef.current?.click();
+                      } else {
+                        setTool(t.id); 
+                        setShowShapesMenu(false); 
+                        setShowLineMenu(false);
+                      }
+                    }}
+                    onContextMenu={(e) => {
+                      if (t.id === 'line') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setShowLineMenu((prev) => !prev);
+                        setShowShapesMenu(false);
+                      }
+                    }}
+                    title={disabled ? 'Drawing disabled' : `${t.label} (${t.key})${t.id === 'line' ? ' · Right-click for options' : ''}`}
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all group relative
+                      ${disabled 
+                        ? 'opacity-25 cursor-not-allowed text-zinc-600' 
+                        : 'cursor-pointer'
+                      }
+                      ${(tool === t.id || (t.id === 'line' && ['line', 'arrow'].includes(tool))) && !showShapesMenu && !showLineMenu && !disabled
+                        ? 'bg-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/30 scale-105'
+                        : !disabled ? 'text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200' : ''
+                      }`}
+                  >
+                    {t.icon}
+                    <span className="absolute left-[52px] bg-zinc-800 text-white text-[10px] font-semibold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none transition-opacity border border-zinc-700 shadow-lg">
+                      {t.label}
+                      <span className="ml-1.5 text-zinc-500 font-mono">{t.key}</span>
+                    </span>
+                  </button>
+                </div>
+              );
+            })}
 
             {/* Custom Shapes library button */}
             <div className="relative">
               <button
+                disabled={!canDrawLocal}
                 onClick={() => {
                   setShowShapesMenu(!showShapesMenu);
                   setShowLineMenu(false);
                 }}
-                title="More Shapes..."
-                className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all cursor-pointer
-                  ${showShapesMenu || !['select', 'pen', 'highlighter', 'eraser', 'line', 'arrow', 'text', 'sticky'].includes(tool)
+                title={!canDrawLocal ? 'Shapes disabled' : 'More Shapes...'}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all
+                  ${!canDrawLocal
+                    ? 'opacity-25 cursor-not-allowed text-zinc-600' : 'cursor-pointer hover:bg-zinc-800 hover:text-zinc-200'
+                  }
+                  ${(showShapesMenu || !['select', 'pen', 'highlighter', 'eraser', 'line', 'arrow', 'text', 'sticky'].includes(tool)) && canDrawLocal
                     ? 'bg-fuchsia-500 text-white border-fuchsia-400 shadow-lg shadow-fuchsia-500/30'
-                    : 'text-zinc-500 border-zinc-800 hover:bg-zinc-800 hover:text-zinc-200'
+                    : 'text-zinc-500 border-zinc-800'
                   }`}
               >
                 <Plus className="w-5 h-5" />
