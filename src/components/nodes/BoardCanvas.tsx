@@ -2430,6 +2430,13 @@ export function BoardCanvas({
     // Close any floating windows/menus when clicking on the board canvas
     closeAllFloatingMenus();
 
+    if (textInput.active) {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+      return;
+    }
+
     e.currentTarget.setPointerCapture(e.pointerId);
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
 
@@ -2569,7 +2576,7 @@ export function BoardCanvas({
     setPointer({ down: true, x: startX, y: startY, startX, startY });
     setCurrentPen([{ x: startX, y: startY }]);
     renderOverlay([{ x: startX, y: startY }]);
-  }, [tool, toCanvasCoords, strokes, selectedStrokeIds, hitTestStroke, hitTestSelectionHandle, getCombinedBoundingBox, snapToGrid, gridSize, view, color, fillColor, opacity, fontSize, fontFamily, fontWeight, textAlign, arrowType, arrowheadStart, arrowheadEnd, renderOverlay, closeAllFloatingMenus]);
+  }, [tool, toCanvasCoords, strokes, selectedStrokeIds, hitTestStroke, hitTestSelectionHandle, getCombinedBoundingBox, snapToGrid, gridSize, view, color, fillColor, opacity, fontSize, fontFamily, fontWeight, textAlign, arrowType, arrowheadStart, arrowheadEnd, renderOverlay, closeAllFloatingMenus, textInput]);
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
@@ -4343,10 +4350,10 @@ export function BoardCanvas({
       sheetMaxY = activeSheet.y + activeSheet.height;
     }
 
-    const minX = Math.min(box.minX === Infinity ? 0 : box.minX, viewMinX, sheetMinX) - 200;
-    const minY = Math.min(box.minY === Infinity ? 0 : box.minY, viewMinY, sheetMinY) - 200;
-    const maxX = Math.max(box.maxX === -Infinity ? canvasSize.w : box.maxX, viewMaxX, sheetMaxX) + 200;
-    const maxY = Math.max(box.maxY === -Infinity ? canvasSize.h : box.maxY, viewMaxY, sheetMaxY) + 200;
+    const minX = Math.min(box.minX === Infinity ? 0 : box.minX, sheetMinX) - 200;
+    const minY = Math.min(box.minY === Infinity ? 0 : box.minY, sheetMinY) - 200;
+    const maxX = Math.max(box.maxX === -Infinity ? canvasSize.w : box.maxX, sheetMaxX) + 200;
+    const maxY = Math.max(box.maxY === -Infinity ? canvasSize.h : box.maxY, sheetMaxY) + 200;
 
     const totalW = maxX - minX;
     const totalH = maxY - minY;
@@ -4467,8 +4474,8 @@ export function BoardCanvas({
     const canvas = minimapRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const clickX = clientX - rect.left;
-    const clickY = clientY - rect.top;
+    const clickX = Math.max(0, Math.min(canvas.width, clientX - rect.left));
+    const clickY = Math.max(0, Math.min(canvas.height, clientY - rect.top));
 
     // Recalculate bounds exactly as in renderMinimap
     const box = getCombinedBoundingBox(strokes.map((s) => s.id));
@@ -4486,10 +4493,10 @@ export function BoardCanvas({
       sheetMaxY = activeSheet.y + activeSheet.height;
     }
 
-    const minX = Math.min(box.minX === Infinity ? 0 : box.minX, viewMinX, sheetMinX) - 200;
-    const minY = Math.min(box.minY === Infinity ? 0 : box.minY, viewMinY, sheetMinY) - 200;
-    const maxX = Math.max(box.maxX === -Infinity ? canvasSize.w : box.maxX, viewMaxX, sheetMaxX) + 200;
-    const maxY = Math.max(box.maxY === -Infinity ? canvasSize.h : box.maxY, viewMaxY, sheetMaxY) + 200;
+    const minX = Math.min(box.minX === Infinity ? 0 : box.minX, sheetMinX) - 200;
+    const minY = Math.min(box.minY === Infinity ? 0 : box.minY, sheetMinY) - 200;
+    const maxX = Math.max(box.maxX === -Infinity ? canvasSize.w : box.maxX, sheetMaxX) + 200;
+    const maxY = Math.max(box.maxY === -Infinity ? canvasSize.h : box.maxY, sheetMaxY) + 200;
 
     const totalW = maxX - minX;
     const totalH = maxY - minY;
