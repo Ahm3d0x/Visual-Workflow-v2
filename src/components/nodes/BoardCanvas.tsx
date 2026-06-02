@@ -41,6 +41,17 @@ interface TextInput {
   value: string;
 }
 
+interface ActiveCellEdit {
+  strokeId: string;
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  value: string;
+}
+
 interface ViewTransform {
   scale: number;
   offsetX: number;
@@ -124,8 +135,15 @@ export function BoardCanvas({
   const [currentPen, setCurrentPen] = useState<{ x: number; y: number }[]>([]);
   const [textInput, setTextInput] = useState<TextInput>({ active: false, x: 0, y: 0, clientX: 0, clientY: 0, value: '' });
   const [editingStrokeId, setEditingStrokeId] = useState<string | null>(null);
+  const [activeCellEdit, setActiveCellEdit] = useState<ActiveCellEdit | null>(null);
   
   const [view, setView] = useState<ViewTransform>({ scale: 1, offsetX: 0, offsetY: 0 });
+  const minimapRef = useRef<HTMLCanvasElement>(null);
+  const [showMinimap, setShowMinimap] = useState(true);
+  const [minimapPos, setMinimapPos] = useState<{ x: number; y: number } | null>(null);
+  const [minimapSize, setMinimapSize] = useState({ width: 160, height: 110 });
+  const [isMovingMinimap, setIsMovingMinimap] = useState(false);
+  const [isResizingMinimap, setIsResizingMinimap] = useState(false);
   const [gridType, setGridType] = useState<'grid' | 'lines' | 'none'>('grid');
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [gridSize, setGridSize] = useState(20);
@@ -202,6 +220,11 @@ export function BoardCanvas({
   const lastBroadcastTimeRef = useRef<number>(0);
   const lastPastePosRef = useRef<{ x: number; y: number } | null>(null);
   const consecutivePasteCountRef = useRef<number>(0);
+
+  const minimapDragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 });
+  const minimapResizeStartRef = useRef({ mouseX: 0, mouseY: 0, startWidth: 0, startHeight: 0 });
+  const resizeDirectionRef = useRef<'bl' | 'br'>('bl');
+  const activeDrawingToolRef = useRef<Tool>('pen');
 
   const dragStartRef = useRef<{
     mode: 'none' | 'drag-objects' | 'resize' | 'rotate' | 'pan' | 'region-select' | 'drag-node';
@@ -285,6 +308,13 @@ export function BoardCanvas({
     window.addEventListener('click', handleCloseMenu);
     return () => window.removeEventListener('click', handleCloseMenu);
   }, [showLineMenu]);
+
+  // Clear selection when switching to a tool other than 'select'
+  useEffect(() => {
+    if (tool !== 'select') {
+      setSelectedStrokeIds([]);
+    }
+  }, [tool]);
 
   // Close shapes menu on document click
   useEffect(() => {
@@ -1233,10 +1263,13 @@ export function BoardCanvas({
       let img = imageCache.get(imgUrl);
       if (!img) {
         img = new Image();
-        img.src = imgUrl;
         img.onload = () => {
           setRedrawTrigger((prev) => prev + 1);
         };
+        img.onerror = () => {
+          console.error("Failed to load image:", imgUrl);
+        };
+        img.src = imgUrl;
         imageCache.set(imgUrl, img);
       }
       if (img.complete) {
@@ -1536,6 +1569,34 @@ export function BoardCanvas({
         ctx.restore();
       }
       ctx.stroke();
+
+      // Draw text centered inside shape
+      const textSupportedShapes = [
+        'rect', 'rounded-rect', 'circle', 'ellipse', 'triangle', 'diamond', 'hexagon',
+        'flow-process', 'flow-decision', 'flow-data', 'flow-terminator',
+        'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'
+      ];
+      if (stroke.text && textSupportedShapes.includes(stroke.tool)) {
+        ctx.save();
+        ctx.fillStyle = stroke.color || '#ffffff';
+        const fontSizeVal = stroke.fontSize || 14;
+        ctx.font = `${stroke.fontWeight === 'bold' ? 'bold' : 'normal'} ${fontSizeVal}px ${stroke.fontFamily || 'Inter, sans-serif'}`;
+        ctx.textAlign = stroke.textAlign || 'center';
+        ctx.textBaseline = 'middle';
+
+        const cx = px + pw / 2;
+        const cy = py + ph / 2;
+
+        const lines = stroke.text.split('\n');
+        const lineHeight = fontSizeVal + 4;
+        const totalHeight = lines.length * lineHeight;
+        const startY = cy - totalHeight / 2 + lineHeight / 2;
+
+        lines.forEach((line, index) => {
+          ctx.fillText(line, cx, startY + index * lineHeight);
+        });
+        ctx.restore();
+      }
     }
 
     ctx.restore();
@@ -1712,7 +1773,7 @@ export function BoardCanvas({
     ctx.lineJoin = 'round';
     ctx.globalAlpha = opacity * 0.8;
 
-    const toolInUse = tool;
+    const toolInUse = activeDrawingToolRef.current;
 
     if (toolInUse === 'pen') {
       ctx.beginPath();
@@ -2315,6 +2376,12 @@ export function BoardCanvas({
       startY = Math.round(startY / gridSize) * gridSize;
     }
 
+    if ((tool === 'pen' || tool === 'highlighter') && e.shiftKey) {
+      activeDrawingToolRef.current = 'eraser';
+    } else {
+      activeDrawingToolRef.current = tool;
+    }
+
     setPointer({ down: true, x: startX, y: startY, startX, startY });
     setCurrentPen([{ x: startX, y: startY }]);
     renderOverlay([{ x: startX, y: startY }]);
@@ -2512,13 +2579,14 @@ export function BoardCanvas({
     if (pointer.down) {
       let drawX = x;
       let drawY = y;
+      const currentStrokeTool = activeDrawingToolRef.current;
 
       // Angle snapping (constrained drawing) when holding Shift key for lines and arrows
-      if ((tool === 'line' || tool === 'arrow') && e.shiftKey) {
+      if ((currentStrokeTool === 'line' || currentStrokeTool === 'arrow') && e.shiftKey) {
         let cx = pointer.startX;
         let cy = pointer.startY;
 
-        if (tool === 'line' && arrowType === 'curved-multi' && currentPen.length > 0) {
+        if (currentStrokeTool === 'line' && arrowType === 'curved-multi' && currentPen.length > 0) {
           const anchor = currentPen.length >= 2 ? currentPen[currentPen.length - 2] : currentPen[0];
           cx = anchor.x;
           cy = anchor.y;
@@ -2549,9 +2617,9 @@ export function BoardCanvas({
       }
 
       let newPts: { x: number; y: number }[] = [];
-      if (tool === 'pen' || tool === 'highlighter' || tool === 'eraser') {
+      if (currentStrokeTool === 'pen' || currentStrokeTool === 'highlighter' || currentStrokeTool === 'eraser') {
         newPts = [...currentPen, { x: drawX, y: drawY }];
-      } else if (tool === 'line' && arrowType === 'curved-multi') {
+      } else if (currentStrokeTool === 'line' && arrowType === 'curved-multi') {
         const last = currentPen[currentPen.length - 1];
         if (last) {
           const dist = Math.hypot(drawX - last.x, drawY - last.y);
@@ -2567,7 +2635,7 @@ export function BoardCanvas({
         newPts = [{ x: pointer.startX, y: pointer.startY }, { x: drawX, y: drawY }];
       }
 
-      if (snapToGrid && !['pen', 'highlighter', 'eraser', 'line'].includes(tool) && !e.shiftKey) {
+      if (snapToGrid && !['pen', 'highlighter', 'eraser', 'line'].includes(currentStrokeTool) && !e.shiftKey) {
         const last = newPts[newPts.length - 1];
         if (last) {
           last.x = Math.round(last.x / gridSize) * gridSize;
@@ -2595,16 +2663,16 @@ export function BoardCanvas({
               y,
               drawing: {
                 id: 'temp_draw',
-                tool: tool,
+                tool: currentStrokeTool,
                 points: newPts,
                 color,
                 width: strokeWidth,
                 fill: useFill,
                 fillColor: useFill ? fillColor : undefined,
                 opacity,
-                arrowType: (tool === 'line' || tool === 'arrow') ? arrowType : undefined,
-                arrowheadStart: (tool === 'line' || tool === 'arrow') ? arrowheadStart : undefined,
-                arrowheadEnd: (tool === 'line' || tool === 'arrow') ? arrowheadEnd : undefined,
+                arrowType: (currentStrokeTool === 'line' || currentStrokeTool === 'arrow') ? arrowType : undefined,
+                arrowheadStart: (currentStrokeTool === 'line' || currentStrokeTool === 'arrow') ? arrowheadStart : undefined,
+                arrowheadEnd: (currentStrokeTool === 'line' || currentStrokeTool === 'arrow') ? arrowheadEnd : undefined,
               }
             }
           });
@@ -2699,21 +2767,22 @@ export function BoardCanvas({
       return;
     }
 
+    const currentStrokeTool = activeDrawingToolRef.current;
     const newStroke: BoardStroke = {
       id: crypto.randomUUID(),
-      tool: tool as BoardStroke['tool'],
+      tool: currentStrokeTool as BoardStroke['tool'],
       points: currentPen,
       color,
       width: strokeWidth,
       fill: useFill,
       fillColor: useFill ? fillColor : undefined,
       opacity,
-      arrowType: (tool === 'line' || tool === 'arrow') ? arrowType : undefined,
-      arrowheadStart: (tool === 'line' || tool === 'arrow') ? arrowheadStart : undefined,
-      arrowheadEnd: (tool === 'line' || tool === 'arrow') ? arrowheadEnd : undefined,
-      tableRows: tool === 'table' ? 3 : undefined,
-      tableCols: tool === 'table' ? 3 : undefined,
-      tableCells: tool === 'table' ? [['', '', ''], ['', '', ''], ['', '', '']] : undefined,
+      arrowType: (currentStrokeTool === 'line' || currentStrokeTool === 'arrow') ? arrowType : undefined,
+      arrowheadStart: (currentStrokeTool === 'line' || currentStrokeTool === 'arrow') ? arrowheadStart : undefined,
+      arrowheadEnd: (currentStrokeTool === 'line' || currentStrokeTool === 'arrow') ? arrowheadEnd : undefined,
+      tableRows: currentStrokeTool === 'table' ? 3 : undefined,
+      tableCols: currentStrokeTool === 'table' ? 3 : undefined,
+      tableCells: currentStrokeTool === 'table' ? [['', '', ''], ['', '', ''], ['', '', '']] : undefined,
     };
 
     setUndoStack((prev) => [...prev, strokes]);
@@ -2816,23 +2885,112 @@ export function BoardCanvas({
     setEditingStrokeId(null);
   }, [textInput, editingStrokeId, color, strokeWidth, fontSize, strokes, persistStrokes, tool, fillColor, opacity, fontFamily, fontWeight, textAlign, currentUserId]);
 
+  /* ─── Table Cell commit ─── */
+  const commitCellEdit = useCallback(() => {
+    if (!activeCellEdit) return;
+    const { strokeId, row, col, value } = activeCellEdit;
+
+    setUndoStack((prev) => [...prev, strokes]);
+    setRedoStack([]);
+
+    setStrokes((prev) => {
+      const next = prev.map((s) => {
+        if (s.id !== strokeId) return s;
+
+        const currentRows = s.tableRows || 3;
+        const currentCols = s.tableCols || 3;
+        let cells = s.tableCells ? [...s.tableCells.map(r => [...r])] : [];
+
+        while (cells.length < currentRows) {
+          cells.push(Array(currentCols).fill(''));
+        }
+        cells = cells.map((r) => {
+          const newRow = [...r];
+          while (newRow.length < currentCols) {
+            newRow.push('');
+          }
+          return newRow;
+        });
+
+        if (cells[row]) {
+          cells[row][col] = value;
+        }
+
+        const updated = { ...s, tableCells: cells };
+        if (channelRef.current?.state === 'joined') {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'stroke_add',
+            payload: { stroke: updated, userId: currentUserId }
+          });
+        }
+        return updated;
+      });
+      persistStrokes(next);
+      return next;
+    });
+
+    setActiveCellEdit(null);
+  }, [activeCellEdit, strokes, currentUserId, persistStrokes]);
+
   /* ─── Image upload / launching ─── */
   const insertImage = useCallback((dataUrl: string, clientX?: number, clientY?: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    let cx = 0, cy = 0;
+    if (clientX !== undefined && clientY !== undefined && clientX > 0 && clientY > 0) {
+      const coords = toCanvasCoords(clientX, clientY);
+      cx = coords.x;
+      cy = coords.y;
+    } else {
+      cx = (canvas.width / 2 - view.offsetX) / view.scale;
+      cy = (canvas.height / 2 - view.offsetY) / view.scale;
+    }
+
+    // Insert image stroke synchronously with temporary/default dimensions
+    const defaultW = 300;
+    const defaultH = 200;
+    const halfW = defaultW / 2;
+    const halfH = defaultH / 2;
+
+    const newStroke: BoardStroke = {
+      id: crypto.randomUUID(),
+      tool: 'image',
+      points: [
+        { x: cx - halfW, y: cy - halfH },
+        { x: cx + halfW, y: cy + halfH }
+      ],
+      color: '#ffffff',
+      width: 2,
+      imageUrl: dataUrl,
+      opacity: 1
+    };
+
+    setUndoStack((prev) => [...prev, strokes]);
+    setRedoStack([]);
+    const nextStrokes = [...strokes, newStroke];
+    setStrokes(nextStrokes);
+    persistStrokes(nextStrokes);
+    setSelectedStrokeIds([newStroke.id]);
+    setTool('select');
+    playClickSound();
+
+    if (channelRef.current?.state === 'joined') {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'stroke_add',
+        payload: { stroke: newStroke, userId: currentUserId }
+      });
+    }
+
+    // Try preloading the image to adjust dimensions and verify content
     const img = new Image();
+    let corsFailed = false;
+
     img.onload = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-
-      let cx = 0, cy = 0;
-      if (clientX !== undefined && clientY !== undefined && clientX > 0 && clientY > 0) {
-        const coords = toCanvasCoords(clientX, clientY);
-        cx = coords.x;
-        cy = coords.y;
-      } else {
-        cx = (canvas.width / 2 - view.offsetX) / view.scale;
-        cy = (canvas.height / 2 - view.offsetY) / view.scale;
-      }
-
+      imageCache.set(dataUrl, img);
+      
       let w = img.naturalWidth || 300;
       let h = img.naturalHeight || 200;
       const maxDim = 350;
@@ -2842,47 +3000,45 @@ export function BoardCanvas({
         h = h * ratio;
       }
 
-      const halfW = w / 2;
-      const halfH = h / 2;
+      const correctHalfW = w / 2;
+      const correctHalfH = h / 2;
 
-      const newStroke: BoardStroke = {
-        id: crypto.randomUUID(),
-        tool: 'image',
-        points: [
-          { x: cx - halfW, y: cy - halfH },
-          { x: cx + halfW, y: cy + halfH }
-        ],
-        color: '#ffffff',
-        width: 2,
-        imageUrl: dataUrl,
-        opacity: 1
-      };
-
-      // Cache the preloaded image object
-      imageCache.set(dataUrl, img);
-
-      setUndoStack((prev) => [...prev, strokes]);
-      setRedoStack([]);
-      const nextStrokes = [...strokes, newStroke];
-      setStrokes(nextStrokes);
-      persistStrokes(nextStrokes);
-      setSelectedStrokeIds([newStroke.id]);
-      setTool('select');
-      playClickSound();
-
-      // Broadcast to other users
-      if (channelRef.current?.state === 'joined') {
-        channelRef.current.send({
-          type: 'broadcast',
-          event: 'stroke_add',
-          payload: { stroke: newStroke, userId: currentUserId }
+      setStrokes((currentStrokes) => {
+        const updated = currentStrokes.map((s) => {
+          if (s.id !== newStroke.id) return s;
+          return {
+            ...s,
+            points: [
+              { x: cx - correctHalfW, y: cy - correctHalfH },
+              { x: cx + correctHalfW, y: cy + correctHalfH }
+            ]
+          };
         });
-      }
-      
-      // Force redraw trigger
+        persistStrokes(updated);
+        return updated;
+      });
+
       setRedrawTrigger((prev) => prev + 1);
     };
+
+    img.onerror = () => {
+      if (!corsFailed && !dataUrl.startsWith('data:')) {
+        corsFailed = true;
+        // Fallback: Retry loading without crossOrigin attribute
+        img.removeAttribute('crossOrigin');
+        img.src = dataUrl;
+      } else {
+        console.error("Failed to load pasted/uploaded image:", dataUrl);
+      }
+    };
+
+    // Use CORS for external images to keep the canvas clean for export if possible
+    if (!dataUrl.startsWith('data:')) {
+      img.crossOrigin = "anonymous";
+    }
     img.src = dataUrl;
+
+    setRedrawTrigger((prev) => prev + 1);
   }, [view, strokes, persistStrokes, currentUserId, playClickSound, toCanvasCoords]);
 
   const handleImageUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3367,119 +3523,129 @@ export function BoardCanvas({
   const handleExportPDF = async () => {
     setShowExportMenu(false);
     
-    if (isSheetsMode && sheets.length > 0) {
-      const first = sheets[0];
-      const doc = new jsPDF({
-        orientation: first.width > first.height ? 'landscape' : 'portrait',
-        unit: 'px',
-        format: [first.width, first.height]
-      });
+    try {
+      if (isSheetsMode && sheets.length > 0) {
+        const first = sheets[0];
+        const doc = new jsPDF({
+          orientation: first.width > first.height ? 'landscape' : 'portrait',
+          unit: 'px',
+          format: [first.width, first.height]
+        });
 
-      for (let i = 0; i < sheets.length; i++) {
-        const sheet = sheets[i];
-        if (i > 0) {
-          doc.addPage([sheet.width, sheet.height], sheet.width > sheet.height ? 'l' : 'p');
+        for (let i = 0; i < sheets.length; i++) {
+          const sheet = sheets[i];
+          if (i > 0) {
+            doc.addPage([sheet.width, sheet.height], sheet.width > sheet.height ? 'l' : 'p');
+          }
+
+          const offscreen = document.createElement('canvas');
+          offscreen.width = sheet.width;
+          offscreen.height = sheet.height;
+          const ctx = offscreen.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, sheet.width, sheet.height);
+
+            // Draw the background grid, border, headers, and footers templates
+            drawSheetBackgroundAndLayout(ctx, sheet, i, sheets.length, false);
+
+            ctx.save();
+            ctx.translate(-sheet.x, -sheet.y);
+            strokes.forEach((stroke) => {
+              if (isStrokeInSheet(stroke, sheet)) {
+                drawStrokeWithConnector(ctx, stroke, false);
+              }
+            });
+            ctx.restore();
+
+            const imgData = offscreen.toDataURL('image/png');
+            doc.addImage(imgData, 'PNG', 0, 0, sheet.width, sheet.height);
+          }
         }
+        doc.save(`board-sheets-${nodeId.slice(0, 6)}.pdf`);
+      } else {
+        const box = getCombinedBoundingBox(strokes.map(s => s.id));
+        const padding = 20;
+        const cropX = box.minX === Infinity ? 0 : box.minX - padding;
+        const cropY = box.minY === Infinity ? 0 : box.minY - padding;
+        const cropW = box.minX === Infinity ? canvasSize.w : box.w + padding * 2;
+        const cropH = box.minY === Infinity ? canvasSize.h : box.h + padding * 2;
 
         const offscreen = document.createElement('canvas');
-        offscreen.width = sheet.width;
-        offscreen.height = sheet.height;
+        offscreen.width = cropW;
+        offscreen.height = cropH;
         const ctx = offscreen.getContext('2d');
         if (ctx) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, sheet.width, sheet.height);
-
-          // Draw the background grid, border, headers, and footers templates
-          drawSheetBackgroundAndLayout(ctx, sheet, i, sheets.length, false);
+          ctx.fillStyle = bgColor;
+          ctx.fillRect(0, 0, cropW, cropH);
 
           ctx.save();
-          ctx.translate(-sheet.x, -sheet.y);
+          ctx.translate(-cropX, -cropY);
           strokes.forEach((stroke) => {
-            if (isStrokeInSheet(stroke, sheet)) {
-              drawStrokeWithConnector(ctx, stroke, false);
-            }
+            drawStrokeWithConnector(ctx, stroke, false);
           });
           ctx.restore();
 
           const imgData = offscreen.toDataURL('image/png');
-          doc.addImage(imgData, 'PNG', 0, 0, sheet.width, sheet.height);
+          const doc = new jsPDF({
+            orientation: cropW > cropH ? 'landscape' : 'portrait',
+            unit: 'px',
+            format: [cropW, cropH]
+          });
+          doc.addImage(imgData, 'PNG', 0, 0, cropW, cropH);
+          doc.save(`board-${nodeId.slice(0, 6)}.pdf`);
         }
       }
-      doc.save(`board-sheets-${nodeId.slice(0, 6)}.pdf`);
-    } else {
+    } catch (err) {
+      console.error("Failed to export PDF:", err);
+      useDialogStore.getState().showNotification('Failed to export PDF: Canvas contains cross-origin images or security restrictions apply.', 'error', 4000);
+    }
+  };
+
+  const handleExportPNG = useCallback(() => {
+    try {
       const box = getCombinedBoundingBox(strokes.map(s => s.id));
+      if (box.minX === Infinity) {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const link = document.createElement('a');
+        link.download = `board-${nodeId.slice(0, 6)}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        return;
+      }
+
       const padding = 20;
-      const cropX = box.minX === Infinity ? 0 : box.minX - padding;
-      const cropY = box.minY === Infinity ? 0 : box.minY - padding;
-      const cropW = box.minX === Infinity ? canvasSize.w : box.w + padding * 2;
-      const cropH = box.minY === Infinity ? canvasSize.h : box.h + padding * 2;
+      const cropX = box.minX - padding;
+      const cropY = box.minY - padding;
+      const cropW = box.w + padding * 2;
+      const cropH = box.h + padding * 2;
 
       const offscreen = document.createElement('canvas');
       offscreen.width = cropW;
       offscreen.height = cropH;
       const ctx = offscreen.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, cropW, cropH);
+      if (!ctx) return;
 
-        ctx.save();
-        ctx.translate(-cropX, -cropY);
-        strokes.forEach((stroke) => {
-          drawStrokeWithConnector(ctx, stroke, false);
-        });
-        ctx.restore();
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, cropW, cropH);
 
-        const imgData = offscreen.toDataURL('image/png');
-        const doc = new jsPDF({
-          orientation: cropW > cropH ? 'landscape' : 'portrait',
-          unit: 'px',
-          format: [cropW, cropH]
-        });
-        doc.addImage(imgData, 'PNG', 0, 0, cropW, cropH);
-        doc.save(`board-${nodeId.slice(0, 6)}.pdf`);
-      }
-    }
-  };
+      ctx.save();
+      ctx.translate(-cropX, -cropY);
+      strokes.forEach((stroke) => {
+        drawStroke(ctx, stroke, false);
+      });
+      ctx.restore();
 
-  const handleExportPNG = useCallback(() => {
-    const box = getCombinedBoundingBox(strokes.map(s => s.id));
-    if (box.minX === Infinity) {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
       const link = document.createElement('a');
       link.download = `board-${nodeId.slice(0, 6)}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.href = offscreen.toDataURL('image/png');
       link.click();
-      return;
+      setShowExportMenu(false);
+    } catch (err) {
+      console.error("Failed to export PNG:", err);
+      useDialogStore.getState().showNotification('Failed to export PNG: Canvas contains cross-origin images or security restrictions apply.', 'error', 4000);
     }
-
-    const padding = 20;
-    const cropX = box.minX - padding;
-    const cropY = box.minY - padding;
-    const cropW = box.w + padding * 2;
-    const cropH = box.h + padding * 2;
-
-    const offscreen = document.createElement('canvas');
-    offscreen.width = cropW;
-    offscreen.height = cropH;
-    const ctx = offscreen.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, cropW, cropH);
-
-    ctx.save();
-    ctx.translate(-cropX, -cropY);
-    strokes.forEach((stroke) => {
-      drawStroke(ctx, stroke, false);
-    });
-    ctx.restore();
-
-    const link = document.createElement('a');
-    link.download = `board-${nodeId.slice(0, 6)}.png`;
-    link.href = offscreen.toDataURL('image/png');
-    link.click();
-    setShowExportMenu(false);
   }, [strokes, bgColor, nodeId, getCombinedBoundingBox, drawStroke]);
 
   /* ─── Shared zoom logic ─── */
@@ -3619,7 +3785,11 @@ export function BoardCanvas({
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'z' || e.key === 'Z') {
           e.preventDefault();
-          handleUndo();
+          if (e.shiftKey) {
+            handleRedo();
+          } else {
+            handleUndo();
+          }
         }
         if (e.key === 'y' || e.key === 'Y') {
           e.preventDefault();
@@ -3691,12 +3861,15 @@ export function BoardCanvas({
       if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.hasAttribute('contenteditable')) {
         return;
       }
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf('image') !== -1) {
-          const file = items[i].getAsFile();
-          if (file) {
+      const clipboardData = e.clipboardData;
+      if (!clipboardData) return;
+
+      // 1. Check for files (local files copied from explorer or drag-pasted)
+      const files = clipboardData.files;
+      if (files && files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          if (file.type.startsWith('image/')) {
             e.preventDefault();
             const reader = new FileReader();
             reader.onload = (event) => {
@@ -3706,8 +3879,59 @@ export function BoardCanvas({
               }
             };
             reader.readAsDataURL(file);
-            break;
+            return;
           }
+        }
+      }
+
+      // 2. Check for image items (screenshots / copied canvas)
+      const items = clipboardData.items;
+      if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type.startsWith('image/')) {
+            const file = item.getAsFile();
+            if (file) {
+              e.preventDefault();
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                const dataUrl = event.target?.result as string;
+                if (dataUrl) {
+                  insertImage(dataUrl, mousePosRef.current.x, mousePosRef.current.y);
+                }
+              };
+              reader.readAsDataURL(file);
+              return;
+            }
+          }
+        }
+      }
+
+      // 3. Check for HTML data containing image tag (copied images from browsers)
+      const htmlData = clipboardData.getData('text/html');
+      if (htmlData) {
+        const match = htmlData.match(/<img\s+[^>]*src=["']([^"']+)["']/i);
+        if (match && match[1]) {
+          const src = match[1];
+          e.preventDefault();
+          insertImage(src, mousePosRef.current.x, mousePosRef.current.y);
+          return;
+        }
+      }
+
+      // 4. Check for image URL pasted as plain text
+      const textData = clipboardData.getData('text/plain') || '';
+      if (textData.trim()) {
+        const isImageUrl = (url: string) => {
+          return url.match(/\.(jpeg|jpg|gif|png|webp|svg)($|\?)/i) || 
+                 url.startsWith('data:image/') ||
+                 url.includes('images.unsplash.com/') ||
+                 url.includes('lh3.googleusercontent.com/');
+        };
+        if (isImageUrl(textData.trim())) {
+          e.preventDefault();
+          insertImage(textData.trim(), mousePosRef.current.x, mousePosRef.current.y);
+          return;
         }
       }
     };
@@ -3725,27 +3949,72 @@ export function BoardCanvas({
     if (tool !== 'select') return;
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
     
-    const hit = [...strokes].reverse().find(
-      (s) => (s.tool === 'text' || s.tool === 'sticky') && hitTestStroke(s, x, y, 15)
-    );
+    const hit = [...strokes].reverse().find((s) => hitTestStroke(s, x, y, 15));
     
     if (hit) {
-      setEditingStrokeId(hit.id);
-      
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const rect = canvas.getBoundingClientRect();
-      const clientX = hit.points[0].x * view.scale + rect.left + view.offsetX;
-      const clientY = hit.points[0].y * view.scale + rect.top + view.offsetY;
-      
-      setTextInput({
-        active: true,
-        x: hit.points[0].x, // canvas coord
-        y: hit.points[0].y,
-        clientX,
-        clientY,
-        value: hit.text || '',
-      });
+      if (hit.tool === 'table') {
+        const p0 = hit.points[0];
+        const pN = hit.points[hit.points.length - 1] || p0;
+        const px = Math.min(p0.x, pN.x);
+        const py = Math.min(p0.y, pN.y);
+        const pw = Math.abs(pN.x - p0.x);
+        const ph = Math.abs(pN.y - p0.y);
+        const rows = hit.tableRows || 3;
+        const cols = hit.tableCols || 3;
+        const rowHeight = ph / rows;
+        const colWidth = pw / cols;
+
+        const colIdx = Math.floor((x - px) / colWidth);
+        const rowIdx = Math.floor((y - py) / rowHeight);
+
+        if (colIdx >= 0 && colIdx < cols && rowIdx >= 0 && rowIdx < rows) {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const cellX = px + colIdx * colWidth;
+          const cellY = py + rowIdx * rowHeight;
+          
+          setActiveCellEdit({
+            strokeId: hit.id,
+            row: rowIdx,
+            col: colIdx,
+            x: cellX,
+            y: cellY,
+            width: colWidth,
+            height: rowHeight,
+            value: (hit.tableCells?.[rowIdx]?.[colIdx]) || '',
+          });
+        }
+      } else {
+        const textSupportedShapes = [
+          'text', 'sticky', 'rect', 'rounded-rect', 'circle', 'ellipse', 'triangle', 'diamond', 'hexagon',
+          'flow-process', 'flow-decision', 'flow-data', 'flow-terminator',
+          'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'
+        ];
+        if (textSupportedShapes.includes(hit.tool)) {
+          setEditingStrokeId(hit.id);
+          
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const rect = canvas.getBoundingClientRect();
+          
+          const p0 = hit.points[0];
+          const pN = hit.points[hit.points.length - 1] || p0;
+          const minX = Math.min(p0.x, pN.x);
+          const minY = Math.min(p0.y, pN.y);
+          
+          const clientX = minX * view.scale + rect.left + view.offsetX;
+          const clientY = minY * view.scale + rect.top + view.offsetY;
+          
+          setTextInput({
+            active: true,
+            x: minX, // canvas coord top-left of shape
+            y: minY,
+            clientX,
+            clientY,
+            value: hit.text || '',
+          });
+        }
+      }
     }
   }, [tool, strokes, hitTestStroke, toCanvasCoords, view]);
 
@@ -3763,7 +4032,7 @@ export function BoardCanvas({
       setSelectedStrokeIds([]);
       setContextMenu({ x: e.clientX, y: e.clientY, canvasX: x, canvasY: y });
     }
-  }, [strokes, hitTestStroke, toCanvasCoords, selectedStrokeIds]);
+  }, [strokes, hitTestStroke, toCanvasCoords, selectedStrokeIds, setSelectedStrokeIds, setContextMenu]);
 
   const doubleClickToEditText = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     onDoubleClick(e);
@@ -3798,7 +4067,347 @@ export function BoardCanvas({
     setTool('select');
     setContextMenu(null);
     persistStrokes(next);
-  }, [color, strokeWidth, opacity, useFill, fillColor, strokes, persistStrokes]);
+  }, [color, strokeWidth, opacity, useFill, fillColor, strokes, persistStrokes, setUndoStack, setRedoStack, setStrokes, setSelectedStrokeIds, setTool, setContextMenu]);
+
+  // Minimap Move Handlers
+  const handleMinimapMoveDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const container = e.currentTarget.closest('.minimap-container');
+    const parent = container?.parentElement;
+    if (!container || !parent) return;
+
+    const parentRect = parent.getBoundingClientRect();
+    const rect = container.getBoundingClientRect();
+
+    const currentX = rect.left - parentRect.left;
+    const currentY = rect.top - parentRect.top;
+
+    minimapDragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      startX: currentX,
+      startY: currentY,
+    };
+    setIsMovingMinimap(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, []);
+
+  const handleMinimapMoveMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMovingMinimap) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const deltaX = e.clientX - minimapDragStartRef.current.mouseX;
+    const deltaY = e.clientY - minimapDragStartRef.current.mouseY;
+
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const wrapRect = wrap.getBoundingClientRect();
+    
+    let newX = minimapDragStartRef.current.startX + deltaX;
+    let newY = minimapDragStartRef.current.startY + deltaY;
+
+    const minimapW = minimapSize.width + 24; 
+    const minimapH = minimapSize.height + 40; 
+    newX = Math.max(0, Math.min(newX, wrapRect.width - minimapW));
+    newY = Math.max(0, Math.min(newY, wrapRect.height - minimapH));
+
+    setMinimapPos({ x: newX, y: newY });
+  }, [isMovingMinimap, minimapSize]);
+
+  const handleMinimapMoveUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isMovingMinimap) return;
+    setIsMovingMinimap(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+  }, [isMovingMinimap]);
+
+  // Minimap Resize Handlers
+  const handleMinimapResizeDown = useCallback((e: React.PointerEvent<HTMLDivElement>, direction: 'bl' | 'br') => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const container = e.currentTarget.closest('.minimap-container');
+    const parent = container?.parentElement;
+    if (container && parent) {
+      const parentRect = parent.getBoundingClientRect();
+      const rect = container.getBoundingClientRect();
+      const currentX = rect.left - parentRect.left;
+      const currentY = rect.top - parentRect.top;
+      setMinimapPos({ x: currentX, y: currentY });
+    }
+    
+    minimapResizeStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      startWidth: minimapSize.width,
+      startHeight: minimapSize.height,
+    };
+    resizeDirectionRef.current = direction;
+    setIsResizingMinimap(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [minimapSize]);
+
+  const handleMinimapResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isResizingMinimap) return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const deltaX = e.clientX - minimapResizeStartRef.current.mouseX;
+    const deltaY = e.clientY - minimapResizeStartRef.current.mouseY;
+    
+    let newWidth = minimapSize.width;
+    let newHeight = minimapSize.height;
+    
+    if (resizeDirectionRef.current === 'bl') {
+      newWidth = Math.max(120, Math.min(450, minimapResizeStartRef.current.startWidth - deltaX));
+      newHeight = Math.max(80, Math.min(350, minimapResizeStartRef.current.startHeight + deltaY));
+      
+      setMinimapSize({ width: newWidth, height: newHeight });
+      setMinimapPos((prev) => {
+        if (!prev) return null;
+        const widthChange = newWidth - minimapResizeStartRef.current.startWidth;
+        return {
+          x: prev.x - widthChange,
+          y: prev.y
+        };
+      });
+    } else { // 'br'
+      newWidth = Math.max(120, Math.min(450, minimapResizeStartRef.current.startWidth + deltaX));
+      newHeight = Math.max(80, Math.min(350, minimapResizeStartRef.current.startHeight + deltaY));
+      setMinimapSize({ width: newWidth, height: newHeight });
+    }
+  }, [isResizingMinimap, minimapSize]);
+
+  const handleMinimapResizeUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isResizingMinimap) return;
+    setIsResizingMinimap(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+  }, [isResizingMinimap]);
+
+  // Minimap Navigation and Rendering Logic
+  const renderMinimap = useCallback(() => {
+    const canvas = minimapRef.current;
+    if (!canvas || !showMinimap) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Calculate boundaries of content + current viewport view area
+    const box = getCombinedBoundingBox(strokes.map((s) => s.id));
+    
+    const viewMinX = -view.offsetX / view.scale;
+    const viewMinY = -view.offsetY / view.scale;
+    const viewMaxX = (canvasSize.w - view.offsetX) / view.scale;
+    const viewMaxY = (canvasSize.h - view.offsetY) / view.scale;
+
+    // Default to at least page boundary if in sheets mode
+    const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+    let sheetMinX = 0, sheetMinY = 0, sheetMaxX = canvasSize.w, sheetMaxY = canvasSize.h;
+    if (activeSheet) {
+      sheetMinX = activeSheet.x;
+      sheetMinY = activeSheet.y;
+      sheetMaxX = activeSheet.x + activeSheet.width;
+      sheetMaxY = activeSheet.y + activeSheet.height;
+    }
+
+    const minX = Math.min(box.minX === Infinity ? 0 : box.minX, viewMinX, sheetMinX) - 200;
+    const minY = Math.min(box.minY === Infinity ? 0 : box.minY, viewMinY, sheetMinY) - 200;
+    const maxX = Math.max(box.maxX === -Infinity ? canvasSize.w : box.maxX, viewMaxX, sheetMaxX) + 200;
+    const maxY = Math.max(box.maxY === -Infinity ? canvasSize.h : box.maxY, viewMaxY, sheetMaxY) + 200;
+
+    const totalW = maxX - minX;
+    const totalH = maxY - minY;
+
+    const mapScale = Math.min(canvas.width / totalW, canvas.height / totalH);
+    const mapW = totalW * mapScale;
+    const mapH = totalH * mapScale;
+
+    // Center the rendering inside the minimap canvas
+    const startX = (canvas.width - mapW) / 2;
+    const startY = (canvas.height - mapH) / 2;
+
+    ctx.save();
+    ctx.translate(startX, startY);
+    ctx.scale(mapScale, mapScale);
+    ctx.translate(-minX, -minY);
+
+    // 2. Draw Sheet bounds if active
+    if (activeSheet) {
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#3f3f46';
+      ctx.lineWidth = 2 / mapScale;
+      ctx.fillRect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
+      ctx.strokeRect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
+    }
+
+    // 3. Draw simplified strokes
+    strokes.forEach((s) => {
+      if (!s.points || s.points.length === 0) return;
+      if (isSheetsMode && activeSheet && !isStrokeInSheet(s, activeSheet)) return;
+
+      ctx.save();
+      ctx.strokeStyle = s.color || '#ffffff';
+      ctx.lineWidth = Math.max(1, (s.width || 2) * 0.5) / mapScale;
+      ctx.fillStyle = s.fillColor || s.color || 'rgba(255,255,255,0.1)';
+      ctx.globalAlpha = 0.6;
+
+      if (s.tool === 'pen' || s.tool === 'highlighter' || s.tool === 'eraser') {
+        ctx.beginPath();
+        s.points.forEach((p, idx) => {
+          if (idx === 0) ctx.moveTo(p.x, p.y);
+          else ctx.lineTo(p.x, p.y);
+        });
+        ctx.stroke();
+      } else if (s.tool === 'text') {
+        const p = s.points[0];
+        ctx.fillStyle = s.color || '#ffffff';
+        ctx.fillRect(p.x, p.y - 12, (s.text?.length || 5) * 6, 12);
+      } else if (s.tool === 'image') {
+        const p0 = s.points[0];
+        const pN = s.points[s.points.length - 1];
+        const px = Math.min(p0.x, pN.x);
+        const py = Math.min(p0.y, pN.y);
+        const pw = Math.abs(pN.x - p0.x);
+        const ph = Math.abs(pN.y - p0.y);
+        const img = imageCache.get(s.imageUrl || '');
+        if (img && img.complete) {
+          try {
+            ctx.drawImage(img, px, py, pw, ph);
+          } catch {
+            ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+            ctx.strokeStyle = '#a855f7';
+            ctx.fillRect(px, py, pw, ph);
+            ctx.strokeRect(px, py, pw, ph);
+          }
+        } else {
+          ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+          ctx.strokeStyle = '#a855f7';
+          ctx.fillRect(px, py, pw, ph);
+          ctx.strokeRect(px, py, pw, ph);
+        }
+      } else if (s.points.length >= 2) {
+        const p0 = s.points[0];
+        const pN = s.points[s.points.length - 1];
+        const px = Math.min(p0.x, pN.x);
+        const py = Math.min(p0.y, pN.y);
+        const pw = Math.abs(pN.x - p0.x);
+        const ph = Math.abs(pN.y - p0.y);
+        
+        ctx.beginPath();
+        if (s.tool === 'circle' || s.tool === 'ellipse') {
+          ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
+        } else {
+          ctx.rect(px, py, pw, ph);
+        }
+        if (s.fill || s.tool === 'sticky') ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+
+    // 4. Draw current viewport rectangle
+    ctx.restore(); // Restore to normal canvas coordinate space (no map scale)
+
+    // Compute viewport positions in minimap coordinate space
+    const viewX = startX + (viewMinX - minX) * mapScale;
+    const viewY = startY + (viewMinY - minY) * mapScale;
+    const viewW = (viewMaxX - viewMinX) * mapScale;
+    const viewH = (viewMaxY - viewMinY) * mapScale;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(139, 92, 246, 0.1)';
+    ctx.strokeStyle = '#a855f7';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(viewX, viewY, viewW, viewH);
+    ctx.fillRect(viewX, viewY, viewW, viewH);
+    ctx.restore();
+
+  }, [strokes, view, showMinimap, isSheetsMode, sheets, activeSheetIndex, canvasSize, getCombinedBoundingBox, isStrokeInSheet, minimapSize]);
+
+  // Hook to redraw minimap
+  useEffect(() => {
+    renderMinimap();
+  }, [renderMinimap]);
+
+  // Minimap interactions (panning the view on click/drag)
+  const handleMinimapPan = useCallback((clientX: number, clientY: number) => {
+    const canvas = minimapRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const clickX = clientX - rect.left;
+    const clickY = clientY - rect.top;
+
+    // Recalculate bounds exactly as in renderMinimap
+    const box = getCombinedBoundingBox(strokes.map((s) => s.id));
+    const viewMinX = -view.offsetX / view.scale;
+    const viewMinY = -view.offsetY / view.scale;
+    const viewMaxX = (canvasSize.w - view.offsetX) / view.scale;
+    const viewMaxY = (canvasSize.h - view.offsetY) / view.scale;
+
+    const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+    let sheetMinX = 0, sheetMinY = 0, sheetMaxX = canvasSize.w, sheetMaxY = canvasSize.h;
+    if (activeSheet) {
+      sheetMinX = activeSheet.x;
+      sheetMinY = activeSheet.y;
+      sheetMaxX = activeSheet.x + activeSheet.width;
+      sheetMaxY = activeSheet.y + activeSheet.height;
+    }
+
+    const minX = Math.min(box.minX === Infinity ? 0 : box.minX, viewMinX, sheetMinX) - 200;
+    const minY = Math.min(box.minY === Infinity ? 0 : box.minY, viewMinY, sheetMinY) - 200;
+    const maxX = Math.max(box.maxX === -Infinity ? canvasSize.w : box.maxX, viewMaxX, sheetMaxX) + 200;
+    const maxY = Math.max(box.maxY === -Infinity ? canvasSize.h : box.maxY, viewMaxY, sheetMaxY) + 200;
+
+    const totalW = maxX - minX;
+    const totalH = maxY - minY;
+
+    const mapScale = Math.min(canvas.width / totalW, canvas.height / totalH);
+    const mapW = totalW * mapScale;
+    const mapH = totalH * mapScale;
+
+    const startX = (canvas.width - mapW) / 2;
+    const startY = (canvas.height - mapH) / 2;
+
+    // Compute actual canvas coords from click
+    const canvasX = minX + (clickX - startX) / mapScale;
+    const canvasY = minY + (clickY - startY) / mapScale;
+
+    setView((v) => ({
+      ...v,
+      offsetX: canvasSize.w / 2 - canvasX * v.scale,
+      offsetY: canvasSize.h / 2 - canvasY * v.scale,
+    }));
+  }, [strokes, view, isSheetsMode, sheets, activeSheetIndex, canvasSize, getCombinedBoundingBox, minimapSize]);
+
+  const onMinimapPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    handleMinimapPan(e.clientX, e.clientY);
+  }, [handleMinimapPan]);
+
+  const onMinimapPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.buttons > 0) { // dragging
+      e.preventDefault();
+      e.stopPropagation();
+      handleMinimapPan(e.clientX, e.clientY);
+    }
+  }, [handleMinimapPan]);
+
+  const onMinimapPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const collaboratorList = Object.entries(collaborators);
   
@@ -4266,7 +4875,7 @@ export function BoardCanvas({
           {/* Floating Shapes Menu */}
           {showShapesMenu && (
             <div 
-              className="fixed left-[68px] top-[280px] bg-zinc-900/98 border border-zinc-700 rounded-2xl shadow-2xl z-[9999] p-3 w-[260px] max-h-[420px] overflow-y-auto select-none animate-fadeIn backdrop-blur-md"
+              className="fixed left-[68px] top-[280px] bg-zinc-900/98 border border-zinc-700 rounded-2xl shadow-2xl z-9999 p-3 w-[260px] max-h-[420px] overflow-y-auto select-none animate-fadeIn backdrop-blur-md"
               onClick={(e) => e.stopPropagation()}
               onPointerDown={(e) => e.stopPropagation()}
             >
@@ -4348,6 +4957,21 @@ export function BoardCanvas({
             {textInput.active && (() => {
               const editingStroke = editingStrokeId ? strokes.find(s => s.id === editingStrokeId) : null;
               const isSticky = editingStroke?.tool === 'sticky' || (!editingStrokeId && tool === 'sticky');
+              
+              // Detect shape
+              const isBoxShape = editingStroke && [
+                'rect', 'rounded-rect', 'circle', 'ellipse', 'triangle', 'diamond', 'hexagon',
+                'flow-process', 'flow-decision', 'flow-data', 'flow-terminator',
+                'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'
+              ].includes(editingStroke.tool);
+
+              let boxW = 220;
+              let boxH = 80;
+              if (editingStroke && editingStroke.points.length >= 2) {
+                boxW = Math.abs(editingStroke.points[1].x - editingStroke.points[0].x);
+                boxH = Math.abs(editingStroke.points[1].y - editingStroke.points[0].y);
+              }
+
               // For sticky notes: compute pixel size from the stored points
               let stickyW = 160, stickyH = 160;
               if (editingStroke?.tool === 'sticky' && editingStroke.points.length >= 2) {
@@ -4370,8 +4994,8 @@ export function BoardCanvas({
                     value={textInput.value}
                     onChange={(e) => {
                       setTextInput((t) => ({ ...t, value: e.target.value }));
-                      // Auto-grow height for non-sticky text
-                      if (!isSticky) {
+                      // Auto-grow height for non-sticky/non-shape text
+                      if (!isSticky && !isBoxShape) {
                         e.target.style.height = 'auto';
                         e.target.style.height = `${e.target.scrollHeight}px`;
                       }
@@ -4389,29 +5013,86 @@ export function BoardCanvas({
                     onBlur={commitText}
                     className="outline-none p-2 border transition-all duration-150"
                     style={{
-                      resize: isSticky ? 'none' : 'horizontal',
-                      overflow: isSticky ? 'hidden' : 'hidden',
-                      width: isSticky ? `${stickyW}px` : '220px',
-                      height: isSticky ? `${stickyH}px` : 'auto',
-                      minHeight: isSticky ? `${stickyH}px` : '38px',
-                      maxWidth: isSticky ? `${stickyW}px` : '480px',
+                      resize: (isSticky || isBoxShape) ? 'none' : 'horizontal',
+                      overflow: (isSticky || isBoxShape) ? 'hidden' : 'hidden',
+                      width: isSticky ? `${stickyW}px` : (isBoxShape ? `${boxW}px` : '220px'),
+                      height: isSticky ? `${stickyH}px` : (isBoxShape ? `${boxH}px` : 'auto'),
+                      minHeight: isSticky ? `${stickyH}px` : (isBoxShape ? `${boxH}px` : '38px'),
+                      maxWidth: isSticky ? `${stickyW}px` : (isBoxShape ? `${boxW}px` : '480px'),
                       fontSize: editingStroke ? `${editingStroke.fontSize || 18}px` : `${tool === 'sticky' ? 13 : fontSize}px`,
                       fontFamily: editingStroke ? editingStroke.fontFamily || 'Inter, sans-serif' : (tool === 'sticky' ? 'sans-serif' : fontFamily),
                       fontWeight: editingStroke ? editingStroke.fontWeight || 'normal' : (tool === 'sticky' ? 'bold' : fontWeight),
-                      textAlign: editingStroke ? editingStroke.textAlign || 'left' : (tool === 'sticky' ? 'center' : textAlign),
+                      textAlign: editingStroke ? editingStroke.textAlign || 'center' : (tool === 'sticky' ? 'center' : textAlign),
                       color: editingStroke ? editingStroke.color || '#ffffff' : (tool === 'sticky' ? '#18181b' : color),
                       backgroundColor: isSticky
                         ? (editingStroke?.fillColor || fillColor || '#fef08a')
                         : 'transparent',
-                      borderColor: isSticky ? 'transparent' : 'rgba(99,102,241,0.6)',
+                      borderColor: (isSticky || isBoxShape) ? 'transparent' : 'rgba(99,102,241,0.6)',
                       boxShadow: isSticky ? '0 10px 15px -3px rgba(0,0,0,0.3)' : 'none',
                       borderRadius: '8px',
                       lineHeight: '1.4',
                       caretColor: isSticky ? '#18181b' : color,
                       wordBreak: 'break-word',
-                      whiteSpace: isSticky ? 'pre-wrap' : 'pre',
+                      whiteSpace: (isSticky || isBoxShape) ? 'pre-wrap' : 'pre',
                     }}
                     placeholder={tool === 'sticky' ? 'Note...' : 'Type text...'}
+                  />
+                </div>
+              );
+            })()}
+
+            {/* Table cell inline editor */}
+            {activeCellEdit && (() => {
+              const tableStroke = strokes.find(s => s.id === activeCellEdit.strokeId);
+              const fsVal = tableStroke?.fontSize || 14;
+              const fontFam = tableStroke?.fontFamily || 'Inter, sans-serif';
+              const fontWt = tableStroke?.fontWeight || 'normal';
+              const align = tableStroke?.textAlign || 'center';
+              const colorVal = tableStroke?.color || '#ffffff';
+
+              return (
+                <div
+                  className="absolute z-50"
+                  style={{
+                    left: `${activeCellEdit.x * view.scale + view.offsetX}px`,
+                    top: `${activeCellEdit.y * view.scale + view.offsetY}px`,
+                    transform: `scale(${view.scale})`,
+                    transformOrigin: 'top left',
+                  }}
+                >
+                  <textarea
+                    autoFocus
+                    value={activeCellEdit.value}
+                    onChange={(e) => {
+                      setActiveCellEdit((prev) => prev ? { ...prev, value: e.target.value } : null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        commitCellEdit();
+                      }
+                      if (e.key === 'Escape') {
+                        setActiveCellEdit(null);
+                      }
+                    }}
+                    onBlur={commitCellEdit}
+                    className="outline-none p-1.5 border border-fuchsia-500 bg-zinc-950 text-white rounded-lg shadow-2xl transition-all duration-150"
+                    style={{
+                      width: `${activeCellEdit.width}px`,
+                      height: `${activeCellEdit.height}px`,
+                      fontSize: `${fsVal}px`,
+                      fontFamily: fontFam,
+                      fontWeight: fontWt,
+                      textAlign: align,
+                      color: colorVal,
+                      lineHeight: '1.4',
+                      resize: 'none',
+                      overflow: 'hidden',
+                      wordBreak: 'break-word',
+                      whiteSpace: 'pre-wrap',
+                      caretColor: colorVal,
+                    }}
+                    placeholder="Cell"
                   />
                 </div>
               );
@@ -4424,6 +5105,85 @@ export function BoardCanvas({
               className="hidden"
               onChange={handleImageUpload}
             />
+
+            {/* Whiteboard Minimap (Map) */}
+            {showMinimap && (
+              <div 
+                className="absolute bg-zinc-950/90 border border-zinc-800 shadow-2xl rounded-2xl p-2.5 z-40 select-none backdrop-blur-md animate-fadeIn flex flex-col gap-1.5 minimap-container"
+                onPointerDown={(e) => e.stopPropagation()}
+                style={minimapPos ? {
+                  left: `${minimapPos.x}px`,
+                  top: `${minimapPos.y}px`,
+                  bottom: 'auto',
+                  right: 'auto',
+                } : {
+                  bottom: '1rem',
+                  right: '1rem',
+                }}
+              >
+                <div 
+                  className="flex items-center justify-between gap-4 px-0.5 cursor-grab active:cursor-grabbing border-b border-zinc-800/30 pb-1"
+                  onPointerDown={handleMinimapMoveDown}
+                  onPointerMove={handleMinimapMoveMove}
+                  onPointerUp={handleMinimapMoveUp}
+                >
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">Board Map</span>
+                  <button 
+                    onClick={() => setShowMinimap(false)}
+                    className="p-1 rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all cursor-pointer"
+                    title="Minimize Map"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+                <canvas
+                  ref={minimapRef}
+                  width={minimapSize.width}
+                  height={minimapSize.height}
+                  className="rounded-lg bg-zinc-900/60 border border-zinc-800/80 cursor-crosshair block"
+                  onPointerDown={onMinimapPointerDown}
+                  onPointerMove={onMinimapPointerMove}
+                  onPointerUp={onMinimapPointerUp}
+                />
+                
+                {/* Resize handles */}
+                {/* Bottom-left handle */}
+                <div
+                  className="absolute bottom-1 left-1 w-3.5 h-3.5 cursor-nesw-resize flex items-end justify-start group text-zinc-600 hover:text-zinc-400 transition-colors z-50"
+                  onPointerDown={(e) => handleMinimapResizeDown(e, 'bl')}
+                  onPointerMove={handleMinimapResizeMove}
+                  onPointerUp={handleMinimapResizeUp}
+                >
+                  <svg className="w-2 h-2 rotate-90" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 19H5M19 12H12M19 5H19" />
+                  </svg>
+                </div>
+
+                {/* Bottom-right handle */}
+                <div
+                  className="absolute bottom-1 right-1 w-3.5 h-3.5 cursor-nwse-resize flex items-end justify-end group text-zinc-600 hover:text-zinc-400 transition-colors z-50"
+                  onPointerDown={(e) => handleMinimapResizeDown(e, 'br')}
+                  onPointerMove={handleMinimapResizeMove}
+                  onPointerUp={handleMinimapResizeUp}
+                >
+                  <svg className="w-2 h-2" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 19H5M19 12H12M19 5H19" />
+                  </svg>
+                </div>
+              </div>
+            )}
+
+            {/* Minimap Restore Button */}
+            {!showMinimap && (
+              <button
+                onClick={() => setShowMinimap(true)}
+                className="absolute bottom-4 right-4 h-8 px-2.5 rounded-xl border border-zinc-800 bg-zinc-950/90 text-zinc-400 hover:text-white hover:bg-zinc-900/90 transition-all cursor-pointer z-40 flex items-center gap-1.5 shadow-xl text-[10px] font-bold uppercase tracking-wider"
+                title="Expand Map"
+              >
+                <Grid className="w-3.5 h-3.5 text-fuchsia-400" />
+                <span>Map</span>
+              </button>
+            )}
           </div>
 
           {/* ── RIGHT PROPERTIES PANEL ── */}
@@ -4625,7 +5385,7 @@ export function BoardCanvas({
             </div>
 
             {/* Text parameters (Text tool) */}
-            {(tool === 'text' || tool === 'sticky' || tool === 'table' || selectedStrokes.some((s) => ['text', 'sticky', 'table'].includes(s.tool))) && (
+            {(['text', 'sticky', 'table', 'rect', 'rounded-rect', 'circle', 'ellipse', 'triangle', 'diamond', 'hexagon', 'flow-process', 'flow-decision', 'flow-data', 'flow-terminator', 'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'].includes(tool) || selectedStrokes.some((s) => ['text', 'sticky', 'table', 'rect', 'rounded-rect', 'circle', 'ellipse', 'triangle', 'diamond', 'hexagon', 'flow-process', 'flow-decision', 'flow-data', 'flow-terminator', 'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'].includes(s.tool))) && (
               <div className="space-y-3 pt-3 border-t border-zinc-800/80">
                 <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Typography</p>
                 <div>
