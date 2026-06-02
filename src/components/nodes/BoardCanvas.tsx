@@ -1041,6 +1041,7 @@ export function BoardCanvas({
   // Complete math-based hit-testing for shapes
   const hitTestStroke = useCallback((stroke: BoardStroke, x: number, y: number, tolerance: number): boolean => {
     if (!stroke.points || stroke.points.length === 0) return false;
+    if (stroke.tool === 'eraser') return false;
 
     if (stroke.tool === 'text') {
       const p = stroke.points[0];
@@ -2479,6 +2480,9 @@ export function BoardCanvas({
     const isSelectBgPan = tool === 'select' && e.button === 0 && !hit;
 
     if (isMiddleClick || isSpacePan || isSelectBgPan) {
+      if (isSelectBgPan) {
+        setSelectedStrokeIds([]);
+      }
       stopFollowing();
       setIsPanning(true);
       dragStartRef.current = {
@@ -2924,6 +2928,7 @@ export function BoardCanvas({
 
       const newlySelected: string[] = [];
       strokes.forEach((s) => {
+        if (s.tool === 'eraser') return;
         const box = getStrokeBoundingBox(s);
         const overlap = !(
           box.maxX < minX ||
@@ -4611,8 +4616,6 @@ export function BoardCanvas({
     { id: 'highlighter', icon: <Highlighter className="w-4 h-4" />, label: 'Highlighter', key: 'H' },
     { id: 'eraser', icon: <Eraser className="w-4 h-4" />, label: 'Eraser', key: 'E' },
     { id: 'line', icon: <Minus className="w-4 h-4" />, label: 'Line / Connector', key: 'L' },
-    { id: 'text', icon: <Type className="w-4 h-4" />, label: 'Text', key: 'T' },
-    { id: 'sticky', icon: <StickyNote className="w-4 h-4" />, label: 'Sticky Note', key: 'N' },
     { id: 'image', icon: <ImageIcon className="w-4 h-4" />, label: 'Image / Photo', key: 'I' },
   ];
 
