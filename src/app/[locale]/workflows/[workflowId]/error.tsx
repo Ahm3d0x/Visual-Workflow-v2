@@ -10,10 +10,10 @@ import { RotateCcw, AlertTriangle } from 'lucide-react';
  */
 export default function WorkflowEditorError({
   error,
-  reset,
+  unstable_retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  unstable_retry: () => void;
 }) {
   useEffect(() => {
     console.error('[WorkflowEditor] Unhandled error:', error);
@@ -89,7 +89,7 @@ export default function WorkflowEditorError({
       )}
 
       <button
-        onClick={reset}
+        onClick={() => unstable_retry()}
         style={{
           display: 'flex',
           alignItems: 'center',
