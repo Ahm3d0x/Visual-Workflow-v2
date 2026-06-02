@@ -1277,8 +1277,11 @@ function EditorInner({
     const handleKeyDown = (e: KeyboardEvent) => {
       const isInputFocused = ['INPUT', 'TEXTAREA', 'SELECT'].includes(
         document.activeElement?.tagName || ''
-      );
+      ) || document.activeElement?.hasAttribute('contenteditable');
       if (isInputFocused) return;
+
+      // Bypass shortcut interception if the whiteboard modal is open
+      if (document.querySelector('.board-canvas-modal')) return;
 
       // Delete Selection (Delete or Backspace)
       if ((e.key === 'Delete' || e.key === 'Backspace') && isEditable) {

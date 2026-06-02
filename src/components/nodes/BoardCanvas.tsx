@@ -2419,7 +2419,7 @@ export function BoardCanvas({
     }
 
     ctx.restore();
-  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout]);
+  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout, redrawTrigger]);
 
   useLayoutEffect(() => {
     renderCanvasMain();
@@ -3128,8 +3128,8 @@ export function BoardCanvas({
       cx = coords.x;
       cy = coords.y;
     } else {
-      cx = (canvas.width / 2 - view.offsetX) / view.scale;
-      cy = (canvas.height / 2 - view.offsetY) / view.scale;
+      cx = (canvas.clientWidth / 2 - view.offsetX) / view.scale;
+      cy = (canvas.clientHeight / 2 - view.offsetY) / view.scale;
     }
 
     // Insert image stroke synchronously with temporary/default dimensions
@@ -4058,6 +4058,25 @@ export function BoardCanvas({
       const clipboardData = e.clipboardData;
       if (!clipboardData) return;
 
+      // Determine target insertion coordinates based on mouse position relative to canvas boundary
+      let targetX: number | undefined = undefined;
+      let targetY: number | undefined = undefined;
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = mousePosRef.current.x;
+        const mouseY = mousePosRef.current.y;
+        if (
+          mouseX >= rect.left &&
+          mouseX <= rect.right &&
+          mouseY >= rect.top &&
+          mouseY <= rect.bottom
+        ) {
+          targetX = mouseX;
+          targetY = mouseY;
+        }
+      }
+
       // 1. Check for files (local files copied from explorer or drag-pasted)
       const files = clipboardData.files;
       if (files && files.length > 0) {
@@ -4069,7 +4088,7 @@ export function BoardCanvas({
             reader.onload = (event) => {
               const dataUrl = event.target?.result as string;
               if (dataUrl) {
-                insertImage(dataUrl, mousePosRef.current.x, mousePosRef.current.y);
+                insertImage(dataUrl, targetX, targetY);
               }
             };
             reader.readAsDataURL(file);
@@ -4091,7 +4110,7 @@ export function BoardCanvas({
               reader.onload = (event) => {
                 const dataUrl = event.target?.result as string;
                 if (dataUrl) {
-                  insertImage(dataUrl, mousePosRef.current.x, mousePosRef.current.y);
+                  insertImage(dataUrl, targetX, targetY);
                 }
               };
               reader.readAsDataURL(file);
@@ -4108,7 +4127,7 @@ export function BoardCanvas({
         if (match && match[1]) {
           const src = match[1];
           e.preventDefault();
-          insertImage(src, mousePosRef.current.x, mousePosRef.current.y);
+          insertImage(src, targetX, targetY);
           return;
         }
       }
@@ -4124,7 +4143,7 @@ export function BoardCanvas({
         };
         if (isImageUrl(textData.trim())) {
           e.preventDefault();
-          insertImage(textData.trim(), mousePosRef.current.x, mousePosRef.current.y);
+          insertImage(textData.trim(), targetX, targetY);
           return;
         }
       }
@@ -4264,73 +4283,10 @@ export function BoardCanvas({
     persistStrokes(next);
   }, [color, strokeWidth, opacity, useFill, fillColor, strokes, persistStrokes, setUndoStack, setRedoStack, setStrokes, setSelectedStrokeIds, setTool, setContextMenu]);
 
-  // Properties Move Handlers
-  const handlePropertiesMoveDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  // Properties Sidebar Resize Handlers (Resizing from the left edge)
+  const handlePropertiesResizeLeftDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    const container = e.currentTarget.closest('.properties-container');
-    const parent = container?.parentElement;
-    if (!container || !parent) return;
-
-    const parentRect = parent.getBoundingClientRect();
-    const rect = container.getBoundingClientRect();
-
-    const currentX = rect.left - parentRect.left;
-    const currentY = rect.top - parentRect.top;
-
-    propertiesDragStartRef.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      startX: currentX,
-      startY: currentY,
-    };
-    isMovingPropertiesRef.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-  }, []);
-
-  const handlePropertiesMoveMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isMovingPropertiesRef.current) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const deltaX = e.clientX - propertiesDragStartRef.current.mouseX;
-    const deltaY = e.clientY - propertiesDragStartRef.current.mouseY;
-
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    const wrapRect = wrap.getBoundingClientRect();
-    
-    let newX = propertiesDragStartRef.current.startX + deltaX;
-    let newY = propertiesDragStartRef.current.startY + deltaY;
-
-    const panelW = propertiesSize.width;
-    const panelH = propertiesSize.height;
-    newX = Math.max(0, Math.min(newX, wrapRect.width - panelW));
-    newY = Math.max(0, Math.min(newY, wrapRect.height - panelH));
-
-    setPropertiesPos({ x: newX, y: newY });
-  }, [propertiesSize]);
-
-  const handlePropertiesMoveUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    isMovingPropertiesRef.current = false;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
-  }, []);
-
-  // Properties Resize Handlers
-  const handlePropertiesResizeDown = useCallback((e: React.PointerEvent<HTMLDivElement>, direction: 'bl' | 'br') => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const container = e.currentTarget.closest('.properties-container');
-    const parent = container?.parentElement;
-    if (container && parent) {
-      const parentRect = parent.getBoundingClientRect();
-      const rect = container.getBoundingClientRect();
-      const currentX = rect.left - parentRect.left;
-      const currentY = rect.top - parentRect.top;
-      setPropertiesPos({ x: currentX, y: currentY });
-    }
     
     propertiesResizeStartRef.current = {
       mouseX: e.clientX,
@@ -4338,43 +4294,22 @@ export function BoardCanvas({
       startWidth: propertiesSize.width,
       startHeight: propertiesSize.height,
     };
-    propertiesResizeDirectionRef.current = direction;
     isResizingPropertiesRef.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
-  }, [propertiesSize]);
+  }, [propertiesSize.width, propertiesSize.height]);
 
-  const handlePropertiesResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  const handlePropertiesResizeLeftMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!isResizingPropertiesRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     
     const deltaX = e.clientX - propertiesResizeStartRef.current.mouseX;
-    const deltaY = e.clientY - propertiesResizeStartRef.current.mouseY;
+    const newWidth = Math.max(200, Math.min(600, propertiesResizeStartRef.current.startWidth - deltaX));
     
-    let newWidth = propertiesSize.width;
-    let newHeight = propertiesSize.height;
-    
-    if (propertiesResizeDirectionRef.current === 'bl') {
-      newWidth = Math.max(180, Math.min(450, propertiesResizeStartRef.current.startWidth - deltaX));
-      newHeight = Math.max(250, Math.min(650, propertiesResizeStartRef.current.startHeight + deltaY));
-      
-      setPropertiesSize({ width: newWidth, height: newHeight });
-      setPropertiesPos((prev) => {
-        if (!prev) return null;
-        const widthChange = newWidth - propertiesResizeStartRef.current.startWidth;
-        return {
-          x: prev.x - widthChange,
-          y: prev.y
-        };
-      });
-    } else { // 'br'
-      newWidth = Math.max(180, Math.min(450, propertiesResizeStartRef.current.startWidth + deltaX));
-      newHeight = Math.max(250, Math.min(650, propertiesResizeStartRef.current.startHeight + deltaY));
-      setPropertiesSize({ width: newWidth, height: newHeight });
-    }
-  }, [propertiesSize]);
+    setPropertiesSize((prev) => ({ ...prev, width: newWidth }));
+  }, []);
 
-  const handlePropertiesResizeUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  const handlePropertiesResizeLeftUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     isResizingPropertiesRef.current = false;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -4667,7 +4602,7 @@ export function BoardCanvas({
   return (
     <div
       dir="ltr"
-      className="fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fadeIn"
+      className="board-canvas-modal fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fadeIn"
       onClick={handleCloseConfirm}
     >
       <div
@@ -5455,44 +5390,47 @@ export function BoardCanvas({
                 <span>Map</span>
               </button>
             )}
-            {/* Floating Properties Panel */}
-            {showProperties && (
-              <div 
-                className="absolute bg-zinc-950/95 border border-zinc-800 shadow-2xl rounded-2xl p-3 z-40 select-none backdrop-blur-md animate-fadeIn flex flex-col gap-3 properties-container"
-                onPointerDown={(e) => e.stopPropagation()}
-                style={propertiesPos ? {
-                  left: `${propertiesPos.x}px`,
-                  top: `${propertiesPos.y}px`,
-                  width: `${propertiesSize.width}px`,
-                  height: `${propertiesSize.height}px`,
-                  maxHeight: 'calc(100% - 2rem)',
-                } : {
-                  top: '1rem',
-                  right: '1rem',
-                  width: `${propertiesSize.width}px`,
-                  height: `${propertiesSize.height}px`,
-                  maxHeight: 'calc(100% - 2rem)',
-                }}
-              >
-                {/* Drag Handle Header */}
-                <div 
-                  className="flex items-center justify-between gap-4 px-0.5 cursor-grab active:cursor-grabbing border-b border-zinc-800/60 pb-1.5 shrink-0 select-none"
-                  onPointerDown={handlePropertiesMoveDown}
-                  onPointerMove={handlePropertiesMoveMove}
-                  onPointerUp={handlePropertiesMoveUp}
-                >
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Properties</span>
-                  <button 
-                    onClick={() => setShowProperties(false)}
-                    className="p-1 rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all cursor-pointer"
-                    title="Minimize Properties"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
 
-                {/* Properties scrollable content */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-3 pr-0.5">
+            {/* Hidden file input for importing images */}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              style={{ display: 'none' }} 
+              onChange={handleImageUpload} 
+              accept="image/*" 
+            />
+          </div>
+
+          {/* ── PROPERTIES SIDEBAR PANEL ── */}
+          {showProperties && (
+            <div 
+              className="h-full bg-zinc-950/95 border-l border-zinc-800 shadow-2xl z-20 flex flex-col properties-container relative select-none"
+              style={{ width: `${propertiesSize.width}px` }}
+            >
+              {/* Left Edge Resize Handle */}
+              <div 
+                className="absolute top-0 left-0 w-1.5 h-full cursor-col-resize z-50 hover:bg-fuchsia-500/50 transition-colors flex items-center justify-center group"
+                onPointerDown={handlePropertiesResizeLeftDown}
+                onPointerMove={handlePropertiesResizeLeftMove}
+                onPointerUp={handlePropertiesResizeLeftUp}
+              >
+                <div className="w-[1.5px] h-10 bg-zinc-800 group-hover:bg-fuchsia-400" />
+              </div>
+
+              {/* Header */}
+              <div className="flex items-center justify-between gap-4 p-4 border-b border-zinc-800/60 shrink-0 select-none">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Properties</span>
+                <button 
+                  onClick={() => setShowProperties(false)}
+                  className="p-1 rounded text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300 transition-all cursor-pointer"
+                  title="Close Properties"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Properties scrollable content */}
+              <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4 p-4">
             {/* Multi-Selection alignment/grouping panel */}
             {selectedStrokeIds.length > 0 && (
               <div className="space-y-3 pb-3 border-b border-zinc-800/80">
@@ -6201,27 +6139,9 @@ export function BoardCanvas({
               </div>
             )}
 
-            {/* Resize Handles */}
-            <div 
-              className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize z-50 flex items-end justify-start p-0.5"
-              onPointerDown={(e) => handlePropertiesResizeDown(e, 'bl')}
-              onPointerMove={handlePropertiesResizeMove}
-              onPointerUp={handlePropertiesResizeUp}
-            >
-              <div className="w-1.5 h-1.5 border-b-2 border-l-2 border-zinc-500 rounded-bl-sm" />
-            </div>
-            <div 
-              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-50 flex items-end justify-end p-0.5"
-              onPointerDown={(e) => handlePropertiesResizeDown(e, 'br')}
-              onPointerMove={handlePropertiesResizeMove}
-              onPointerUp={handlePropertiesResizeUp}
-            >
-              <div className="w-1.5 h-1.5 border-b-2 border-r-2 border-zinc-500 rounded-br-sm" />
-            </div>
-            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
 
         {/* ═══ BOTTOM STATUS ═══ */}

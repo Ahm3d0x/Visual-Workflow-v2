@@ -144,6 +144,58 @@ export function PropertiesPanel({
   const isOpen = panels.properties;
   const canEdit = ['owner', 'admin', 'editor'].includes(userRole);
 
+  // Panel resizing states
+  const [width, setWidth] = useState(320);
+  const [isResizing, setIsResizing] = useState(false);
+
+  // Load persisted width
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedWidth = localStorage.getItem('properties-panel-width');
+      if (savedWidth) {
+        const parsed = parseInt(savedWidth, 10);
+        if (parsed >= 260 && parsed <= 600) {
+          const timer = setTimeout(() => {
+            setWidth(parsed);
+          }, 0);
+          return () => clearTimeout(timer);
+        }
+      }
+    }
+  }, []);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+
+    const startX = e.clientX;
+    const startWidth = width;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const currentX = moveEvent.clientX;
+      let newWidth = startWidth;
+      if (isRtl) {
+        // RTL: panel is on left, handle is on right edge
+        newWidth = startWidth + (currentX - startX);
+      } else {
+        // LTR: panel is on right, handle is on left edge
+        newWidth = startWidth + (startX - currentX);
+      }
+      const clamped = Math.max(260, Math.min(600, newWidth));
+      setWidth(clamped);
+      localStorage.setItem('properties-panel-width', clamped.toString());
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   // Collaborators/members states
   const [members, setMembers] = useState<any[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -467,9 +519,23 @@ export function PropertiesPanel({
     : [];
 
   return (
-    <aside className={`w-80 border-y-0 border-border bg-background/95 backdrop-blur-md flex flex-col h-full z-30 shrink-0 shadow-xl transition-all duration-300 md:shadow-none absolute md:relative top-0 bottom-0 ${
-      isRtl ? 'left-0 border-r' : 'right-0 border-l'
-    }`}>
+    <aside 
+      style={{ width: `${width}px` }}
+      className={`border-y-0 border-border bg-background/95 backdrop-blur-md flex flex-col h-full z-30 shrink-0 shadow-xl md:shadow-none absolute md:relative top-0 bottom-0 ${
+        isResizing ? '' : 'transition-all duration-300'
+      } ${
+        isRtl ? 'left-0 border-r border-accent/10' : 'right-0 border-l border-accent/10'
+      }`}
+    >
+      {/* Resizable edge drag handle */}
+      <div
+        className={`absolute top-0 bottom-0 w-1.5 cursor-col-resize z-50 hover:bg-accent/40 active:bg-accent/80 transition-colors flex items-center justify-center group ${
+          isRtl ? 'right-0' : 'left-0'
+        }`}
+        onMouseDown={handleMouseDown}
+      >
+        <div className="w-[1.5px] h-10 bg-border/40 group-hover:bg-accent/80 transition-colors animate-pulse" />
+      </div>
       {/* 1. Header with Close Trigger */}
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
