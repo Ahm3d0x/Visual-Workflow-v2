@@ -2414,9 +2414,8 @@ export function BoardCanvas({
     const x = isEditorView ? sheet.x : 0;
     const y = isEditorView ? sheet.y : 0;
 
-    // 1. Save state and switch compositing to source-over so grid, border, and labels paint on top of the sheet background
+    // 1. Save state
     ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
 
     // Draw page background (rounded rect for editor, sharp rect for exports)
     ctx.save();
@@ -2442,8 +2441,11 @@ export function BoardCanvas({
       }
       ctx.clip();
 
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
-      ctx.lineWidth = 1;
+      // Adapt grid color based on sheet background
+      const sheetBg = (sheet.bgColor || '#ffffff').toLowerCase();
+      const isLightSheet = sheetBg === '#ffffff' || sheetBg === '#f8f9fa' || sheetBg === '#e7f5ff' || sheetBg === '#fff9db' || sheetBg === '#fff0f6' || sheetBg === '#ebfbee' || sheetBg.startsWith('#fff') || sheetBg.startsWith('#f');
+      ctx.strokeStyle = isLightSheet ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 0.5;
 
       if (pageGridType === 'grid') {
         ctx.beginPath();
@@ -2457,6 +2459,8 @@ export function BoardCanvas({
         }
         ctx.stroke();
       } else if (pageGridType === 'lines') {
+        ctx.strokeStyle = isLightSheet ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.18)';
+        ctx.lineWidth = 0.5;
         ctx.beginPath();
         for (let gy = y + gridSize; gy < y + sheet.height; gy += gridSize) {
           ctx.moveTo(x, gy);
@@ -2598,11 +2602,6 @@ export function BoardCanvas({
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // 1. Draw strokes first (so eraser with 'destination-out' only cuts drawings, not sheets/grid)
-    ctx.save();
-    ctx.translate(view.offsetX, view.offsetY);
-    ctx.scale(view.scale, view.scale);
-
     const visibleRect = {
       minX: -view.offsetX / view.scale,
       minY: -view.offsetY / view.scale,
@@ -2611,6 +2610,84 @@ export function BoardCanvas({
     };
 
     const activeSheet = sheets[activeSheetIndex] || sheets[0];
+
+    // ── PHASE 1: Draw backgrounds, grids, and sheet decorations FIRST ──
+    // In sheets mode, draw the sheet page (background + grid + border + header/footer)
+    if (isSheetsMode && sheets.length > 0) {
+      const activeSheetObj = sheets[activeSheetIndex] || sheets[0];
+      const activeIdx = sheets.indexOf(activeSheetObj);
+      if (activeSheetObj) {
+        ctx.save();
+        ctx.translate(view.offsetX, view.offsetY);
+        ctx.scale(view.scale, view.scale);
+
+        // Page Drop Shadow (drawn first so it sits behind the page)
+        ctx.save();
+        const shadowLayers = [
+          { xOff: 1, yOff: 3, blur: 4, alpha: 0.04 },
+          { xOff: 3, yOff: 8, blur: 12, alpha: 0.06 },
+          { xOff: 6, yOff: 16, blur: 24, alpha: 0.08 }
+        ];
+        shadowLayers.forEach(sl => {
+          ctx.fillStyle = `rgba(0, 0, 0, ${sl.alpha})`;
+          ctx.beginPath();
+          const r = 6 + sl.blur / 2;
+          const sx = activeSheetObj.x + sl.xOff - sl.blur / 2;
+          const sy = activeSheetObj.y + sl.yOff - sl.blur / 2;
+          const sw = activeSheetObj.width + sl.blur;
+          const sh = activeSheetObj.height + sl.blur;
+          if (ctx.roundRect) {
+            ctx.roundRect(sx, sy, sw, sh, r);
+          } else {
+            ctx.rect(sx, sy, sw, sh);
+          }
+          ctx.fill();
+        });
+        ctx.restore();
+
+        // Page background, grid, border, header, and footer templates (on top of shadow)
+        drawSheetBackgroundAndLayout(ctx, activeSheetObj, activeIdx, sheets.length, true);
+
+        ctx.restore();
+      }
+    }
+
+    // In infinite canvas mode, draw the background grid
+    if (!isSheetsMode && gridType !== 'none') {
+      ctx.save();
+      const sizeVal = gridSize * view.scale;
+      const startX = view.offsetX % sizeVal;
+      const startY = view.offsetY % sizeVal;
+      const isLightBg = bgColor === '#ffffff' || bgColor === '#f8f9fa' || bgColor === '#e7f5ff' || bgColor === '#fff9db' || bgColor === '#fff0f6' || bgColor === '#ebfbee';
+      ctx.strokeStyle = isLightBg ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.03)';
+      ctx.fillStyle = isLightBg ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 1;
+
+      if (sizeVal >= 8) {
+        if (gridType === 'grid') {
+          ctx.beginPath();
+          for (let x = startX; x < canvas.width; x += sizeVal) {
+            ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
+          }
+          for (let y = startY; y < canvas.height; y += sizeVal) {
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
+        } else if (gridType === 'lines') {
+          ctx.beginPath();
+          for (let y = startY; y < canvas.height; y += sizeVal) {
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // ── PHASE 2: Draw strokes on top of backgrounds ──
+    ctx.save();
+    ctx.translate(view.offsetX, view.offsetY);
+    ctx.scale(view.scale, view.scale);
 
     strokes.forEach((stroke) => {
       if (isSheetsMode && activeSheet && !isStrokeInSheet(stroke, activeSheet)) return;
@@ -2626,6 +2703,7 @@ export function BoardCanvas({
       }
     });
 
+    // ── PHASE 3: Draw selection UI on top ──
     // Selected bounding box
     if (selectedStrokeIds.length > 0 && tool === 'select') {
       const box = getCombinedBoundingBox(selectedStrokeIds);
@@ -2702,84 +2780,6 @@ export function BoardCanvas({
       ctx.strokeRect(rx, ry, rw, rh);
       ctx.restore();
     }
-    ctx.restore();
-
-    // 2. Paint backgrounds and grid behind strokes using destination-over
-    ctx.save();
-    ctx.globalCompositeOperation = 'destination-over';
-
-    // 2.1. Sheets Layer
-    if (isSheetsMode && sheets.length > 0) {
-      const activeSheetObj = sheets[activeSheetIndex] || sheets[0];
-      const activeIdx = sheets.indexOf(activeSheetObj);
-      if (activeSheetObj) {
-        ctx.save();
-        ctx.translate(view.offsetX, view.offsetY);
-        ctx.scale(view.scale, view.scale);
-
-        // Draw page background, grid, border, header, and footer templates FIRST (so it sits on top in destination-over)
-        drawSheetBackgroundAndLayout(ctx, activeSheetObj, activeIdx, sheets.length, true);
-
-        // Page Drop Shadow drawn SECOND (so it sits behind the page background in destination-over)
-        ctx.save();
-        const shadowLayers = [
-          { xOff: 1, yOff: 3, blur: 4, alpha: 0.04 },
-          { xOff: 3, yOff: 8, blur: 12, alpha: 0.06 },
-          { xOff: 6, yOff: 16, blur: 24, alpha: 0.08 }
-        ];
-        shadowLayers.forEach(sl => {
-          ctx.fillStyle = `rgba(0, 0, 0, ${sl.alpha})`;
-          ctx.beginPath();
-          const r = 6 + sl.blur / 2;
-          const sx = activeSheetObj.x + sl.xOff - sl.blur / 2;
-          const sy = activeSheetObj.y + sl.yOff - sl.blur / 2;
-          const sw = activeSheetObj.width + sl.blur;
-          const sh = activeSheetObj.height + sl.blur;
-          if (ctx.roundRect) {
-            ctx.roundRect(sx, sy, sw, sh, r);
-          } else {
-            ctx.rect(sx, sy, sw, sh);
-          }
-          ctx.fill();
-        });
-        ctx.restore();
-
-        ctx.restore();
-      }
-    }
-
-    // 2.2. Draw Grid (if not in sheets mode)
-    if (!isSheetsMode && gridType !== 'none') {
-      ctx.save();
-      const sizeVal = gridSize * view.scale;
-      const startX = view.offsetX % sizeVal;
-      const startY = view.offsetY % sizeVal;
-      const isLightBg = bgColor === '#ffffff' || bgColor === '#f8f9fa' || bgColor === '#e7f5ff' || bgColor === '#fff9db' || bgColor === '#fff0f6' || bgColor === '#ebfbee';
-      ctx.strokeStyle = isLightBg ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.03)';
-      ctx.fillStyle = isLightBg ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.05)';
-      ctx.lineWidth = 1;
-
-      if (sizeVal >= 8) {
-        if (gridType === 'grid') {
-          ctx.beginPath();
-          for (let x = startX; x < canvas.width; x += sizeVal) {
-            ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
-          }
-          for (let y = startY; y < canvas.height; y += sizeVal) {
-            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
-          }
-          ctx.stroke();
-        } else if (gridType === 'lines') {
-          ctx.beginPath();
-          for (let y = startY; y < canvas.height; y += sizeVal) {
-            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
-          }
-          ctx.stroke();
-        }
-      }
-      ctx.restore();
-    }
-
     ctx.restore();
   }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout, redrawTrigger, canvasSize]);
 
