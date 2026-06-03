@@ -124,16 +124,27 @@ export default async function DashboardPage({
     );
   }
 
-  // 3. Fetch workflows inside this workspace
+  // 3. Fetch workflows inside this workspace (exclude whiteboards)
   const { data: workflowsRecord } = await supabase
     .from('workflows')
-    .select('id, name, description, status, node_count, updated_at')
+    .select('id, name, description, status, node_count, updated_at, is_whiteboard')
     .eq('workspace_id', activeWorkspace.id)
+    .eq('is_whiteboard', false)
     .order('updated_at', { ascending: false });
 
   const workflows = (workflowsRecord || []) as WorkflowItem[];
 
-  // Fetch workflows shared with this user (where user_id = user.id)
+  // Fetch whiteboards inside this workspace
+  const { data: whiteboardsRecord } = await supabase
+    .from('workflows')
+    .select('id, name, description, status, node_count, updated_at, is_whiteboard, board_data')
+    .eq('workspace_id', activeWorkspace.id)
+    .eq('is_whiteboard', true)
+    .order('updated_at', { ascending: false });
+
+  const whiteboards = (whiteboardsRecord || []) as WorkflowItem[];
+
+  // Fetch workflows and whiteboards shared with this user (where user_id = user.id)
   const { data: sharedRecords } = await supabase
     .from('workflow_shares')
     .select(`
@@ -144,7 +155,9 @@ export default async function DashboardPage({
         description,
         status,
         node_count,
-        updated_at
+        updated_at,
+        is_whiteboard,
+        board_data
       )
     `)
     .eq('user_id', user.id);
@@ -161,7 +174,7 @@ export default async function DashboardPage({
           const wf = Array.isArray(r.workflows) ? r.workflows[0] : r.workflows;
           return { wf, role: r.role };
         })
-        .filter((item) => item.wf !== null && item.wf !== undefined && item.wf.id !== undefined && (workflows.length === 0 || !workflows.some((w) => w.id === item.wf.id)))
+        .filter((item) => item.wf !== null && item.wf !== undefined && item.wf.id !== undefined && !item.wf.is_whiteboard && (workflows.length === 0 || !workflows.some((w) => w.id === item.wf.id)))
         .map((item) => ({
           id: item.wf.id,
           name: item.wf.name,
@@ -170,6 +183,27 @@ export default async function DashboardPage({
           node_count: item.wf.node_count,
           updated_at: item.wf.updated_at,
           role: item.role,
+          is_whiteboard: false,
+        }))
+    : [];
+
+  const sharedWhiteboards = sharedRecords
+    ? (sharedRecords as unknown as SharedWorkflowJoint[])
+        .map((r) => {
+          const wf = Array.isArray(r.workflows) ? r.workflows[0] : r.workflows;
+          return { wf, role: r.role };
+        })
+        .filter((item) => item.wf !== null && item.wf !== undefined && item.wf.id !== undefined && item.wf.is_whiteboard && (whiteboards.length === 0 || !whiteboards.some((w) => w.id === item.wf.id)))
+        .map((item) => ({
+          id: item.wf.id,
+          name: item.wf.name,
+          description: item.wf.description,
+          status: item.wf.status,
+          node_count: item.wf.node_count,
+          updated_at: item.wf.updated_at,
+          role: item.role,
+          is_whiteboard: true,
+          board_data: item.wf.board_data || {},
         }))
     : [];
 
@@ -230,7 +264,9 @@ export default async function DashboardPage({
       <WorkflowsList
         key={activeWorkspace.id}
         initialWorkflows={workflows}
+        initialWhiteboards={whiteboards}
         sharedWorkflows={sharedWorkflows}
+        sharedWhiteboards={sharedWhiteboards}
         workspaceId={activeWorkspace.id}
         workspaces={workspaces}
         locale={locale}

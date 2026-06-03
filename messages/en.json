@@ -26,8 +26,13 @@
   "dashboard": {
     "title": "Dashboard",
     "new_workflow": "New Workflow",
+    "new_whiteboard": "New Whiteboard",
     "search_placeholder": "Search workflows...",
+    "search_whiteboards_placeholder": "Search whiteboards...",
     "no_workflows": "No workflows yet. Create your first one!",
+    "no_whiteboards": "No whiteboards yet. Create your first one!",
+    "whiteboard_tab": "Whiteboards",
+    "workflow_tab": "Workflows",
     "last_modified": "Last modified",
     "node_count": "{count} nodes"
   },

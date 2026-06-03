@@ -26,8 +26,13 @@
   "dashboard": {
     "title": "لوحة التحكم",
     "new_workflow": "مخطط سير عمل جديد",
+    "new_whiteboard": "لوحة بيضاء جديدة",
     "search_placeholder": "البحث في مخططات سير العمل...",
+    "search_whiteboards_placeholder": "البحث في اللوحات البيضاء...",
     "no_workflows": "لا يوجد مخططات سير عمل بعد. أنشئ مخططك الأول!",
+    "no_whiteboards": "لا يوجد لوحات بيضاء بعد. أنشئ لوحتك الأولى!",
+    "whiteboard_tab": "اللوحات البيضاء",
+    "workflow_tab": "مخططات سير العمل",
     "last_modified": "آخر تعديل",
     "node_count": "{count} عقد"
   },

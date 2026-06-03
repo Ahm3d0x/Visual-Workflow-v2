@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, FileJson, Layout, Loader2, Sparkles, BookOpen, Info, ChevronRight } from 'lucide-react';
+import { Plus, FileJson, Layout, Loader2, Sparkles, BookOpen, Info, ChevronRight, Presentation } from 'lucide-react';
 
 interface QuickActionsProps {
   workspaceId: string;
@@ -147,12 +147,17 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
   // Modals state
   const [workflowOpen, setWorkflowOpen] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [wbOpen, setWbOpen] = useState(false);
 
   // Form State
   const [wfName, setWfName] = useState('');
   const [wfDesc, setWfDesc] = useState('');
   const [wfTemplate, setWfTemplate] = useState('blank');
   const [wfLoading, setWfLoading] = useState(false);
+
+  const [wbName, setWbName] = useState('');
+  const [wbDesc, setWbDesc] = useState('');
+  const [wbBg, setWbBg] = useState('#ffffff');
 
   // ─── Native Workflow Creation ──────────────────────────────────────────────
   const handleCreateWorkflow = async (e: React.FormEvent) => {
@@ -198,6 +203,50 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
       setWfName('');
       setWfDesc('');
       router.push(`/workflows/${data.id}`);
+    }
+  };
+
+  // ─── Native Whiteboard Creation ──────────────────────────────────────────────
+  const handleCreateWhiteboard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wbName.trim()) return;
+
+    setWfLoading(true);
+    const { data: userData } = await supabase.auth.getUser();
+
+    // Insert new whiteboard record in public.workflows
+    const { data, error } = await (supabase
+      .from('workflows')
+      .insert({
+        workspace_id: workspaceId,
+        name: wbName.trim(),
+        description: wbDesc.trim() || null,
+        status: 'draft',
+        is_whiteboard: true,
+        board_data: {
+          boardStrokes: [],
+          boardBg: wbBg,
+          boardSheets: [],
+          isSheetsMode: false
+        },
+        created_by: userData.user?.id || null,
+      } as any)
+      .select('id')
+      .single() as any);
+
+    if (error) {
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ في إنشاء اللوحة البيضاء' : 'Whiteboard Creation Error',
+        (isRtl ? 'فشل إنشاء اللوحة البيضاء: ' : 'Failed to create whiteboard: ') + error.message,
+        isRtl ? 'حسناً' : 'OK'
+      );
+      setWfLoading(false);
+    } else if (data) {
+      setWbOpen(false);
+      setWfLoading(false);
+      setWbName('');
+      setWbDesc('');
+      router.push(`/whiteboards/${data.id}`);
     }
   };
 
@@ -468,6 +517,68 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
                 {isRtl ? 'إلغاء' : 'Cancel'}
               </Button>
               <Button type="submit" disabled={wfLoading || !wfName.trim()} className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-xl px-5 cursor-pointer">
+                {wfLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (isRtl ? 'إنشاء' : 'Create')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 1b. Create Whiteboard Trigger Dialog */}
+      <Dialog open={wbOpen} onOpenChange={setWbOpen}>
+        <DialogTrigger className="inline-flex items-center justify-center bg-secondary hover:bg-secondary/95 text-secondary-foreground font-semibold px-5 py-2.5 rounded-xl transition-all duration-300 hover:scale-[1.02] hover:shadow-md cursor-pointer gap-2 focus:outline-hidden text-sm h-10 border border-border select-none">
+          <Presentation className="w-4 h-4 text-emerald-500" />
+          <span>{isRtl ? 'لوحة بيضاء جديدة' : 'New Whiteboard'}</span>
+        </DialogTrigger>
+        <DialogContent className="bg-background border border-border rounded-2xl shadow-xl max-w-md p-6 font-sans">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">{isRtl ? 'إنشاء لوحة بيضاء جديدة' : 'Create Whiteboard'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreateWhiteboard} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="wbName" className="font-semibold text-sm">
+                {isRtl ? 'الاسم' : 'Name'}
+              </Label>
+              <Input
+                id="wbName"
+                value={wbName}
+                onChange={(e) => setWbName(e.target.value)}
+                placeholder={isRtl ? 'اسم اللوحة البيضاء' : 'Whiteboard name'}
+                required
+                className="rounded-xl border-border focus:ring-accent"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="wbDesc" className="font-semibold text-sm">
+                {isRtl ? 'الوصف' : 'Description'}
+              </Label>
+              <Textarea
+                id="wbDesc"
+                value={wbDesc}
+                onChange={(e) => setWbDesc(e.target.value)}
+                placeholder={isRtl ? 'وصف للوحة البيضاء (اختياري)' : 'Description of the whiteboard (optional)'}
+                className="rounded-xl border-border focus:ring-accent"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="font-semibold text-sm">{isRtl ? 'لون الخلفية الافتراضي' : 'Default Background'}</Label>
+              <Select value={wbBg} onValueChange={(val) => setWbBg(val || '#ffffff')}>
+                <SelectTrigger className="rounded-xl border-border">
+                  <SelectValue placeholder={isRtl ? 'اختر لون الخلفية' : 'Select background'} />
+                </SelectTrigger>
+                <SelectContent className="bg-background border border-border rounded-xl">
+                  <SelectItem value="#ffffff" className="cursor-pointer">{isRtl ? 'أبيض (White)' : 'White'}</SelectItem>
+                  <SelectItem value="#121212" className="cursor-pointer">{isRtl ? 'أسود (Black)' : 'Black'}</SelectItem>
+                  <SelectItem value="#f8f9fa" className="cursor-pointer">{isRtl ? 'رمادي فاتح (Light Gray)' : 'Light Gray'}</SelectItem>
+                  <SelectItem value="#e7f5ff" className="cursor-pointer">{isRtl ? 'أزرق فاتح (Light Blue)' : 'Light Blue'}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter className="pt-4 gap-2">
+              <Button type="button" variant="outline" onClick={() => setWbOpen(false)} className="rounded-xl border-border cursor-pointer">
+                {isRtl ? 'إلغاء' : 'Cancel'}
+              </Button>
+              <Button type="submit" disabled={wfLoading || !wbName.trim()} className="bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-xl px-5 cursor-pointer">
                 {wfLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (isRtl ? 'إنشاء' : 'Create')}
               </Button>
             </DialogFooter>

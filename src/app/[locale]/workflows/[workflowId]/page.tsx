@@ -15,6 +15,7 @@ interface WorkflowRecord {
   description: string | null;
   status: 'draft' | 'active' | 'archived' | 'published';
   node_count: number;
+  is_whiteboard?: boolean;
 }
 
 interface NodeRecord {
@@ -58,12 +59,16 @@ export default async function WorkflowEditorPage({
   // 2. Fetch the target workflow
   const { data: workflow } = await (supabase
     .from('workflows')
-    .select('id, workspace_id, name, description, status, node_count')
+    .select('id, workspace_id, name, description, status, node_count, is_whiteboard')
     .eq('id', workflowId)
     .maybeSingle() as unknown as { data: WorkflowRecord | null });
 
   if (!workflow) {
     notFound();
+  }
+
+  if (workflow.is_whiteboard) {
+    redirect(`/${locale}/whiteboards/${workflowId}`);
   }
 
   // 3. Verify user membership and role in this workspace (or fallback to direct workflow share role)

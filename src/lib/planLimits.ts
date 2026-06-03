@@ -169,6 +169,7 @@ export async function checkPlanLimit(
         .from('workflows')
         .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId)
+        .eq('is_whiteboard', false)
         .neq('status', 'archived');
       current = count || 0;
       break;

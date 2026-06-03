@@ -41,6 +41,7 @@ import {
   Layers,
   Workflow as WorkflowIcon,
   Loader2,
+  Presentation,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -51,6 +52,8 @@ interface WorkflowItem {
   status: 'draft' | 'active' | 'archived' | 'published';
   node_count: number;
   updated_at: string;
+  is_whiteboard?: boolean;
+  board_data?: any;
 }
 
 interface SharedWorkflowItem extends WorkflowItem {
@@ -59,13 +62,23 @@ interface SharedWorkflowItem extends WorkflowItem {
 
 interface WorkflowsListProps {
   initialWorkflows: WorkflowItem[];
+  initialWhiteboards: WorkflowItem[];
   sharedWorkflows?: SharedWorkflowItem[];
+  sharedWhiteboards?: SharedWorkflowItem[];
   workspaceId: string;
   workspaces: Array<{ id: string; name: string; plan: string }>;
   locale: string;
 }
 
-export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspaceId, workspaces, locale }: WorkflowsListProps) {
+export function WorkflowsList({
+  initialWorkflows,
+  initialWhiteboards,
+  sharedWorkflows = [],
+  sharedWhiteboards = [],
+  workspaceId,
+  workspaces,
+  locale
+}: WorkflowsListProps) {
   const router = useRouter();
   const t = useTranslations('dashboard');
   const supabase = createClient();
@@ -93,7 +106,8 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
   };
 
   const [workflows, setWorkflows] = useState<WorkflowItem[]>(initialWorkflows);
-  const [activeTab, setActiveTab] = useState<'my-workflows' | 'shared'>('my-workflows');
+  const [whiteboards, setWhiteboards] = useState<WorkflowItem[]>(initialWhiteboards);
+  const [activeTab, setActiveTab] = useState<'workflows' | 'whiteboards' | 'shared'>('workflows');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'active' | 'archived' | 'published'>('all');
@@ -108,6 +122,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
 
   // Mutation Handlers
   const handleArchive = async (id: string, currentStatus: string) => {
+    const isWb = activeTab === 'whiteboards';
     const nextStatus = currentStatus === 'archived' ? 'draft' : 'archived';
     const { error } = await (supabase
       .from('workflows') as any)
@@ -115,16 +130,23 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
       .eq('id', id);
 
     if (!error) {
-      setWorkflows((prev) =>
-        prev.map((w) => (w.id === id ? { ...w, status: nextStatus as any, updated_at: new Date().toISOString() } : w))
-      );
+      if (isWb) {
+        setWhiteboards((prev) =>
+          prev.map((w) => (w.id === id ? { ...w, status: nextStatus as any, updated_at: new Date().toISOString() } : w))
+        );
+      } else {
+        setWorkflows((prev) =>
+          prev.map((w) => (w.id === id ? { ...w, status: nextStatus as any, updated_at: new Date().toISOString() } : w))
+        );
+      }
     }
   };
 
   const handleDuplicate = async (workflow: WorkflowItem) => {
     const { data: userData } = await supabase.auth.getUser();
-    
-    // 1. Insert duplicated workflow
+    const isWb = (workflow as any).is_whiteboard;
+
+    // 1. Insert duplicated workflow/whiteboard
     const { data, error } = await (supabase
       .from('workflows') as any)
       .insert({
@@ -132,58 +154,77 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
         name: isRtl ? `نسخة من ${workflow.name}` : `Copy of ${workflow.name}`,
         description: workflow.description,
         status: 'draft',
-        node_count: workflow.node_count,
+        node_count: isWb ? 0 : workflow.node_count,
+        is_whiteboard: isWb,
+        board_data: isWb ? ((workflow as any).board_data || {}) : {},
         created_by: userData.user?.id || null,
       })
       .select()
       .single();
 
     if (data && !error) {
-      // 2. Fetch original nodes and duplicate them
-      const { data: nodes } = await (supabase
-        .from('workflow_nodes') as any)
-        .select()
-        .eq('workflow_id', workflow.id);
+      if (isWb) {
+        setWhiteboards((prev) => [data as any, ...prev]);
+        useDialogStore.getState().showNotification(
+          isRtl ? 'تم تكرار اللوحة البيضاء بنجاح!' : 'Whiteboard successfully duplicated!',
+          'success'
+        );
+      } else {
+        // 2. Fetch original nodes and duplicate them
+        const { data: nodes } = await (supabase
+          .from('workflow_nodes') as any)
+          .select()
+          .eq('workflow_id', workflow.id);
 
-      if (nodes && nodes.length > 0) {
-        const nodesToInsert = nodes.map((n: any) => ({
-          workflow_id: data.id,
-          type: n.type,
-          position: n.position,
-          data: n.data,
-          style: n.style,
-        }));
-        await (supabase.from('workflow_nodes') as any).insert(nodesToInsert);
+        if (nodes && nodes.length > 0) {
+          const nodesToInsert = nodes.map((n: any) => ({
+            workflow_id: data.id,
+            type: n.type,
+            position: n.position,
+            data: n.data,
+            style: n.style,
+          }));
+          await (supabase.from('workflow_nodes') as any).insert(nodesToInsert);
+        }
+
+        setWorkflows((prev) => [data as any, ...prev]);
+        useDialogStore.getState().showNotification(
+          isRtl ? 'تم تكرار سير العمل بنجاح!' : 'Workflow successfully duplicated!',
+          'success'
+        );
       }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setWorkflows((prev) => [data as any, ...prev]);
-      useDialogStore.getState().showNotification(
-        isRtl ? 'تم تكرار سير العمل بنجاح!' : 'Workflow successfully duplicated!',
-        'success'
-      );
     }
   };
 
   const handleDelete = async (id: string) => {
-    const title = isRtl ? 'حذف سير العمل' : 'Delete Workflow';
-    const message = isRtl ? 'هل أنت متأكد أنك تريد حذف مخطط سير العمل هذا نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.' : 'Are you sure you want to permanently delete this workflow? This action is irreversible.';
-    
+    const isWb = activeTab === 'whiteboards';
+    const title = isWb ? (isRtl ? 'حذف اللوحة البيضاء' : 'Delete Whiteboard') : (isRtl ? 'حذف سير العمل' : 'Delete Workflow');
+    const message = isWb
+      ? (isRtl ? 'هل أنت متأكد أنك تريد حذف هذه اللوحة البيضاء نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.' : 'Are you sure you want to permanently delete this whiteboard? This action is irreversible.')
+      : (isRtl ? 'هل أنت متأكد أنك تريد حذف مخطط سير العمل هذا نهائياً؟ هذا الإجراء لا يمكن التراجع عنه.' : 'Are you sure you want to permanently delete this workflow? This action is irreversible.');
+
     const confirmed = await useDialogStore.getState().showConfirm(title, message, {
       confirmText: isRtl ? 'حذف نهائي' : 'Delete Permanently',
       cancelText: isRtl ? 'إلغاء' : 'Cancel'
     });
     if (!confirmed) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase.from('workflows') as any).delete().eq('id', id);
 
     if (!error) {
-      setWorkflows((prev) => prev.filter((w) => w.id !== id));
-      useDialogStore.getState().showNotification(
-        isRtl ? 'تم حذف مخطط سير العمل.' : 'Workflow deleted.',
-        'success'
-      );
+      if (isWb) {
+        setWhiteboards((prev) => prev.filter((w) => w.id !== id));
+        useDialogStore.getState().showNotification(
+          isRtl ? 'تم حذف اللوحة البيضاء.' : 'Whiteboard deleted.',
+          'success'
+        );
+      } else {
+        setWorkflows((prev) => prev.filter((w) => w.id !== id));
+        useDialogStore.getState().showNotification(
+          isRtl ? 'تم حذف مخطط سير العمل.' : 'Workflow deleted.',
+          'success'
+        );
+      }
     }
   };
 
@@ -193,17 +234,20 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
 
     setPortingLoading(true);
     const { data: userData } = await supabase.auth.getUser();
+    const isWb = (selectedWf as any).is_whiteboard;
 
     if (copyMoveMode === 'copy') {
-      // 1. Insert duplicated workflow in target workspace
+      // 1. Insert duplicated workflow/whiteboard in target workspace
       const { data: newWf, error: wfError } = await (supabase
         .from('workflows') as any)
         .insert({
           workspace_id: targetWsId,
-          name: isRtl ? `نسخة من ${selectedWf.name}` : `Copy of ${selectedWf.name}`,
+          name: selectedWf.name,
           description: selectedWf.description,
           status: 'draft',
-          node_count: selectedWf.node_count,
+          node_count: isWb ? 0 : selectedWf.node_count,
+          is_whiteboard: isWb,
+          board_data: isWb ? ((selectedWf as any).board_data || {}) : {},
           created_by: userData.user?.id || null,
         })
         .select()
@@ -212,76 +256,84 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
       if (wfError || !newWf) {
         useDialogStore.getState().showAlert(
           isRtl ? 'خطأ' : 'Error',
-          (isRtl ? 'فشل تكرار هيكل سير العمل: ' : 'Failed to duplicate workflow structure: ') + wfError?.message
+          (isRtl ? 'فشل تكرار هيكل العمل: ' : 'Failed to duplicate structure: ') + wfError?.message
         );
         setPortingLoading(false);
         return;
       }
 
-      // 2. Fetch original nodes & edges
-      const { data: nodes } = await (supabase.from('workflow_nodes') as any).select().eq('workflow_id', selectedWf.id);
-      const { data: edges } = await (supabase.from('workflow_edges') as any).select().eq('workflow_id', selectedWf.id);
+      if (!isWb) {
+        // 2. Fetch original nodes & edges
+        const { data: nodes } = await (supabase.from('workflow_nodes') as any).select().eq('workflow_id', selectedWf.id);
+        const { data: edges } = await (supabase.from('workflow_edges') as any).select().eq('workflow_id', selectedWf.id);
 
-      const nodeIdMap: Record<string, string> = {};
+        const nodeIdMap: Record<string, string> = {};
 
-      // 3. Batch insert nodes sequentially to establish old-to-new ID map
-      if (nodes && nodes.length > 0) {
-        for (const node of nodes) {
-          const { data: newNode, error: nodeErr } = await (supabase
-            .from('workflow_nodes') as any)
-            .insert({
+        // 3. Batch insert nodes sequentially to establish old-to-new ID map
+        if (nodes && nodes.length > 0) {
+          for (const node of nodes) {
+            const { data: newNode, error: nodeErr } = await (supabase
+              .from('workflow_nodes') as any)
+              .insert({
+                workflow_id: newWf.id,
+                type: node.type,
+                position: node.position,
+                data: node.data,
+                style: node.style,
+              })
+              .select('id')
+              .single();
+
+            if (newNode && !nodeErr) {
+              nodeIdMap[node.id] = newNode.id;
+            }
+          }
+
+          // Adjust parent nesting relationships for ReactFlow groupings
+          for (const node of nodes) {
+            if (node.parent_id && nodeIdMap[node.parent_id]) {
+              await (supabase.from('workflow_nodes') as any)
+                .update({ parent_id: nodeIdMap[node.parent_id] })
+                .eq('id', nodeIdMap[node.id]);
+            }
+          }
+        }
+
+        // 4. Map and batch insert edges
+        if (edges && edges.length > 0) {
+          const edgesToInsert = edges
+            .filter((e: any) => nodeIdMap[e.source_node_id] && nodeIdMap[e.target_node_id])
+            .map((e: any) => ({
               workflow_id: newWf.id,
-              type: node.type,
-              position: node.position,
-              data: node.data,
-              style: node.style,
-            })
-            .select('id')
-            .single();
+              source_node_id: nodeIdMap[e.source_node_id],
+              target_node_id: nodeIdMap[e.target_node_id],
+              source_handle: e.source_handle,
+              target_handle: e.target_handle,
+            }));
 
-          if (newNode && !nodeErr) {
-            nodeIdMap[node.id] = newNode.id;
+          if (edgesToInsert.length > 0) {
+            await (supabase.from('workflow_edges') as any).insert(edgesToInsert);
           }
-        }
-
-        // Adjust parent nesting relationships for ReactFlow groupings
-        for (const node of nodes) {
-          if (node.parent_id && nodeIdMap[node.parent_id]) {
-            await (supabase.from('workflow_nodes') as any)
-              .update({ parent_id: nodeIdMap[node.parent_id] })
-              .eq('id', nodeIdMap[node.id]);
-          }
-        }
-      }
-
-      // 4. Map and batch insert edges
-      if (edges && edges.length > 0) {
-        const edgesToInsert = edges
-          .filter((e: any) => nodeIdMap[e.source_node_id] && nodeIdMap[e.target_node_id])
-          .map((e: any) => ({
-            workflow_id: newWf.id,
-            source_node_id: nodeIdMap[e.source_node_id],
-            target_node_id: nodeIdMap[e.target_node_id],
-            source_handle: e.source_handle,
-            target_handle: e.target_handle,
-          }));
-
-        if (edgesToInsert.length > 0) {
-          await (supabase.from('workflow_edges') as any).insert(edgesToInsert);
         }
       }
 
       // 5. Update local state list if target matches current active workspace
       if (targetWsId === workspaceId) {
-        setWorkflows((prev) => [newWf as any, ...prev]);
+        if (isWb) {
+          setWhiteboards((prev) => [newWf as any, ...prev]);
+        } else {
+          setWorkflows((prev) => [newWf as any, ...prev]);
+        }
       }
 
       useDialogStore.getState().showNotification(
-        isRtl ? 'تم نسخ سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully copied to target workspace!',
+        isWb
+          ? (isRtl ? 'تم نسخ اللوحة البيضاء إلى مساحة العمل المستهدفة بنجاح!' : 'Whiteboard successfully copied to target workspace!')
+          : (isRtl ? 'تم نسخ سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully copied to target workspace!'),
         'success'
       );
     } else {
-      // Move workflow: Update workspace_id
+      // Move workflow/whiteboard: Update workspace_id
       const { error: moveError } = await (supabase
         .from('workflows') as any)
         .update({ workspace_id: targetWsId })
@@ -290,13 +342,19 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
       if (moveError) {
         useDialogStore.getState().showAlert(
           isRtl ? 'خطأ' : 'Error',
-          (isRtl ? 'فشل نقل سير العمل: ' : 'Failed to transfer workflow: ') + moveError.message
+          (isRtl ? 'فشل النقل: ' : 'Failed to transfer: ') + moveError.message
         );
       } else {
         // Remove from current local state list
-        setWorkflows((prev) => prev.filter((w) => w.id !== selectedWf.id));
+        if (isWb) {
+          setWhiteboards((prev) => prev.filter((w) => w.id !== selectedWf.id));
+        } else {
+          setWorkflows((prev) => prev.filter((w) => w.id !== selectedWf.id));
+        }
         useDialogStore.getState().showNotification(
-          isRtl ? 'تم نقل سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully transferred to target workspace!',
+          isWb
+            ? (isRtl ? 'تم نقل اللوحة البيضاء إلى مساحة العمل المستهدفة بنجاح!' : 'Whiteboard successfully transferred to target workspace!')
+            : (isRtl ? 'تم نقل سير العمل إلى مساحة العمل المستهدفة بنجاح!' : 'Workflow successfully transferred to target workspace!'),
           'success'
         );
       }
@@ -307,7 +365,12 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
   };
 
   // Filter & Sort Logic
-  const listToRender = activeTab === 'my-workflows' ? workflows : sharedWorkflows;
+  const listToRender =
+    activeTab === 'workflows'
+      ? workflows
+      : activeTab === 'whiteboards'
+      ? whiteboards
+      : [...sharedWorkflows, ...sharedWhiteboards];
 
   const filteredWorkflows = listToRender
     .filter((w) => {
@@ -395,19 +458,51 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
     return gradients[charCode % gradients.length];
   };
 
+  const getEditorLink = (wf: any) => {
+    return wf.is_whiteboard
+      ? `/${locale}/whiteboards/${wf.id}`
+      : `/${locale}/workflows/${wf.id}`;
+  };
+
+  const getEditorRoute = (wf: any) => {
+    return wf.is_whiteboard
+      ? `/whiteboards/${wf.id}`
+      : `/workflows/${wf.id}`;
+  };
+
   return (
     <div className="space-y-6 mt-8 font-sans">
       {/* Tab Switcher */}
       <div className="flex border-b border-border gap-6">
         <button
-          onClick={() => setActiveTab('my-workflows')}
-          className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer ${
-            activeTab === 'my-workflows'
+          onClick={() => setActiveTab('workflows')}
+          className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'workflows'
               ? 'border-accent text-accent'
               : 'border-transparent text-muted-foreground hover:text-foreground'
           }`}
         >
-          {isRtl ? 'مخططاتي' : 'My Workflows'}
+          <span>{isRtl ? 'مخططات سير العمل' : 'Workflows'}</span>
+          {workflows.length > 0 && (
+            <Badge variant="secondary" className="px-1.5 py-0 rounded-full text-[10px] bg-accent/10 text-accent font-semibold border border-accent/20">
+              {workflows.length}
+            </Badge>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('whiteboards')}
+          className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+            activeTab === 'whiteboards'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <span>{isRtl ? 'اللوحات البيضاء' : 'Whiteboards'}</span>
+          {whiteboards.length > 0 && (
+            <Badge variant="secondary" className="px-1.5 py-0 rounded-full text-[10px] bg-accent/10 text-accent font-semibold border border-accent/20">
+              {whiteboards.length}
+            </Badge>
+          )}
         </button>
         <button
           onClick={() => setActiveTab('shared')}
@@ -418,9 +513,9 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
           }`}
         >
           <span>{isRtl ? 'المشاركة معي' : 'Shared with me'}</span>
-          {sharedWorkflows.length > 0 && (
+          {(sharedWorkflows.length + sharedWhiteboards.length) > 0 && (
             <Badge variant="secondary" className="px-1.5 py-0 rounded-full text-[10px] bg-accent/10 text-accent font-semibold border border-accent/20">
-              {sharedWorkflows.length}
+              {sharedWorkflows.length + sharedWhiteboards.length}
             </Badge>
           )}
         </button>
@@ -434,7 +529,11 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('search_placeholder')}
+            placeholder={
+              activeTab === 'whiteboards'
+                ? t('search_whiteboards_placeholder')
+                : t('search_placeholder')
+            }
             className="ps-10 pe-12 rtl:ps-4 rtl:pe-10 py-6 rounded-xl border-border focus:ring-accent bg-card/45 backdrop-blur-md transition-all duration-300"
           />
           <div className="absolute right-3 rtl:left-3 rtl:right-auto top-3.5 hidden sm:flex items-center gap-1 bg-muted/80 px-2 py-1 rounded-md border border-border/55 text-[10px] font-mono text-muted-foreground pointer-events-none">
@@ -511,11 +610,19 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
         <Card className="border border-dashed border-border py-16 text-center rounded-2xl bg-background/20 font-sans">
           <CardContent className="space-y-4">
             <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center text-muted-foreground">
-              <Layers className="w-6 h-6" />
+              {activeTab === 'whiteboards' ? (
+                <Presentation className="w-6 h-6 text-emerald-500" />
+              ) : (
+                <Layers className="w-6 h-6" />
+              )}
             </div>
-            <h3 className="font-bold text-lg">{t('no_workflows')}</h3>
+            <h3 className="font-bold text-lg">
+              {activeTab === 'whiteboards' ? t('no_whiteboards') : t('no_workflows')}
+            </h3>
             <p className="text-sm text-muted-foreground max-w-sm mx-auto font-light">
-              {isRtl ? 'اضغط على زر "+ سير عمل جديد" في الأعلى للبدء بصياغة مخطط الأتمتة الخاص بك.' : 'Press the "+ New Workflow" button at the top to draft your first automation canvas pipeline.'}
+              {activeTab === 'whiteboards'
+                ? (isRtl ? 'اضغط على زر "لوحة بيضاء جديدة" في الأعلى للبدء بالرسم والكتابة.' : 'Press the "New Whiteboard" button at the top to draft your first drawing canvas.')
+                : (isRtl ? 'اضغط على زر "+ سير عمل جديد" في الأعلى للبدء بصياغة مخطط الأتمتة الخاص بك.' : 'Press the "+ New Workflow" button at the top to draft your first automation canvas pipeline.')}
             </p>
           </CardContent>
         </Card>
@@ -526,14 +633,18 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
               {/* Premium Gradient Header */}
               <div className={`h-24 bg-linear-to-tr ${getCardThemeGradient(wf.id)} flex items-center justify-center p-4 border-b transition-all duration-300 relative`}>
                 <div className="absolute top-3 right-3 rtl:left-3 rtl:right-auto">{getStatusBadge(wf.status)}</div>
-                <WorkflowIcon className="w-8 h-8 opacity-45 group-hover:scale-110 group-hover:opacity-75 transition-all duration-300 text-accent" />
+                {wf.is_whiteboard ? (
+                  <Presentation className="w-8 h-8 opacity-45 group-hover:scale-110 group-hover:opacity-75 transition-all duration-300 text-emerald-500" />
+                ) : (
+                  <WorkflowIcon className="w-8 h-8 opacity-45 group-hover:scale-110 group-hover:opacity-75 transition-all duration-300 text-accent" />
+                )}
               </div>
 
               <CardHeader className="p-5 space-y-1">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Link href={`/${locale}/workflows/${wf.id}`} className="hover:underline">
+                      <Link href={getEditorLink(wf)} className="hover:underline">
                         <CardTitle className="text-lg font-bold font-sans tracking-tight line-clamp-1 text-start">
                           {wf.name}
                         </CardTitle>
@@ -548,13 +659,13 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-44 font-sans">
                       {activeTab === 'shared' ? (
-                        <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                        <DropdownMenuItem onClick={() => router.push(getEditorRoute(wf))} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
                           <Edit2 className="w-4 h-4 text-muted-foreground" />
                           <span>{isRtl ? (((wf as SharedWorkflowItem).role === 'editor' ? 'تعديل اللوحة' : 'فتح اللوحة')) : (((wf as SharedWorkflowItem).role === 'editor' ? 'Edit Canvas' : 'Open Canvas'))}</span>
                         </DropdownMenuItem>
                       ) : (
                         <>
-                          <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                          <DropdownMenuItem onClick={() => router.push(getEditorRoute(wf))} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
                             <Edit2 className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'تعديل اللوحة' : 'Edit Canvas'}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('copy'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
@@ -606,10 +717,17 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
               </CardHeader>
 
               <CardContent className="p-5 pt-0 border-t border-border flex items-center justify-between text-xs text-muted-foreground font-medium">
-                <span className="flex items-center gap-1.5">
-                  <Play className="w-3.5 h-3.5 text-accent" />
-                  {isRtl ? `${wf.node_count} عقد` : `${wf.node_count} nodes`}
-                </span>
+                {wf.is_whiteboard ? (
+                  <span className="flex items-center gap-1.5 text-emerald-500">
+                    <Presentation className="w-3.5 h-3.5" />
+                    {isRtl ? 'لوحة رسم مستقلة' : 'Drawing Canvas'}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <Play className="w-3.5 h-3.5 text-accent" />
+                    {isRtl ? `${wf.node_count} عقد` : `${wf.node_count} nodes`}
+                  </span>
+                )}
                 <span className="flex items-center gap-1.5">
                   <Calendar className="w-3.5 h-3.5" />
                   {new Date(wf.updated_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' })}
@@ -625,11 +743,15 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
               <div key={wf.id} className="p-4 flex items-center justify-between gap-4 hover:bg-muted/40 border-b border-border/80 last:border-b-0 transition-colors">
                 <div className="flex items-center gap-4 min-w-0">
                   <div className={`w-10 h-10 rounded-xl bg-linear-to-tr ${getCardThemeGradient(wf.id)} flex items-center justify-center shrink-0 border`}>
-                    <WorkflowIcon className="w-5 h-5 opacity-60 text-accent" />
+                    {wf.is_whiteboard ? (
+                      <Presentation className="w-5 h-5 opacity-60 text-emerald-500" />
+                    ) : (
+                      <WorkflowIcon className="w-5 h-5 opacity-60 text-accent" />
+                    )}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Link href={`/${locale}/workflows/${wf.id}`} className="hover:underline">
+                      <Link href={getEditorLink(wf)} className="hover:underline">
                         <h4 className="font-bold font-sans text-sm truncate text-start">{wf.name}</h4>
                       </Link>
                       {activeTab === 'shared' && getShareRoleBadge((wf as SharedWorkflowItem).role)}
@@ -663,10 +785,17 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
 
                 <div className="flex items-center pe-2 gap-6 shrink-0 text-sm">
                   {getStatusBadge(wf.status)}
-                  <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                    <Play className="w-3.5 h-3.5 text-accent" />
-                    {isRtl ? `${wf.node_count} عقد` : `${wf.node_count} nodes`}
-                  </span>
+                  {wf.is_whiteboard ? (
+                    <span className="flex items-center gap-1.5 text-xs text-emerald-500">
+                      <Presentation className="w-3.5 h-3.5" />
+                      {isRtl ? 'لوحة رسم مستقلة' : 'Drawing Canvas'}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground flex items-center gap-1 text-xs">
+                      <Play className="w-3.5 h-3.5 text-accent" />
+                      {isRtl ? `${wf.node_count} عقد` : `${wf.node_count} nodes`}
+                    </span>
+                  )}
                   <span className="text-muted-foreground text-xs hidden sm:inline">
                     {isRtl ? 'تحديث' : 'Updated'} {new Date(wf.updated_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' })}
                   </span>
@@ -678,13 +807,13 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-44 font-sans">
                       {activeTab === 'shared' ? (
-                        <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                        <DropdownMenuItem onClick={() => router.push(getEditorRoute(wf))} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
                           <Edit2 className="w-4 h-4 text-muted-foreground" />
                           <span>{isRtl ? (((wf as SharedWorkflowItem).role === 'editor' ? 'تعديل اللوحة' : 'فتح اللوحة')) : (((wf as SharedWorkflowItem).role === 'editor' ? 'Edit Canvas' : 'Open Canvas'))}</span>
                         </DropdownMenuItem>
                       ) : (
                         <>
-                          <DropdownMenuItem onClick={() => router.push(`/workflows/${wf.id}`)} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
+                          <DropdownMenuItem onClick={() => router.push(getEditorRoute(wf))} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">
                             <Edit2 className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'تعديل اللوحة' : 'Edit Canvas'}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => { setSelectedWf(wf); setCopyMoveMode('copy'); setTargetWsId(workspaces[0]?.id || ''); setCopyMoveOpen(true); }} className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs">

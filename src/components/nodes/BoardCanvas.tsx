@@ -102,6 +102,7 @@ interface BoardCanvasProps {
   initialSheets?: any[];
   initialIsSheetsMode?: boolean;
   onClose: () => void;
+  onSave?: (data: { boardStrokes?: BoardStroke[]; boardBg?: string; boardSheets?: unknown[]; isSheetsMode?: boolean }) => void;
 }
 
 export function BoardCanvas({
@@ -111,7 +112,8 @@ export function BoardCanvas({
   initialBg,
   initialSheets,
   initialIsSheetsMode,
-  onClose
+  onClose,
+  onSave
 }: BoardCanvasProps) {
   /* ── Refs ── */
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -669,15 +671,24 @@ export function BoardCanvas({
     if (persistStrokesRef.current) clearTimeout(persistStrokesRef.current);
     persistStrokesRef.current = setTimeout(() => {
       setIsSyncing(true);
-      updateNode(nodeId, {
-        boardStrokes: newStrokes,
-        boardBg: newBg || bgColor,
-        boardSheets: sheetsRef.current,
-        isSheetsMode: isSheetsModeRef.current,
-      });
+      if (onSave) {
+        onSave({
+          boardStrokes: newStrokes,
+          boardBg: newBg || bgColor,
+          boardSheets: sheetsRef.current,
+          isSheetsMode: isSheetsModeRef.current,
+        });
+      } else {
+        updateNode(nodeId, {
+          boardStrokes: newStrokes,
+          boardBg: newBg || bgColor,
+          boardSheets: sheetsRef.current,
+          isSheetsMode: isSheetsModeRef.current,
+        });
+      }
       setTimeout(() => setIsSyncing(false), 600);
     }, 800);
-  }, [nodeId, updateNode, bgColor]);
+  }, [nodeId, updateNode, bgColor, onSave]);
 
 
 
@@ -4017,12 +4028,16 @@ export function BoardCanvas({
   // Background change
   const handleBgChange = useCallback((newBg: string) => {
     setBgColor(newBg);
-    updateNode(nodeId, { boardBg: newBg });
+    if (onSave) {
+      onSave({ boardBg: newBg });
+    } else {
+      updateNode(nodeId, { boardBg: newBg });
+    }
     if (channelRef.current?.state === 'joined') {
       channelRef.current.send({ type: 'broadcast', event: 'bg_change', payload: { bg: newBg } });
     }
     setShowBgPicker(false);
-  }, [nodeId, updateNode]);
+  }, [nodeId, updateNode, onSave]);
 
   // Exporters
   const handleExportJSON = () => {
