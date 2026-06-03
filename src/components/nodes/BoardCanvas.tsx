@@ -2414,9 +2414,13 @@ export function BoardCanvas({
     const x = isEditorView ? sheet.x : 0;
     const y = isEditorView ? sheet.y : 0;
 
-    // 1. Draw page background (rounded rect for editor, sharp rect for exports)
+    // 1. Save state and switch compositing to source-over so grid, border, and labels paint on top of the sheet background
     ctx.save();
-    ctx.fillStyle = '#ffffff';
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Draw page background (rounded rect for editor, sharp rect for exports)
+    ctx.save();
+    ctx.fillStyle = sheet.bgColor || '#ffffff';
     ctx.beginPath();
     if (isEditorView && ctx.roundRect) {
       ctx.roundRect(x, y, sheet.width, sheet.height, 6);
@@ -2438,7 +2442,7 @@ export function BoardCanvas({
       }
       ctx.clip();
 
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
       ctx.lineWidth = 1;
 
       if (pageGridType === 'grid') {
@@ -2463,7 +2467,36 @@ export function BoardCanvas({
       ctx.restore();
     }
 
-    // 3. Draw border
+    // 3. Draw Page Inner Frame (if enabled)
+    const showInnerFrame = !!sheet.showInnerFrame;
+    if (showInnerFrame) {
+      ctx.save();
+      const framePadding = sheet.innerFramePadding || 15;
+      ctx.strokeStyle = sheet.innerFrameColor || '#cbd5e1';
+      ctx.lineWidth = sheet.innerFrameWidth || 1;
+      
+      const frameStyle = sheet.innerFrameStyle || 'solid';
+      if (frameStyle === 'dashed') {
+        ctx.setLineDash([5, 5]);
+      } else if (frameStyle === 'dotted') {
+        ctx.setLineDash([1, 3]);
+      }
+      
+      ctx.beginPath();
+      const fx = x + framePadding;
+      const fy = y + framePadding;
+      const fw = sheet.width - framePadding * 2;
+      const fh = sheet.height - framePadding * 2;
+      if (isEditorView && ctx.roundRect) {
+        ctx.roundRect(fx, fy, fw, fh, 4);
+      } else {
+        ctx.rect(fx, fy, fw, fh);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 4. Draw border
     const showBorder = sheet.showBorder !== false;
     
     if (showBorder) {
@@ -6744,6 +6777,110 @@ export function BoardCanvas({
                                     value={sheets[activeSheetIndex].borderColor || '#cbd5e1'}
                                     onChange={(e) => handleUpdatePageProperty('borderColor', e.target.value)}
                                     className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Page Background Settings */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[8px] text-zinc-500 font-bold block">Page Background</label>
+                              <div className="flex items-center gap-1.5">
+                                {['#ffffff', '#fafaf9', '#f4f4f5', '#f0fdf4', '#eff6ff', '#fffbeb', '#fff1f2'].map((c) => (
+                                  <button
+                                    key={c}
+                                    onClick={() => handleUpdatePageProperty('bgColor', c)}
+                                    className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
+                                      (sheets[activeSheetIndex].bgColor || '#ffffff') === c
+                                        ? 'ring-1 ring-fuchsia-400 border-white'
+                                        : 'border-zinc-700'
+                                    }`}
+                                    style={{ backgroundColor: c }}
+                                    title={c}
+                                  />
+                                ))}
+                                <input
+                                  type="color"
+                                  value={sheets[activeSheetIndex].bgColor || '#ffffff'}
+                                  onChange={(e) => handleUpdatePageProperty('bgColor', e.target.value)}
+                                  className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Inner Frame Settings */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[8px] text-zinc-500 font-bold block">Page Inner Frame</label>
+                              <input
+                                type="checkbox"
+                                checked={!!sheets[activeSheetIndex].showInnerFrame}
+                                onChange={(e) => handleUpdatePageProperty('showInnerFrame', e.target.checked)}
+                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                              />
+                            </div>
+
+                            {!!sheets[activeSheetIndex].showInnerFrame && (
+                              <div className="space-y-1.5 pl-2 border-l border-zinc-800">
+                                {/* Frame Style */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <label className="text-[8px] text-zinc-450 font-semibold">Frame Style</label>
+                                  <div className="flex gap-0.5">
+                                    {['solid', 'dashed', 'dotted'].map((style) => (
+                                      <button
+                                        key={style}
+                                        onClick={() => handleUpdatePageProperty('innerFrameStyle', style)}
+                                        className={`px-1 py-0.5 rounded text-[7px] font-bold border capitalize transition-all cursor-pointer ${
+                                          (sheets[activeSheetIndex].innerFrameStyle || 'solid') === style
+                                            ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
+                                            : 'bg-zinc-950 border-zinc-850 text-zinc-400'
+                                        }`}
+                                      >
+                                        {style}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Frame Color */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <label className="text-[8px] text-zinc-450 font-semibold">Frame Color</label>
+                                  <div className="flex items-center gap-1.5">
+                                    {['#cbd5e1', '#71717a', '#6366f1', '#ef4444', '#22c55e'].map((c) => (
+                                      <button
+                                        key={c}
+                                        onClick={() => handleUpdatePageProperty('innerFrameColor', c)}
+                                        className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
+                                          (sheets[activeSheetIndex].innerFrameColor || '#a1a1aa') === c
+                                            ? 'ring-1 ring-fuchsia-400 border-white'
+                                            : 'border-zinc-700'
+                                        }`}
+                                        style={{ backgroundColor: c }}
+                                        title={c}
+                                      />
+                                    ))}
+                                    <input
+                                      type="color"
+                                      value={sheets[activeSheetIndex].innerFrameColor || '#a1a1aa'}
+                                      onChange={(e) => handleUpdatePageProperty('innerFrameColor', e.target.value)}
+                                      className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Frame Padding */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <label className="text-[8px] text-zinc-455 font-semibold">Margin Size (px)</label>
+                                  <input
+                                    type="number"
+                                    min="5"
+                                    max="40"
+                                    value={sheets[activeSheetIndex].innerFramePadding || 15}
+                                    onChange={(e) => handleUpdatePageProperty('innerFramePadding', parseInt(e.target.value) || 15)}
+                                    className="w-10 py-0.5 px-1 bg-zinc-950 border border-zinc-850 rounded text-[9px] text-zinc-300 outline-none font-mono"
                                   />
                                 </div>
                               </div>
