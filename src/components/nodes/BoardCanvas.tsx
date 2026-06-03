@@ -103,6 +103,7 @@ interface BoardCanvasProps {
   initialIsSheetsMode?: boolean;
   onClose: () => void;
   onSave?: (data: { boardStrokes?: BoardStroke[]; boardBg?: string; boardSheets?: unknown[]; isSheetsMode?: boolean }) => void;
+  isStandalone?: boolean;
 }
 
 export function BoardCanvas({
@@ -113,7 +114,8 @@ export function BoardCanvas({
   initialSheets,
   initialIsSheetsMode,
   onClose,
-  onSave
+  onSave,
+  isStandalone = false
 }: BoardCanvasProps) {
   /* ── Refs ── */
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -339,15 +341,22 @@ export function BoardCanvas({
   // Resize modal window initially
   useEffect(() => {
     const handleResize = () => {
-      setSize({
-        width: Math.floor(window.innerWidth * 0.95),
-        height: Math.floor(window.innerHeight * 0.92),
-      });
+      if (isStandalone) {
+        setSize({
+          width: window.innerWidth,
+          height: window.innerHeight,
+        });
+      } else {
+        setSize({
+          width: Math.floor(window.innerWidth * 0.95),
+          height: Math.floor(window.innerHeight * 0.92),
+        });
+      }
     };
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [isStandalone]);
 
   // Update mouse position Ref
   useEffect(() => {
@@ -5025,27 +5034,27 @@ export function BoardCanvas({
   return (
     <div
       dir="ltr"
-      className="board-canvas-modal fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fadeIn"
-      onClick={handleCloseConfirm}
+      className={isStandalone ? "w-full h-full" : "board-canvas-modal fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fadeIn"}
+      onClick={isStandalone ? undefined : handleCloseConfirm}
     >
       <div
-        className="flex flex-col bg-zinc-950 border border-zinc-800/80 shadow-2xl rounded-2xl overflow-hidden relative select-none"
+        className={isStandalone ? "flex flex-col bg-zinc-950 w-full h-full overflow-hidden relative select-none" : "flex flex-col bg-zinc-950 border border-zinc-800/80 shadow-2xl rounded-2xl overflow-hidden relative select-none"}
         style={{
           fontFamily: 'Inter, sans-serif',
-          width: `${size.width}px`,
-          height: `${size.height}px`,
+          width: isStandalone ? '100%' : `${size.width}px`,
+          height: isStandalone ? '100%' : `${size.height}px`,
           position: 'relative',
           left: 0,
           top: 0,
-          transform: `translate(${position.x}px, ${position.y}px)`,
+          transform: isStandalone ? undefined : `translate(${position.x}px, ${position.y}px)`,
           direction: 'ltr',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* ═══ TOP TOOLBAR ═══ */}
         <div
-          onMouseDown={onDragStart}
-          className="h-14 shrink-0 flex items-center justify-between px-4 border-b border-zinc-800/80 bg-zinc-900/90 backdrop-blur-md z-20 cursor-move"
+          onMouseDown={isStandalone ? undefined : onDragStart}
+          className={`h-14 shrink-0 flex items-center justify-between px-4 border-b border-zinc-800/80 bg-zinc-900/90 backdrop-blur-md z-20 ${isStandalone ? '' : 'cursor-move'}`}
         >
           {/* Left: Title + Sync */}
           <div className="flex items-center gap-3">

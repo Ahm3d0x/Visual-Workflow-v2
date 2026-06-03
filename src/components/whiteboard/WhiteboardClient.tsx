@@ -82,6 +82,7 @@ export function WhiteboardClient({
           initialIsSheetsMode={initialBoardData?.isSheetsMode}
           onClose={handleClose}
           onSave={handleSave}
+          isStandalone={true}
         />
       </ErrorBoundary>
     </div>

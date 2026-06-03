@@ -35,6 +35,7 @@ import {
   Puzzle,
   X,
   Info,
+  Presentation,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createWorkspace } from '@/actions/workspace.actions';
@@ -147,7 +148,8 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
 
   const navItems = [
     { name: isRtl ? 'لوحة التحكم' : 'Dashboard', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Home },
-    { name: isRtl ? 'مخططات العمل' : 'Workflows', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: GitBranch },
+    { name: isRtl ? 'مخططات العمل' : 'Workflows', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}&tab=workflows` : '?tab=workflows'}`, icon: GitBranch },
+    { name: isRtl ? 'اللوحات البيضاء' : 'Whiteboards', href: `/${locale}/dashboard${activeWorkspace ? `?w=${activeWorkspace.id}&tab=whiteboards` : '?tab=whiteboards'}`, icon: Presentation },
     { name: isRtl ? 'متجر العقد' : 'Marketplace', href: `/${locale}/marketplace${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Store },
     { name: isRtl ? 'صانع العقد' : 'Node Creator', href: `/${locale}/node-creator${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Puzzle },
     ...(activeWorkspace && activeWorkspace.role === 'owner' ? [
@@ -228,9 +230,29 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
         <nav className="flex-1 py-6 px-3 space-y-1.5 overflow-y-auto">
           {navItems.map((item, idx) => {
             const normalizedHref = item.href.split('?')[0];
-            const isActive = pathname === '/' 
-              ? normalizedHref === `/${locale}/dashboard` || normalizedHref === `/${locale}`
-              : normalizedHref === `/${locale}${pathname}` || (pathname !== '/dashboard' && normalizedHref.startsWith(`/${locale}${pathname}`));
+            const hasTabParam = item.href.includes('tab=');
+            const itemTab = hasTabParam 
+              ? (item.href.includes('tab=workflows') ? 'workflows' : 'whiteboards') 
+              : null;
+
+            let isActive = false;
+            if (pathname === '/') {
+              isActive = normalizedHref === `/${locale}/dashboard` || normalizedHref === `/${locale}`;
+            } else {
+              const matchesPath = normalizedHref === `/${locale}${pathname}` || 
+                (pathname !== '/dashboard' && normalizedHref.startsWith(`/${locale}${pathname}`));
+              
+              if (matchesPath) {
+                if (normalizedHref.endsWith('/dashboard')) {
+                  const currentTab = typeof window !== 'undefined' 
+                    ? new URLSearchParams(window.location.search).get('tab') 
+                    : null;
+                  isActive = itemTab === currentTab;
+                } else {
+                  isActive = true;
+                }
+              }
+            }
 
             return (
               <Link

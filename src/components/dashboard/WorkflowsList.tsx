@@ -2,7 +2,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from '@/i18n/routing';
+import { useRouter, usePathname } from '@/i18n/routing';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -80,6 +81,9 @@ export function WorkflowsList({
   locale
 }: WorkflowsListProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
   const t = useTranslations('dashboard');
   const supabase = createClient();
 
@@ -107,7 +111,17 @@ export function WorkflowsList({
 
   const [workflows, setWorkflows] = useState<WorkflowItem[]>(initialWorkflows);
   const [whiteboards, setWhiteboards] = useState<WorkflowItem[]>(initialWhiteboards);
-  const [activeTab, setActiveTab] = useState<'workflows' | 'whiteboards' | 'shared'>('workflows');
+
+  const activeTab: 'workflows' | 'whiteboards' | 'shared' =
+    (tabParam === 'whiteboards' || tabParam === 'shared') ? tabParam : 'workflows';
+
+  const handleTabChange = (tab: 'workflows' | 'whiteboards' | 'shared') => {
+    if (typeof window !== 'undefined') {
+      const currentParams = new URLSearchParams(window.location.search);
+      currentParams.set('tab', tab);
+      router.push(`${pathname}?${currentParams.toString()}`);
+    }
+  };
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'active' | 'archived' | 'published'>('all');
@@ -475,7 +489,7 @@ export function WorkflowsList({
       {/* Tab Switcher */}
       <div className="flex border-b border-border gap-6">
         <button
-          onClick={() => setActiveTab('workflows')}
+          onClick={() => handleTabChange('workflows')}
           className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'workflows'
               ? 'border-accent text-accent'
@@ -490,7 +504,7 @@ export function WorkflowsList({
           )}
         </button>
         <button
-          onClick={() => setActiveTab('whiteboards')}
+          onClick={() => handleTabChange('whiteboards')}
           className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'whiteboards'
               ? 'border-accent text-accent'
@@ -505,7 +519,7 @@ export function WorkflowsList({
           )}
         </button>
         <button
-          onClick={() => setActiveTab('shared')}
+          onClick={() => handleTabChange('shared')}
           className={`pb-3 text-sm font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
             activeTab === 'shared'
               ? 'border-accent text-accent'
