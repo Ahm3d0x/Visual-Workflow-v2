@@ -862,17 +862,66 @@ export function BoardCanvas({
     isSheetsModeRef.current = active;
     let nextSheets = [...sheetsRef.current];
     if (active && nextSheets.length === 0) {
-      nextSheets = [
-        {
-          id: Math.random().toString(36).slice(2),
-          name: 'Page 1',
-          x: 0,
-          y: 0,
-          width: 794,
-          height: 1123,
-          preset: 'A4 Portrait'
-        }
-      ];
+      const W = 794;
+      const H = 1123;
+
+      // Calculate overall bounding box of strokes
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      strokes.forEach(s => {
+        const box = getStrokeBoundingBox(s);
+        if (box.minX < minX) minX = box.minX;
+        if (box.minY < minY) minY = box.minY;
+        if (box.maxX > maxX) maxX = box.maxX;
+        if (box.maxY > maxY) maxY = box.maxY;
+      });
+
+      if (minX === Infinity) {
+        // No strokes, default to a single Page 1 at (0, 0)
+        nextSheets = [
+          {
+            id: Math.random().toString(36).slice(2),
+            name: 'Page 1',
+            x: 0,
+            y: 0,
+            width: W,
+            height: H,
+            preset: 'A4 Portrait'
+          }
+        ];
+      } else {
+        // Map strokes to grid cells of size W x H
+        const activeCells = new Map<string, { col: number; row: number }>();
+        strokes.forEach(s => {
+          const box = getStrokeBoundingBox(s);
+          const cx = (box.minX + box.maxX) / 2;
+          const cy = (box.minY + box.maxY) / 2;
+          // Determine grid cell index relative to bounding box top-left
+          const col = Math.floor((cx - minX) / W);
+          const row = Math.floor((cy - minY) / H);
+          const key = `${col},${row}`;
+          if (!activeCells.has(key)) {
+            activeCells.set(key, { col, row });
+          }
+        });
+
+        // Sort cells so pages are logically ordered (row by row, then col by col)
+        const sortedCells = Array.from(activeCells.values()).sort((a, b) => {
+          if (a.row !== b.row) return a.row - b.row;
+          return a.col - b.col;
+        });
+
+        nextSheets = sortedCells.map((cell, idx) => {
+          return {
+            id: Math.random().toString(36).slice(2),
+            name: `Page ${idx + 1}`,
+            x: minX + cell.col * (W + 100), // 100px layout gap between sheets
+            y: minY + cell.row * (H + 100),
+            width: W,
+            height: H,
+            preset: 'A4 Portrait'
+          };
+        });
+      }
       setSheets(nextSheets);
       sheetsRef.current = nextSheets;
     }
@@ -887,7 +936,7 @@ export function BoardCanvas({
 
     broadcastSheets(nextSheets, active);
     persistStrokes(strokes);
-  }, [broadcastSheets, persistStrokes, strokes, color]);
+  }, [broadcastSheets, persistStrokes, strokes, color, getStrokeBoundingBox]);
 
   const handleAddSheet = useCallback((preset: string) => {
     const getPresetDims = (presetName: string) => {
@@ -2635,7 +2684,10 @@ export function BoardCanvas({
         ctx.translate(view.offsetX, view.offsetY);
         ctx.scale(view.scale, view.scale);
 
-        // Page Drop Shadow (crisp, multi-layered simulated shadow that scales beautifully without pixelation)
+        // Draw page background, grid, border, header, and footer templates FIRST (so it sits on top in destination-over)
+        drawSheetBackgroundAndLayout(ctx, activeSheetObj, activeIdx, sheets.length, true);
+
+        // Page Drop Shadow drawn SECOND (so it sits behind the page background in destination-over)
         ctx.save();
         const shadowLayers = [
           { xOff: 1, yOff: 3, blur: 4, alpha: 0.04 },
@@ -2658,9 +2710,6 @@ export function BoardCanvas({
           ctx.fill();
         });
         ctx.restore();
-
-        // Draw page background, grid, border, header, and footer templates
-        drawSheetBackgroundAndLayout(ctx, activeSheetObj, activeIdx, sheets.length, true);
 
         ctx.restore();
       }
@@ -2762,6 +2811,16 @@ export function BoardCanvas({
         }
       };
       return;
+    }
+
+    // Restrict selection and drawing initialization to the boundaries of the active sheet when Sheets Mode is active
+    const activeSheet = sheets[activeSheetIndex] || sheets[0];
+    if (isSheetsMode && activeSheet) {
+      const inSheet = x >= activeSheet.x && x <= activeSheet.x + activeSheet.width &&
+                      y >= activeSheet.y && y <= activeSheet.y + activeSheet.height;
+      if (!inSheet) {
+        return;
+      }
     }
 
     if (tool === 'select') {
@@ -2939,6 +2998,20 @@ export function BoardCanvas({
         dy = Math.round(dy / gridSize) * gridSize;
       }
 
+      // Constraint dragging to active sheet boundaries in Sheets Mode
+      const activeSheet = sheets[activeSheetIndex] || sheets[0];
+      if (isSheetsMode && activeSheet) {
+        const origBox = getCombinedBoundingBox(Object.keys(drag.originalStrokes));
+        if (origBox.minX !== Infinity) {
+          const minAllowedDx = activeSheet.x - origBox.minX;
+          const maxAllowedDx = (activeSheet.x + activeSheet.width) - origBox.maxX;
+          const minAllowedDy = activeSheet.y - origBox.minY;
+          const maxAllowedDy = (activeSheet.y + activeSheet.height) - origBox.maxY;
+          dx = Math.max(minAllowedDx, Math.min(maxAllowedDx, dx));
+          dy = Math.max(minAllowedDy, Math.min(maxAllowedDy, dy));
+        }
+      }
+
       setStrokes((prev) => prev.map((s) => {
         if (!selectedStrokeIds.includes(s.id)) return s;
         const orig = drag.originalStrokes[s.id];
@@ -3102,6 +3175,13 @@ export function BoardCanvas({
         const snappedRad = (closest * Math.PI) / 180;
         drawX = cx + r * Math.cos(snappedRad);
         drawY = cy + r * Math.sin(snappedRad);
+      }
+
+      // Clip drawing coordinates to active sheet bounds in sheets mode
+      const activeSheet = sheets[activeSheetIndex] || sheets[0];
+      if (isSheetsMode && activeSheet) {
+        drawX = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, drawX));
+        drawY = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, drawY));
       }
 
       let newPts: { x: number; y: number }[] = [];
@@ -4594,6 +4674,14 @@ export function BoardCanvas({
     if (!canDrawLocal) return;
     if (tool !== 'select') return;
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
+
+    // Restrict editing inside the active sheet when Sheets Mode is active
+    const activeSheet = sheets[activeSheetIndex] || sheets[0];
+    if (isSheetsMode && activeSheet) {
+      const inSheet = x >= activeSheet.x && x <= activeSheet.x + activeSheet.width &&
+                      y >= activeSheet.y && y <= activeSheet.y + activeSheet.height;
+      if (!inSheet) return;
+    }
     
     const hit = [...strokes].reverse().find((s) => hitTestStroke(s, x, y, 15));
     
@@ -4668,6 +4756,15 @@ export function BoardCanvas({
   const onContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
+
+    // Restrict context menu inside the active sheet when Sheets Mode is active
+    const activeSheet = sheets[activeSheetIndex] || sheets[0];
+    if (isSheetsMode && activeSheet) {
+      const inSheet = x >= activeSheet.x && x <= activeSheet.x + activeSheet.width &&
+                      y >= activeSheet.y && y <= activeSheet.y + activeSheet.height;
+      if (!inSheet) return;
+    }
+
     const hit = [...strokes].reverse().find((s) => hitTestStroke(s, x, y, 8));
     if (hit) {
       if (!selectedStrokeIds.includes(hit.id)) {
