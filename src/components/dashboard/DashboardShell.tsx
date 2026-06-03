@@ -34,6 +34,7 @@ import {
   Store,
   Puzzle,
   X,
+  Info,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createWorkspace } from '@/actions/workspace.actions';
@@ -156,6 +157,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
     ...(profile?.is_admin ? [
       { name: isRtl ? 'لوحة الإدارة' : 'Admin Dashboard', href: `/${locale}/admin`, icon: Shield }
     ] : []),
+    { name: isRtl ? 'حول المنصة' : 'About Platform', href: `/${locale}/about${activeWorkspace ? `?w=${activeWorkspace.id}` : ''}`, icon: Info },
     { name: isRtl ? 'دليل المساعدة' : 'Help & Documentation', href: `/${locale}/help`, icon: HelpCircle },
   ];
 
@@ -171,7 +173,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
 
       {/* 1. SIDEBAR */}
       <aside
-        className={`fixed inset-y-0 inset-s-0 z-50 flex flex-col bg-sidebar border-e border-border transition-all duration-300 ${
+        className={`fixed inset-y-0 inset-s-0 z-50 flex flex-col bg-background/60 dark:bg-zinc-950/40 backdrop-blur-xl border-e border-border transition-all duration-300 ${
           collapsed ? 'lg:w-20' : 'lg:w-64'
         } ${
           mobileOpen ? 'inset-s-0 w-64' : '-inset-s-64 lg:inset-s-0'
@@ -180,7 +182,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
         {/* Sidebar Header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="bg-primary text-primary-foreground p-2 rounded-xl flex items-center justify-center shrink-0">
+            <div className="bg-primary text-primary-foreground p-2 rounded-xl flex items-center justify-center shrink-0 shadow-md shadow-primary/10">
               <Workflow className="w-5 h-5 animate-pulse" />
             </div>
             {(!collapsed || mobileOpen) && (
@@ -223,20 +225,36 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
           )}
         </div>
 
-        <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
-          {navItems.map((item, idx) => (
-            <Link
-              key={idx}
-              href={item.href}
-              onClick={() => setMobileOpen(false)}
-              className={`w-full justify-start gap-3 py-3 rounded-xl hover:bg-muted transition-all cursor-pointer flex items-center text-foreground hover:no-underline select-none ${
-                (collapsed && !mobileOpen) ? 'px-0 justify-center' : 'px-4'
-              }`}
-            >
-              <item.icon className="w-5 h-5 text-accent shrink-0" />
-              {(!collapsed || mobileOpen) && <span className="font-medium text-sm">{item.name}</span>}
-            </Link>
-          ))}
+        <nav className="flex-1 py-6 px-3 space-y-1.5 overflow-y-auto">
+          {navItems.map((item, idx) => {
+            const normalizedHref = item.href.split('?')[0];
+            const isActive = pathname === '/' 
+              ? normalizedHref === `/${locale}/dashboard` || normalizedHref === `/${locale}`
+              : normalizedHref === `/${locale}${pathname}` || (pathname !== '/dashboard' && normalizedHref.startsWith(`/${locale}${pathname}`));
+
+            return (
+              <Link
+                key={idx}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                className={`w-full justify-start gap-3 py-3 rounded-xl transition-all duration-200 cursor-pointer flex items-center hover:no-underline select-none relative group ${
+                  isActive 
+                    ? 'bg-accent/10 dark:bg-accent/15 text-accent font-bold' 
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/40 font-medium'
+                } ${
+                  (collapsed && !mobileOpen) ? 'px-0 justify-center' : 'px-4'
+                }`}
+              >
+                <item.icon className={`w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110 ${isActive ? 'text-accent animate-pulse' : 'text-muted-foreground group-hover:text-foreground'}`} />
+                {(!collapsed || mobileOpen) && <span className="text-sm">{item.name}</span>}
+                
+                {/* Active Sidebar Indicator Strip */}
+                {isActive && (
+                  <div className="absolute left-0 rtl:right-0 w-1 h-6 bg-accent rounded-full animate-fadeIn" />
+                )}
+              </Link>
+            );
+          })}
         </nav>
 
         {/* Sidebar Footer */}
@@ -246,7 +264,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
               onClick={handleSignOut}
               disabled={isPending}
               variant="outline"
-              className="w-full border-border hover:bg-destructive/10 hover:text-destructive font-medium rounded-xl py-5 transition-all cursor-pointer flex items-center justify-center gap-2"
+              className="w-full border-border hover:bg-destructive/10 hover:text-destructive font-semibold rounded-xl py-5 transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <LogOut className="w-4 h-4" />
               <span>{tAuth('sign_out')}</span>
@@ -284,16 +302,22 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
             {/* Workspace Switcher */}
             {activeWorkspace && (
               <DropdownMenu>
-                <DropdownMenuTrigger className="inline-flex items-center gap-2 px-4 py-2 border border-border bg-background rounded-xl text-sm font-semibold hover:bg-muted cursor-pointer transition-all focus:outline-hidden select-none">
-                  <Building className="w-4 h-4 text-accent" />
+                <DropdownMenuTrigger className="inline-flex items-center gap-2 px-4 py-2 border border-border bg-card hover:bg-muted/70 backdrop-blur-md rounded-xl text-sm font-semibold cursor-pointer transition-all hover:border-accent/30 shadow-xs focus:outline-hidden select-none">
+                  <Building className="w-4 h-4 text-accent animate-pulse" />
                   <span className="max-w-[120px] truncate">{activeWorkspace.name}</span>
-                  <span className="text-[10px] uppercase font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-md">
+                  <span className={`text-[9px] uppercase font-extrabold px-2 py-0.5 rounded-md border ${
+                    activeWorkspace.plan.toLowerCase() === 'legend' 
+                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                      : activeWorkspace.plan.toLowerCase() === 'elite' || activeWorkspace.plan.toLowerCase() === 'champion'
+                      ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20'
+                      : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+                  }`}>
                     {activeWorkspace.plan}
                   </span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="bg-background border border-border rounded-xl shadow-lg w-56 font-sans">
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel className="text-xs text-muted-foreground font-light px-2 py-1.5">
+                    <DropdownMenuLabel className="text-xs text-muted-foreground font-light px-3 py-2">
                       {isRtl ? 'اختر مساحة عمل' : 'Select Workspace'}
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator className="bg-border" />
@@ -301,19 +325,28 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                       <DropdownMenuItem
                         key={ws.id}
                         onClick={() => handleSelectWorkspace(ws)}
-                        className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
+                        className="cursor-pointer gap-2.5 rounded-lg m-1 font-medium text-xs py-2"
                       >
                         <Building className="w-4 h-4 text-muted-foreground" />
-                        <span className="truncate flex-1">{ws.name}</span>
+                        <span className="truncate flex-1 font-semibold">{ws.name}</span>
+                        <span className={`text-[8px] uppercase font-bold px-1.5 py-0.2 rounded-md ${
+                          ws.plan.toLowerCase() === 'legend'
+                            ? 'bg-amber-500/10 text-amber-500'
+                            : ws.plan.toLowerCase() === 'elite'
+                            ? 'bg-purple-500/10 text-purple-500'
+                            : 'bg-blue-500/10 text-blue-500'
+                        }`}>
+                          {ws.plan}
+                        </span>
                       </DropdownMenuItem>
                     ))}
                     <DropdownMenuSeparator className="bg-border" />
                     <DropdownMenuItem
                       onClick={() => setCreateWsOpen(true)}
-                      className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-accent hover:text-accent-foreground"
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-bold text-accent hover:text-accent-foreground text-xs py-2"
                     >
-                      <Plus className="w-4 h-4" />
-                      <span>{isRtl ? 'إنشاء مساحة عمل' : 'Create Workspace'}</span>
+                      <Plus className="w-4 h-4 text-accent" />
+                      <span>{isRtl ? 'إنشاء مساحة عمل جديدة' : 'Create Workspace'}</span>
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
                 </DropdownMenuContent>
@@ -328,58 +361,57 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
             {/* Profile Dropdown */}
             {profile && (
               <DropdownMenu>
-                <DropdownMenuTrigger className="rounded-full w-10 h-10 cursor-pointer overflow-hidden border-2 border-primary/20 hover:border-primary/50 transition-all focus:outline-hidden">
+                <DropdownMenuTrigger className="rounded-full w-10 h-10 cursor-pointer overflow-hidden border-2 border-primary/20 hover:border-accent transition-all duration-300 focus:outline-hidden shadow-xs">
                   <div className="w-full h-full bg-accent text-accent-foreground font-bold flex items-center justify-center uppercase text-sm">
                     {profile.full_name?.charAt(0) || profile.email.charAt(0)}
                   </div>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-56 font-sans">
                   <DropdownMenuGroup>
-                    <DropdownMenuLabel className="px-3 py-2">
+                    <DropdownMenuLabel className="px-3 py-2 border-b border-border mb-1">
                       <p className="font-bold text-sm truncate">{profile.full_name || (isRtl ? 'مستخدم' : 'User')}</p>
-                      <p className="font-light text-xs text-muted-foreground truncate">{profile.email}</p>
+                      <p className="font-light text-[10px] text-muted-foreground truncate">{profile.email}</p>
                     </DropdownMenuLabel>
-                    <DropdownMenuSeparator className="bg-border" />
                     <DropdownMenuItem
                       onClick={() => router.push('/settings/profile')}
-                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs"
                     >
                       <User className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الملف الشخصي' : 'Profile'}
                     </DropdownMenuItem>
                     {profile.is_admin && (
                       <DropdownMenuItem
                         onClick={() => router.push('/admin')}
-                        className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-accent hover:text-accent-foreground"
+                        className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-accent hover:text-accent-foreground text-xs"
                       >
-                        <Shield className="w-4 h-4 text-accent" /> {isRtl ? 'لوحة الإدارة' : 'Admin Dashboard'}
+                        <Shield className="w-4 h-4 text-accent animate-pulse" /> {isRtl ? 'لوحة الإدارة' : 'Admin Dashboard'}
                       </DropdownMenuItem>
                     )}
 
                     {activeWorkspace && activeWorkspace.role === 'owner' && (
                       <DropdownMenuItem
                         onClick={() => router.push(`/settings/workspace?w=${activeWorkspace.id}`)}
-                        className="cursor-pointer gap-2 rounded-lg m-1 font-medium"
+                        className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs"
                       >
-                        <Settings className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'الإعدادات' : 'Settings'}
+                        <Settings className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'إعدادات مساحة العمل' : 'Workspace Settings'}
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator className="bg-border" />
                     <DropdownMenuItem
                       onClick={() => router.push('/terms')}
-                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs"
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-[11px]"
                     >
                       <Shield className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'شروط الخدمة' : 'Terms of Service'}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() => router.push('/privacy')}
-                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-xs"
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-medium text-[11px]"
                     >
                       <Shield className="w-4 h-4 text-muted-foreground" /> {isRtl ? 'سياسة الخصوصية' : 'Privacy Policy'}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator className="bg-border" />
                     <DropdownMenuItem
                       onClick={handleSignOut}
-                      className="cursor-pointer gap-2 rounded-lg m-1 font-semibold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive text-xs"
+                      className="cursor-pointer gap-2 rounded-lg m-1 font-bold text-destructive hover:bg-destructive/10 focus:bg-destructive/10 focus:text-destructive text-xs"
                     >
                       <LogOut className="w-4 h-4" /> {isRtl ? 'تسجيل الخروج' : 'Sign Out'}
                     </DropdownMenuItem>

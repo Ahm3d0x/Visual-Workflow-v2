@@ -36,6 +36,7 @@ import {
   Trash2,
   Play,
   ChevronDown,
+  ChevronRight,
   Calendar,
   Layers,
   Workflow as WorkflowIcon,
@@ -342,6 +343,27 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
     );
   };
 
+  const getMockNodesForWf = (wfId: string, nodeCount: number) => {
+    if (nodeCount <= 0) return [];
+    const charCode = wfId.charCodeAt(0) || 0;
+    const nodeTypesPool = [
+      { label: isRtl ? 'مشغل' : 'Trigger', color: 'bg-blue-500/15 border-blue-500/20 text-blue-500 dark:text-blue-400' },
+      { label: isRtl ? 'منطق' : 'Condition', color: 'bg-amber-500/15 border-amber-500/20 text-amber-500 dark:text-amber-400' },
+      { label: isRtl ? 'ذكاء' : 'AI Agent', color: 'bg-purple-500/15 border-purple-500/20 text-purple-500 dark:text-purple-400' },
+      { label: isRtl ? 'إجراء' : 'Process', color: 'bg-zinc-500/15 border-zinc-500/20 text-zinc-500 dark:text-zinc-400' },
+      { label: isRtl ? 'دمج' : 'API Sync', color: 'bg-emerald-500/15 border-emerald-500/20 text-emerald-500 dark:text-emerald-400' },
+    ];
+    const items = [];
+    // First is always trigger
+    items.push(nodeTypesPool[0]);
+    // Dynamic intermediate nodes
+    for (let i = 1; i < Math.min(nodeCount, 3); i++) {
+      const idx = ((charCode + i) % (nodeTypesPool.length - 1)) + 1;
+      items.push(nodeTypesPool[idx]);
+    }
+    return items;
+  };
+
   const getStatusBadge = (status: string) => {
     const colors: Record<string, string> = {
       draft: 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20',
@@ -350,8 +372,14 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
       published: 'bg-accent/10 text-accent border-accent/20',
     };
     return (
-      <Badge variant="outline" className={`capitalize rounded-md font-semibold text-xs ${colors[status] || colors.draft}`}>
-        {status}
+      <Badge variant="outline" className={`capitalize rounded-md font-semibold text-xs flex items-center gap-1.5 ${colors[status] || colors.draft}`}>
+        {status === 'active' && (
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+          </span>
+        )}
+        <span>{getStatusLabel(status)}</span>
       </Badge>
     );
   };
@@ -359,10 +387,10 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
   const getCardThemeGradient = (id: string) => {
     const charCode = id.charCodeAt(0) || 0;
     const gradients = [
-      'from-blue-500/10 to-indigo-500/10 border-blue-500/20',
-      'from-purple-500/10 to-pink-500/10 border-purple-500/20',
-      'from-amber-500/10 to-orange-500/10 border-amber-500/20',
-      'from-emerald-500/10 to-teal-500/10 border-emerald-500/20',
+      'from-blue-500/15 via-indigo-500/5 to-purple-500/15 border-blue-500/25',
+      'from-purple-500/15 via-pink-500/5 to-rose-500/15 border-purple-500/25',
+      'from-amber-500/15 via-orange-500/5 to-yellow-500/15 border-amber-500/25',
+      'from-emerald-500/15 via-teal-500/5 to-cyan-500/15 border-emerald-500/25',
     ];
     return gradients[charCode % gradients.length];
   };
@@ -401,14 +429,18 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
       {/* Search, Filter, Sort and View Toggles */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-5 h-5 absolute left-3 top-3.5 text-muted-foreground" />
+        <div className="relative flex-1 max-w-md group">
+          <Search className="w-5 h-5 absolute left-3 rtl:right-3 rtl:left-auto top-3.5 text-muted-foreground transition-colors group-focus-within:text-accent" />
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('search_placeholder')}
-            className="ps-10 py-6 rounded-xl border-border focus:ring-accent"
+            className="ps-10 pe-12 rtl:ps-4 rtl:pe-10 py-6 rounded-xl border-border focus:ring-accent bg-card/45 backdrop-blur-md transition-all duration-300"
           />
+          <div className="absolute right-3 rtl:left-3 rtl:right-auto top-3.5 hidden sm:flex items-center gap-1 bg-muted/80 px-2 py-1 rounded-md border border-border/55 text-[10px] font-mono text-muted-foreground pointer-events-none">
+            <span>⌘</span>
+            <span>K</span>
+          </div>
         </div>
 
         {/* Filters */}
@@ -490,10 +522,10 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
       ) : (viewMode === 'grid' || !globalThis.window || window.innerWidth < 640) ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredWorkflows.map((wf) => (
-            <Card key={wf.id} className="bg-background/60 border border-border backdrop-blur-md shadow-sm rounded-2xl transition-all duration-300 hover:shadow-md hover:border-accent/40 group relative overflow-hidden flex flex-col justify-between">
+            <Card key={wf.id} className="bg-card/45 border border-border backdrop-blur-md shadow-xs rounded-2xl transition-all duration-300 hover:shadow-md hover:border-accent/30 group relative overflow-hidden flex flex-col justify-between hover:-translate-y-1">
               {/* Premium Gradient Header */}
               <div className={`h-24 bg-linear-to-tr ${getCardThemeGradient(wf.id)} flex items-center justify-center p-4 border-b transition-all duration-300 relative`}>
-                <div className="absolute top-3 right-3">{getStatusBadge(wf.status)}</div>
+                <div className="absolute top-3 right-3 rtl:left-3 rtl:right-auto">{getStatusBadge(wf.status)}</div>
                 <WorkflowIcon className="w-8 h-8 opacity-45 group-hover:scale-110 group-hover:opacity-75 transition-all duration-300 text-accent" />
               </div>
 
@@ -502,7 +534,7 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <Link href={`/${locale}/workflows/${wf.id}`} className="hover:underline">
-                        <CardTitle className="text-lg font-bold font-sans tracking-tight line-clamp-1">
+                        <CardTitle className="text-lg font-bold font-sans tracking-tight line-clamp-1 text-start">
                           {wf.name}
                         </CardTitle>
                       </Link>
@@ -547,9 +579,30 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <CardDescription className="text-sm font-light text-muted-foreground line-clamp-2 h-10">
+                <CardDescription className="text-sm font-light text-muted-foreground line-clamp-2 h-10 mb-3 text-start">
                   {wf.description || (isRtl ? 'لا يوجد وصف.' : 'No description provided.')}
                 </CardDescription>
+
+                {/* Visual Node Chain Roadmap Preview */}
+                {wf.node_count > 0 && (
+                  <div className="flex items-center gap-1 py-1.5 px-2 bg-muted/40 dark:bg-zinc-900/40 border border-border/60 rounded-xl max-w-fit select-none">
+                    {getMockNodesForWf(wf.id, wf.node_count).map((nNode, nIdx) => (
+                      <div key={nIdx} className="flex items-center gap-1">
+                        <span className={`text-[8px] font-extrabold px-2 py-0.5 rounded-md border ${nNode.color}`}>
+                          {nNode.label}
+                        </span>
+                        {nIdx < Math.min(wf.node_count, 3) - 1 && (
+                          <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0 rtl:rotate-180" />
+                        )}
+                      </div>
+                    ))}
+                    {wf.node_count > 3 && (
+                      <span className="text-[9px] text-muted-foreground font-mono font-bold ps-1">
+                        +{wf.node_count - 3}
+                      </span>
+                    )}
+                  </div>
+                )}
               </CardHeader>
 
               <CardContent className="p-5 pt-0 border-t border-border flex items-center justify-between text-xs text-muted-foreground font-medium">
@@ -566,10 +619,10 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
           ))}
         </div>
       ) : (
-        <div className="border border-border rounded-2xl overflow-hidden shadow-sm bg-background/50 backdrop-blur-md font-sans">
+        <div className="border border-border rounded-2xl overflow-hidden shadow-xs bg-background/50 backdrop-blur-md font-sans">
           <div className="divide-y divide-border">
             {filteredWorkflows.map((wf) => (
-              <div key={wf.id} className="p-4 flex items-center justify-between gap-4 hover:bg-muted/50 transition-colors">
+              <div key={wf.id} className="p-4 flex items-center justify-between gap-4 hover:bg-muted/40 border-b border-border/80 last:border-b-0 transition-colors">
                 <div className="flex items-center gap-4 min-w-0">
                   <div className={`w-10 h-10 rounded-xl bg-linear-to-tr ${getCardThemeGradient(wf.id)} flex items-center justify-center shrink-0 border`}>
                     <WorkflowIcon className="w-5 h-5 opacity-60 text-accent" />
@@ -577,13 +630,34 @@ export function WorkflowsList({ initialWorkflows, sharedWorkflows = [], workspac
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <Link href={`/${locale}/workflows/${wf.id}`} className="hover:underline">
-                        <h4 className="font-bold font-sans text-sm truncate">{wf.name}</h4>
+                        <h4 className="font-bold font-sans text-sm truncate text-start">{wf.name}</h4>
                       </Link>
                       {activeTab === 'shared' && getShareRoleBadge((wf as SharedWorkflowItem).role)}
                     </div>
-                    <p className="text-xs font-light text-muted-foreground truncate max-w-md">
-                      {wf.description || (isRtl ? 'لا يوجد وصف.' : 'No description provided.')}
-                    </p>
+                    <div className="flex items-center gap-3 mt-1 flex-wrap">
+                      <p className="text-xs font-light text-muted-foreground truncate max-w-xs md:max-w-md text-start">
+                        {wf.description || (isRtl ? 'لا يوجد وصف.' : 'No description provided.')}
+                      </p>
+                      {wf.node_count > 0 && (
+                        <div className="hidden md:flex items-center gap-1 py-0.5 px-1.5 bg-muted/50 border border-border/40 rounded-lg select-none">
+                          {getMockNodesForWf(wf.id, wf.node_count).map((nNode, nIdx) => (
+                            <div key={nIdx} className="flex items-center gap-0.5">
+                              <span className={`text-[7px] font-extrabold px-1.5 py-0.1 rounded-md border ${nNode.color}`}>
+                                {nNode.label}
+                              </span>
+                              {nIdx < Math.min(wf.node_count, 3) - 1 && (
+                                <ChevronRight className="w-2.5 h-2.5 text-muted-foreground shrink-0 rtl:rotate-180" />
+                              )}
+                            </div>
+                          ))}
+                          {wf.node_count > 3 && (
+                            <span className="text-[8px] text-muted-foreground font-mono font-bold ps-0.5">
+                              +{wf.node_count - 3}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 

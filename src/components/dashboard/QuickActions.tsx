@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useRef } from 'react';
@@ -24,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, FileJson, Layout, Loader2, Sparkles, BookOpen, Info } from 'lucide-react';
+import { Plus, FileJson, Layout, Loader2, Sparkles, BookOpen, Info, ChevronRight } from 'lucide-react';
 
 interface QuickActionsProps {
   workspaceId: string;
@@ -403,7 +404,7 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3 bg-background/40 border border-border backdrop-blur-md p-4 rounded-2xl shadow-xs font-sans">
+    <div className="flex flex-wrap items-center gap-3 bg-card/45 border border-border backdrop-blur-md p-4 rounded-2xl shadow-xs transition-all duration-300 hover:border-accent/20 font-sans">
       {/* Hidden File Input for JSON Import */}
       <input
         type="file"
@@ -415,7 +416,7 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
 
       {/* 1. Create Workflow Trigger Dialog */}
       <Dialog open={workflowOpen} onOpenChange={setWorkflowOpen}>
-        <DialogTrigger className="inline-flex items-center justify-center bg-accent hover:bg-accent/90 text-accent-foreground font-semibold px-5 py-2.5 rounded-xl transition-all hover:scale-[1.01] cursor-pointer gap-2 focus:outline-hidden text-sm h-10">
+        <DialogTrigger className="inline-flex items-center justify-center bg-accent hover:bg-accent/90 text-accent-foreground font-semibold px-5 py-2.5 rounded-xl transition-all duration-300 hover:scale-[1.02] hover:shadow-lg hover:shadow-accent/20 cursor-pointer gap-2 focus:outline-hidden text-sm h-10 select-none">
           <Plus className="w-5 h-5" />
           <span>{t('new_workflow')}</span>
         </DialogTrigger>
@@ -479,7 +480,7 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
         variant="ghost"
         onClick={() => !wfLoading && fileInputRef.current?.click()}
         disabled={wfLoading}
-        className="text-muted-foreground hover:text-foreground font-medium rounded-xl flex items-center gap-2 cursor-pointer h-10 border border-transparent hover:border-border/30 hover:bg-muted/30"
+        className="text-muted-foreground hover:text-foreground font-semibold rounded-xl flex items-center gap-2 cursor-pointer h-10 border border-transparent hover:border-border/30 hover:bg-muted/40 transition-all duration-200 select-none"
       >
         {wfLoading ? <Loader2 className="w-4 h-4 animate-spin text-accent" /> : <FileJson className="w-4 h-4 text-sky-500" />}
         <span>{isRtl ? 'استيراد ملف JSON' : 'Import JSON'}</span>
@@ -487,7 +488,7 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
 
       {/* 3. Workflow Gallery Template Selector Dialog */}
       <Dialog open={galleryOpen} onOpenChange={setGalleryOpen}>
-        <DialogTrigger className="text-muted-foreground hover:text-foreground font-medium rounded-xl flex items-center gap-2 cursor-pointer h-10 border border-transparent hover:border-border/30 hover:bg-muted/30 px-3 transition-all">
+        <DialogTrigger className="text-muted-foreground hover:text-foreground font-semibold rounded-xl flex items-center gap-2 cursor-pointer h-10 border border-transparent hover:border-border/30 hover:bg-muted/40 px-3 transition-all duration-200 select-none">
           <Layout className="w-4 h-4 text-purple-500" />
           <span>{isRtl ? 'تصفح المعرض' : 'Browse Gallery'}</span>
         </DialogTrigger>
@@ -517,31 +518,47 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
               <div
                 key={tmpl.id}
                 onClick={() => !wfLoading && handleLoadTemplate(tmpl)}
-                className="group relative border border-white/6 bg-white/2 hover:bg-white/4 rounded-2xl p-5 cursor-pointer flex flex-col justify-between transition-all hover:scale-[1.01] hover:border-purple-500/30 hover:shadow-[0_0_20px_rgba(168,85,247,0.1)]"
+                className="group relative border border-white/6 bg-white/2 hover:bg-white/4 rounded-2xl p-5 cursor-pointer flex flex-col justify-between transition-all duration-300 hover:scale-[1.015] hover:border-purple-500/30 hover:shadow-[0_0_25px_rgba(168,85,247,0.08)]"
               >
-                <div className="space-y-2.5">
+                <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border bg-linear-to-r ${tmpl.colorClass}`}>
                       {isRtl ? tmpl.badgeAr : tmpl.badge}
                     </span>
-                    <span className="text-[10px] text-zinc-600 font-mono group-hover:text-zinc-500 transition-colors">
+                    <span className="text-[10px] text-zinc-500 font-mono group-hover:text-zinc-400 transition-colors">
                       {tmpl.nodes.length} {isRtl ? 'عقد' : 'nodes'}
                     </span>
                   </div>
 
-                  <h3 className="text-sm font-bold text-zinc-200 group-hover:text-purple-300 transition-colors">
+                  <h3 className="text-sm font-bold text-zinc-200 group-hover:text-purple-300 transition-colors text-start">
                     {isRtl ? tmpl.nameAr : tmpl.name}
                   </h3>
                   
-                  <p className="text-[11px] text-zinc-500 leading-normal font-light">
+                  <p className="text-[11px] text-zinc-400 leading-normal font-light text-start">
                     {isRtl ? tmpl.descAr : tmpl.desc}
                   </p>
+
+                  {/* Node chain roadmap layout */}
+                  <div className="flex flex-wrap items-center gap-1 bg-zinc-950/60 border border-white/5 p-2 rounded-xl mt-3 select-none">
+                    {tmpl.nodes.map((node, nIdx) => (
+                      <div key={nIdx} className="flex items-center gap-1">
+                        <span className="text-[8px] font-mono font-bold px-2 py-0.5 rounded-md bg-white/5 text-zinc-300 border border-white/5">
+                          {isRtl 
+                            ? (node.type === 'start' ? 'بداية' : node.type === 'end' ? 'نهاية' : node.type === 'if_else' ? 'شرط' : node.type)
+                            : node.type}
+                        </span>
+                        {nIdx < tmpl.nodes.length - 1 && (
+                          <ChevronRight className="w-3 h-3 text-zinc-700 shrink-0 rtl:rotate-180" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="mt-5 pt-3.5 border-t border-white/4 flex items-center justify-between text-[10px] text-zinc-600 font-bold group-hover:text-purple-400 transition-colors">
+                <div className="mt-5 pt-3.5 border-t border-white/4 flex items-center justify-between text-[10px] text-zinc-500 font-bold group-hover:text-purple-400 transition-colors">
                   <div className="flex items-center gap-1.5 font-light">
                     <Info className="w-3.5 h-3.5" />
-                    <span>{isRtl ? 'يتضمن خوارزمية الربط الآلي' : 'Includes auto-routing edges'}</span>
+                    <span>{isRtl ? 'يتضمن الربط التلقائي' : 'Includes auto-routing edges'}</span>
                   </div>
                   <span className="underline group-hover:no-underline">{isRtl ? 'تحميل القالب ←' : 'Load Blueprint →'}</span>
                 </div>
