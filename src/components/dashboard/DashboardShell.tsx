@@ -74,6 +74,14 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMounted(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   const [activeWorkspace, setActiveWorkspace] = useState(() => workspaces[0] || null);
 
@@ -244,7 +252,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
               
               if (matchesPath) {
                 if (normalizedHref.endsWith('/dashboard')) {
-                  const currentTab = typeof window !== 'undefined' 
+                  const currentTab = (mounted && typeof window !== 'undefined')
                     ? new URLSearchParams(window.location.search).get('tab') 
                     : null;
                   isActive = itemTab === currentTab;

@@ -1,6 +1,6 @@
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
-import { ThemeProvider } from 'next-themes';
+import { ThemeProvider } from '@/components/ThemeProvider';
 import { Inter, Tajawal } from 'next/font/google';
 import { DialogAndNotificationContainer } from '@/components/ui/DialogAndNotificationContainer';
 import '../globals.css';

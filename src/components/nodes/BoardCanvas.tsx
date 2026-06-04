@@ -30,6 +30,37 @@ function generateUUID(): string {
   });
 }
 
+function parsePageRange(rangeStr: string, maxPages: number): number[] {
+  if (!rangeStr || !rangeStr.trim()) {
+    return Array.from({ length: maxPages }, (_, i) => i);
+  }
+  const pages = new Set<number>();
+  const parts = rangeStr.split(',');
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.includes('-')) {
+      const [startStr, endStr] = trimmed.split('-');
+      const start = parseInt(startStr, 10);
+      const end = parseInt(endStr, 10);
+      if (!isNaN(start) && !isNaN(end)) {
+        const from = Math.max(1, Math.min(start, maxPages));
+        const to = Math.max(1, Math.min(end, maxPages));
+        const min = Math.min(from, to);
+        const max = Math.max(from, to);
+        for (let i = min; i <= max; i++) {
+          pages.add(i - 1);
+        }
+      }
+    } else {
+      const pageNum = parseInt(trimmed, 10);
+      if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= maxPages) {
+        pages.add(pageNum - 1);
+      }
+    }
+  }
+  return Array.from(pages).sort((a, b) => a - b);
+}
+
 /* ─────────────────────── Types ─────────────────────── */
 type Tool = 'select' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'triangle' | 'text' | 'sticky' |
              'rounded-rect' | 'ellipse' | 'diamond' | 'hexagon' |
@@ -206,6 +237,8 @@ export function BoardCanvas({
   const [showPalette, setShowPalette] = useState(false);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportPagesRange, setExportPagesRange] = useState('');
+  const [copiedSheetStyle, setCopiedSheetStyle] = useState<any | null>(null);
   const [showZoomMenu, setShowZoomMenu] = useState(false);
   const [showShapesMenu, setShowShapesMenu] = useState(false);
   const [showLineMenu, setShowLineMenu] = useState(false);
@@ -857,73 +890,152 @@ export function BoardCanvas({
     return cx >= sheet.x && cx <= sheet.x + sheet.width && cy >= sheet.y && cy <= sheet.y + sheet.height;
   }, [getStrokeBoundingBox]);
 
+  const handleDistributeStrokesToSheets = useCallback(() => {
+    if (strokes.length === 0) {
+      const defaultSheet = {
+        id: Math.random().toString(36).slice(2),
+        name: 'Page 1',
+        x: 0,
+        y: 0,
+        width: 794,
+        height: 1123,
+        preset: 'A4 Portrait',
+        gridType: gridType || 'grid',
+        innerFrameShow: false,
+        innerFrameColor: '#cbd5e1',
+        innerFrameWidth: 1,
+        innerFrameStyle: 'single',
+        sheetBg: '#ffffff',
+        gridColor: 'rgba(0, 0, 0, 0.08)',
+        gridSize: 20
+      };
+      setSheets([defaultSheet]);
+      sheetsRef.current = [defaultSheet];
+      setActiveSheetIndex(0);
+      broadcastSheets([defaultSheet], isSheetsModeRef.current);
+      return;
+    }
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    strokes.forEach((s) => {
+      if (s.points) {
+        s.points.forEach((p) => {
+          minX = Math.min(minX, p.x);
+          minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x);
+          maxY = Math.max(maxY, p.y);
+        });
+      }
+    });
+
+    const spanX = maxX - minX;
+    const pageWidth = 794;
+    const pageHeight = 1123;
+    const gap = 100;
+    const marginL = 30;
+    const marginT = 50;
+    const printableW = pageWidth - marginL * 2; // 734
+    const printableH = pageHeight - marginT * 2; // 1023
+
+    const numPages = Math.max(1, Math.ceil(spanX / printableW));
+    const newSheets: any[] = [];
+    for (let i = 0; i < numPages; i++) {
+      newSheets.push({
+        id: Math.random().toString(36).slice(2),
+        name: `Page ${i + 1}`,
+        x: i * (pageWidth + gap),
+        y: 0,
+        width: pageWidth,
+        height: pageHeight,
+        preset: 'A4 Portrait',
+        gridType: gridType || 'grid',
+        innerFrameShow: false,
+        innerFrameColor: '#cbd5e1',
+        innerFrameWidth: 1,
+        innerFrameStyle: 'single',
+        sheetBg: '#ffffff',
+        gridColor: 'rgba(0, 0, 0, 0.08)',
+        gridSize: 20
+      });
+    }
+
+    const updatedStrokes = strokes.map((s) => {
+      if (!s.points || s.points.length === 0) return s;
+
+      let sumX = 0, sumY = 0;
+      s.points.forEach((p) => { sumX += p.x; sumY += p.y; });
+      const cx = sumX / s.points.length;
+      const cy = sumY / s.points.length;
+
+      let pageIdx = Math.floor((cx - minX) / printableW);
+      pageIdx = Math.max(0, Math.min(numPages - 1, pageIdx));
+
+      const targetSheet = newSheets[pageIdx];
+
+      const rx = cx - (minX + pageIdx * printableW);
+      const targetCx = targetSheet.x + marginL + rx;
+
+      const ry = cy - minY;
+      const targetCy = targetSheet.y + marginT + (ry % printableH);
+
+      const dx = targetCx - cx;
+      const dy = targetCy - cy;
+
+      return {
+        ...s,
+        points: s.points.map((p) => ({ x: p.x + dx, y: p.y + dy }))
+      };
+    });
+
+    setSheets(newSheets);
+    sheetsRef.current = newSheets;
+    setActiveSheetIndex(0);
+    setStrokes(updatedStrokes);
+
+    broadcastSheets(newSheets, isSheetsModeRef.current);
+    if (channelRef.current?.state === 'joined') {
+      updatedStrokes.forEach((st) => {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'stroke_add',
+          payload: { stroke: st, userId: currentUserId }
+        });
+      });
+    }
+    persistStrokes(updatedStrokes);
+  }, [strokes, gridType, broadcastSheets, persistStrokes, currentUserId]);
+
   const handleSheetsModeToggle = useCallback((active: boolean) => {
     setIsSheetsMode(active);
     isSheetsModeRef.current = active;
     let nextSheets = [...sheetsRef.current];
     if (active && nextSheets.length === 0) {
-      const W = 794;
-      const H = 1123;
-
-      // Calculate overall bounding box of strokes
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      strokes.forEach(s => {
-        const box = getStrokeBoundingBox(s);
-        if (box.minX < minX) minX = box.minX;
-        if (box.minY < minY) minY = box.minY;
-        if (box.maxX > maxX) maxX = box.maxX;
-        if (box.maxY > maxY) maxY = box.maxY;
-      });
-
-      if (minX === Infinity) {
-        // No strokes, default to a single Page 1 at (0, 0)
+      if (strokes.length > 0) {
+        handleDistributeStrokesToSheets();
+        return;
+      } else {
         nextSheets = [
           {
             id: Math.random().toString(36).slice(2),
             name: 'Page 1',
             x: 0,
             y: 0,
-            width: W,
-            height: H,
-            preset: 'A4 Portrait'
+            width: 794,
+            height: 1123,
+            preset: 'A4 Portrait',
+            gridType: gridType || 'grid',
+            innerFrameShow: false,
+            innerFrameColor: '#cbd5e1',
+            innerFrameWidth: 1,
+            innerFrameStyle: 'single',
+            sheetBg: '#ffffff',
+            gridColor: 'rgba(0, 0, 0, 0.08)',
+            gridSize: 20
           }
         ];
-      } else {
-        // Map strokes to grid cells of size W x H
-        const activeCells = new Map<string, { col: number; row: number }>();
-        strokes.forEach(s => {
-          const box = getStrokeBoundingBox(s);
-          const cx = (box.minX + box.maxX) / 2;
-          const cy = (box.minY + box.maxY) / 2;
-          // Determine grid cell index relative to bounding box top-left
-          const col = Math.floor((cx - minX) / W);
-          const row = Math.floor((cy - minY) / H);
-          const key = `${col},${row}`;
-          if (!activeCells.has(key)) {
-            activeCells.set(key, { col, row });
-          }
-        });
-
-        // Sort cells so pages are logically ordered (row by row, then col by col)
-        const sortedCells = Array.from(activeCells.values()).sort((a, b) => {
-          if (a.row !== b.row) return a.row - b.row;
-          return a.col - b.col;
-        });
-
-        nextSheets = sortedCells.map((cell, idx) => {
-          return {
-            id: Math.random().toString(36).slice(2),
-            name: `Page ${idx + 1}`,
-            x: minX + cell.col * (W + 100), // 100px layout gap between sheets
-            y: minY + cell.row * (H + 100),
-            width: W,
-            height: H,
-            preset: 'A4 Portrait'
-          };
-        });
+        setSheets(nextSheets);
+        sheetsRef.current = nextSheets;
       }
-      setSheets(nextSheets);
-      sheetsRef.current = nextSheets;
     }
     setActiveSheetIndex(0);
 
@@ -936,7 +1048,7 @@ export function BoardCanvas({
 
     broadcastSheets(nextSheets, active);
     persistStrokes(strokes);
-  }, [broadcastSheets, persistStrokes, strokes, color, getStrokeBoundingBox]);
+  }, [broadcastSheets, persistStrokes, strokes, color, gridType, handleDistributeStrokesToSheets]);
 
   const handleAddSheet = useCallback((preset: string) => {
     const getPresetDims = (presetName: string) => {
@@ -960,6 +1072,26 @@ export function BoardCanvas({
       newX = rightmost.x + rightmost.width + 100;
       newY = rightmost.y;
     }
+
+    const activeSheetObj = currentSheets[activeSheetIndex];
+    const inheritedProps = activeSheetObj ? {
+      sheetBg: activeSheetObj.sheetBg,
+      gridType: activeSheetObj.gridType,
+      gridSize: activeSheetObj.gridSize,
+      gridColor: activeSheetObj.gridColor,
+      showBorder: activeSheetObj.showBorder,
+      borderColor: activeSheetObj.borderColor,
+      borderWidth: activeSheetObj.borderWidth,
+      showPageNumber: activeSheetObj.showPageNumber,
+      showDate: activeSheetObj.showDate,
+      date: activeSheetObj.date,
+      innerFrameShow: activeSheetObj.innerFrameShow,
+      innerFrameStyle: activeSheetObj.innerFrameStyle,
+      innerFrameColor: activeSheetObj.innerFrameColor,
+      innerFrameWidth: activeSheetObj.innerFrameWidth,
+      innerFrameMargin: activeSheetObj.innerFrameMargin,
+    } : {};
+
     const newSheet = {
       id: Math.random().toString(36).slice(2),
       name: `Page ${currentSheets.length + 1}`,
@@ -967,7 +1099,8 @@ export function BoardCanvas({
       y: newY,
       width: dims.width,
       height: dims.height,
-      preset
+      preset,
+      ...inheritedProps
     };
     const next = [...currentSheets, newSheet];
     setSheets(next);
@@ -975,7 +1108,7 @@ export function BoardCanvas({
     setActiveSheetIndex(next.length - 1);
     broadcastSheets(next, isSheetsModeRef.current);
     persistStrokes(strokes);
-  }, [broadcastSheets, persistStrokes, strokes]);
+  }, [activeSheetIndex, broadcastSheets, persistStrokes, strokes]);
 
   const handleDeleteSheet = useCallback(async (sheetId: string) => {
     const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
@@ -2210,9 +2343,21 @@ export function BoardCanvas({
     if (!overlay) return;
     const ctx = overlay.getContext('2d');
     if (!ctx) return;
+
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const targetWidth = canvasSize.w * dpr;
+    const targetHeight = canvasSize.h * dpr;
+    if (overlay.width !== targetWidth || overlay.height !== targetHeight) {
+      overlay.width = targetWidth;
+      overlay.height = targetHeight;
+    }
+
     ctx.clearRect(0, 0, overlay.width, overlay.height);
 
     if (pts.length < 1) return;
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
 
     ctx.save();
     ctx.translate(view.offsetX, view.offsetY);
@@ -2370,7 +2515,8 @@ export function BoardCanvas({
           }
           ctx.stroke();
           
-          ctx.restore();
+          ctx.restore(); // restores inner translate/scale
+          ctx.restore(); // restores outer scale(dpr)
           return;
         }
 
@@ -2385,8 +2531,9 @@ export function BoardCanvas({
       }
     }
 
-    ctx.restore();
-  }, [color, fillColor, strokeWidth, tool, useFill, opacity, view, arrowType, arrowheadStart, arrowheadEnd, textBorderColor, textBorderRadius]);
+    ctx.restore(); // restores inner translate/scale
+    ctx.restore(); // restores outer scale(dpr)
+  }, [color, fillColor, strokeWidth, tool, useFill, opacity, view, arrowType, arrowheadStart, arrowheadEnd, textBorderColor, textBorderRadius, canvasSize]);
 
   /* ─── Canvas size on mount ─── */
   useEffect(() => {
@@ -2414,184 +2561,235 @@ export function BoardCanvas({
     const x = isEditorView ? sheet.x : 0;
     const y = isEditorView ? sheet.y : 0;
 
-    // 1. Save state
-    ctx.save();
-
-    // Draw page background (rounded rect for editor, sharp rect for exports)
-    ctx.save();
-    ctx.fillStyle = sheet.bgColor || '#ffffff';
-    ctx.beginPath();
-    if (isEditorView && ctx.roundRect) {
-      ctx.roundRect(x, y, sheet.width, sheet.height, 6);
-    } else {
-      ctx.rect(x, y, sheet.width, sheet.height);
-    }
-    ctx.fill();
-    ctx.restore();
-
-    // 2. Calculate grid size and draw grid (clipped to the sheet bounds to prevent edge bleeding)
-    const pageGridType = sheet.gridType || gridType;
-    if (pageGridType !== 'none') {
+    const drawBg = () => {
       ctx.save();
+      ctx.fillStyle = sheet.sheetBg || '#ffffff';
       ctx.beginPath();
       if (isEditorView && ctx.roundRect) {
         ctx.roundRect(x, y, sheet.width, sheet.height, 6);
       } else {
         ctx.rect(x, y, sheet.width, sheet.height);
       }
-      ctx.clip();
-
-      // Adapt grid color based on sheet background
-      const sheetBg = (sheet.bgColor || '#ffffff').toLowerCase();
-      const isLightSheet = sheetBg === '#ffffff' || sheetBg === '#f8f9fa' || sheetBg === '#e7f5ff' || sheetBg === '#fff9db' || sheetBg === '#fff0f6' || sheetBg === '#ebfbee' || sheetBg.startsWith('#fff') || sheetBg.startsWith('#f');
-      ctx.strokeStyle = isLightSheet ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.15)';
-      ctx.lineWidth = 0.5;
-
-      if (pageGridType === 'grid') {
-        ctx.beginPath();
-        for (let gx = x; gx < x + sheet.width; gx += gridSize) {
-          ctx.moveTo(gx, y);
-          ctx.lineTo(gx, y + sheet.height);
-        }
-        for (let gy = y; gy < y + sheet.height; gy += gridSize) {
-          ctx.moveTo(x, gy);
-          ctx.lineTo(x + sheet.width, gy);
-        }
-        ctx.stroke();
-      } else if (pageGridType === 'lines') {
-        ctx.strokeStyle = isLightSheet ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.18)';
-        ctx.lineWidth = 0.5;
-        ctx.beginPath();
-        for (let gy = y + gridSize; gy < y + sheet.height; gy += gridSize) {
-          ctx.moveTo(x, gy);
-          ctx.lineTo(x + sheet.width, gy);
-        }
-        ctx.stroke();
-      }
+      ctx.fill();
       ctx.restore();
-    }
+    };
 
-    // 3. Draw Page Inner Frame (if enabled)
-    const showInnerFrame = !!sheet.showInnerFrame;
-    if (showInnerFrame) {
-      ctx.save();
-      const framePadding = sheet.innerFramePadding || 15;
-      ctx.strokeStyle = sheet.innerFrameColor || '#cbd5e1';
-      ctx.lineWidth = sheet.innerFrameWidth || 1;
-      
-      const frameStyle = sheet.innerFrameStyle || 'solid';
-      if (frameStyle === 'dashed') {
+    const drawWatermark = () => {
+      const showWatermark = sheet.watermarkShow === true;
+      if (showWatermark) {
+        const text = sheet.watermarkText !== undefined ? sheet.watermarkText : `Ski.ma - ${label || 'Whiteboard'}`;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.04)'; // Extremely faint grey
+        ctx.font = 'bold 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        ctx.translate(x + sheet.width / 2, y + sheet.height / 2);
+        ctx.rotate(-Math.PI / 6); // -30 degrees diagonal
+        
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+      }
+    };
+
+    const drawGrid = () => {
+      const pageGridType = sheet.gridType || gridType;
+      const pageGridSize = sheet.gridSize || gridSize;
+      const pageGridColor = sheet.gridColor || 'rgba(0, 0, 0, 0.08)';
+
+      if (pageGridType !== 'none') {
+        ctx.save();
+        ctx.beginPath();
+        const innerFrameShow = sheet.innerFrameShow === true;
+        if (innerFrameShow) {
+          const fMargin = sheet.innerFrameMargin !== undefined ? sheet.innerFrameMargin : 15;
+          const cx = x + fMargin + 5;
+          const cy = y + fMargin + 5;
+          const cw = sheet.width - (fMargin + 5) * 2;
+          const ch = sheet.height - (fMargin + 5) * 2;
+          ctx.rect(cx, cy, cw, ch);
+        } else {
+          if (isEditorView && ctx.roundRect) {
+            ctx.roundRect(x, y, sheet.width, sheet.height, 6);
+          } else {
+            ctx.rect(x, y, sheet.width, sheet.height);
+          }
+        }
+        ctx.clip();
+
+        ctx.strokeStyle = pageGridColor;
+        ctx.lineWidth = 1;
+
+        if (pageGridType === 'grid') {
+          ctx.beginPath();
+          for (let gx = x + pageGridSize; gx < x + sheet.width; gx += pageGridSize) {
+            const px = Math.floor(gx) + 0.5;
+            ctx.moveTo(px, y);
+            ctx.lineTo(px, y + sheet.height);
+          }
+          for (let gy = y + pageGridSize; gy < y + sheet.height; gy += pageGridSize) {
+            const py = Math.floor(gy) + 0.5;
+            ctx.moveTo(x, py);
+            ctx.lineTo(x + sheet.width, py);
+          }
+          ctx.stroke();
+        } else if (pageGridType === 'lines') {
+          ctx.beginPath();
+          for (let gy = y + pageGridSize; gy < y + sheet.height; gy += pageGridSize) {
+            const py = Math.floor(gy) + 0.5;
+            ctx.moveTo(x, py);
+            ctx.lineTo(x + sheet.width, py);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    };
+
+    const drawInnerFrame = () => {
+      const innerFrameShow = sheet.innerFrameShow === true;
+      if (innerFrameShow) {
+        const fMargin = sheet.innerFrameMargin !== undefined ? sheet.innerFrameMargin : 15;
+        const fColor = sheet.innerFrameColor || '#cbd5e1';
+        const fWidth = sheet.innerFrameWidth !== undefined ? sheet.innerFrameWidth : 1;
+        const fStyle = sheet.innerFrameStyle || 'single';
+
+        ctx.save();
+        ctx.strokeStyle = fColor;
+        ctx.lineWidth = fWidth;
+
+        if (fStyle === 'dashed') {
+          ctx.setLineDash([6, 4]);
+        } else if (fStyle === 'dotted') {
+          ctx.setLineDash([2, 2]);
+        } else {
+          ctx.setLineDash([]);
+        }
+
+        const fx = x + fMargin;
+        const fy = y + fMargin;
+        const fw = sheet.width - fMargin * 2;
+        const fh = sheet.height - fMargin * 2;
+
+        if (fStyle === 'double') {
+          ctx.beginPath();
+          ctx.rect(fx, fy, fw, fh);
+          ctx.stroke();
+          const innerOffset = Math.max(2, fWidth + 2);
+          ctx.beginPath();
+          ctx.rect(fx + innerOffset, fy + innerOffset, fw - innerOffset * 2, fh - innerOffset * 2);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.rect(fx, fy, fw, fh);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    };
+
+    const drawBorder = () => {
+      const showBorder = sheet.showBorder !== false;
+      if (showBorder) {
+        ctx.save();
+        ctx.strokeStyle = sheet.borderColor || '#cbd5e1';
+        ctx.lineWidth = sheet.borderWidth || 1;
+        ctx.beginPath();
+        if (isEditorView && ctx.roundRect) {
+          ctx.roundRect(x, y, sheet.width, sheet.height, 6);
+        } else {
+          ctx.rect(x, y, sheet.width, sheet.height);
+        }
+        ctx.stroke();
+        ctx.restore();
+      } else if (isEditorView) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.35)';
+        ctx.lineWidth = 1;
         ctx.setLineDash([5, 5]);
-      } else if (frameStyle === 'dotted') {
-        ctx.setLineDash([1, 3]);
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(x, y, sheet.width, sheet.height, 6);
+        } else {
+          ctx.rect(x, y, sheet.width, sheet.height);
+        }
+        ctx.stroke();
+        ctx.restore();
       }
-      
-      ctx.beginPath();
-      const fx = x + framePadding;
-      const fy = y + framePadding;
-      const fw = sheet.width - framePadding * 2;
-      const fh = sheet.height - framePadding * 2;
-      if (isEditorView && ctx.roundRect) {
-        ctx.roundRect(fx, fy, fw, fh, 4);
-      } else {
-        ctx.rect(fx, fy, fw, fh);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
+    };
 
-    // 4. Draw border
-    const showBorder = sheet.showBorder !== false;
-    
-    if (showBorder) {
+    const drawHeaderFooter = () => {
+      const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
+      const margin = 40;
       ctx.save();
-      ctx.strokeStyle = sheet.borderColor || '#cbd5e1';
-      ctx.lineWidth = sheet.borderWidth || 1;
-      ctx.beginPath();
-      if (isEditorView && ctx.roundRect) {
-        ctx.roundRect(x, y, sheet.width, sheet.height, 6);
-      } else {
-        ctx.rect(x, y, sheet.width, sheet.height);
-      }
-      ctx.stroke();
-      ctx.restore();
-    } else if (isEditorView) {
-      // Dash border indicator in editor view
-      ctx.save();
-      ctx.strokeStyle = 'rgba(99, 102, 241, 0.35)';
+      ctx.fillStyle = '#71717a';
+      ctx.font = '600 13px sans-serif';
       ctx.lineWidth = 1;
-      ctx.setLineDash([5, 5]);
+
+      // Draw Header
+      const headerY = y + margin;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
       ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(x, y, sheet.width, sheet.height, 6);
-      } else {
-        ctx.rect(x, y, sheet.width, sheet.height);
-      }
+      ctx.moveTo(x + 30, headerY);
+      ctx.lineTo(x + sheet.width - 30, headerY);
       ctx.stroke();
+
+      const headerTextY = headerY - 6;
+      const sheetName = sheet.name || (isRtl ? `صفحة ${activeIdx + 1}` : `Page ${activeIdx + 1}`);
+      ctx.textAlign = isRtl ? 'right' : 'left';
+      ctx.fillText(sheetName, isRtl ? x + sheet.width - 30 : x + 30, headerTextY);
+
+      const showDate = sheet.showDate !== false;
+      if (showDate) {
+        const dateStr = sheet.date || new Date().toLocaleDateString(isRtl ? 'ar-EG' : 'en-US');
+        ctx.textAlign = isRtl ? 'left' : 'right';
+        ctx.fillText(dateStr, isRtl ? x + 30 : x + sheet.width - 30, headerTextY);
+      }
+
+      // Draw Footer
+      const footerY = y + sheet.height - margin;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+      ctx.beginPath();
+      ctx.moveTo(x + 30, footerY);
+      ctx.lineTo(x + sheet.width - 30, footerY);
+      ctx.stroke();
+
+      const footerTextY = footerY + 18;
+      ctx.textAlign = isRtl ? 'right' : 'left';
+      ctx.fillText(sheet.preset, isRtl ? x + sheet.width - 30 : x + 30, footerTextY);
+
+      const showPageNumber = sheet.showPageNumber !== false;
+      if (showPageNumber) {
+        const pageNumStr = isRtl
+          ? `صفحة ${activeIdx + 1} من ${totalSheets}`
+          : `Page ${activeIdx + 1} of ${totalSheets}`;
+        ctx.textAlign = isRtl ? 'left' : 'right';
+        ctx.fillText(pageNumStr, isRtl ? x + 30 : x + sheet.width - 30, footerTextY);
+      }
+
       ctx.restore();
+    };
+
+    if (isEditorView) {
+      // In editor view (drawing with globalCompositeOperation = 'destination-over' behind strokes):
+      // Draw elements in REVERSE order so they correctly overlay on top of background
+      drawHeaderFooter();
+      drawBorder();
+      drawInnerFrame();
+      drawGrid();
+      drawWatermark();
+      drawBg();
+    } else {
+      // In export view (drawing with normal 'source-over'):
+      // Draw elements in NORMAL order (background bottom-most, text top-most)
+      drawBg();
+      drawWatermark();
+      drawGrid();
+      drawInnerFrame();
+      drawBorder();
+      drawHeaderFooter();
     }
-
-    // 3. Draw page header/footer templates
-    const isRtl = typeof document !== 'undefined' && document.documentElement.dir === 'rtl';
-    const margin = 40;
-    ctx.save();
-    ctx.fillStyle = '#71717a';
-    ctx.font = '600 13px sans-serif';
-    ctx.lineWidth = 1;
-
-    // Draw Header
-    const headerY = y + margin;
-    // Line below header
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
-    ctx.beginPath();
-    ctx.moveTo(x + 30, headerY);
-    ctx.lineTo(x + sheet.width - 30, headerY);
-    ctx.stroke();
-
-    // Header Text above the line
-    const headerTextY = headerY - 6;
-    
-    // Page title (Label)
-    const sheetName = sheet.name || (isRtl ? `صفحة ${activeIdx + 1}` : `Page ${activeIdx + 1}`);
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    ctx.fillText(sheetName, isRtl ? x + sheet.width - 30 : x + 30, headerTextY);
-
-    // Date (if enabled)
-    const showDate = sheet.showDate !== false;
-    if (showDate) {
-      const dateStr = sheet.date || new Date().toLocaleDateString(isRtl ? 'ar-EG' : 'en-US');
-      ctx.textAlign = isRtl ? 'left' : 'right';
-      ctx.fillText(dateStr, isRtl ? x + 30 : x + sheet.width - 30, headerTextY);
-    }
-
-    // Draw Footer
-    const footerY = y + sheet.height - margin;
-    // Line above footer
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
-    ctx.beginPath();
-    ctx.moveTo(x + 30, footerY);
-    ctx.lineTo(x + sheet.width - 30, footerY);
-    ctx.stroke();
-
-    // Footer Text below the line
-    const footerTextY = footerY + 18;
-
-    // Preset (e.g. "A4 Preset")
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    ctx.fillText(sheet.preset, isRtl ? x + sheet.width - 30 : x + 30, footerTextY);
-
-    // Page number (if enabled)
-    const showPageNumber = sheet.showPageNumber !== false;
-    if (showPageNumber) {
-      const pageNumStr = isRtl
-        ? `صفحة ${activeIdx + 1} من ${totalSheets}`
-        : `Page ${activeIdx + 1} of ${totalSheets}`;
-      ctx.textAlign = isRtl ? 'left' : 'right';
-      ctx.fillText(pageNumStr, isRtl ? x + 30 : x + sheet.width - 30, footerTextY);
-    }
-
-    ctx.restore();
-  }, [gridType, gridSize]);
+  }, [gridType, gridSize, label]);
 
   /* ─── Main canvas renderer ─── */
   const renderCanvasMain = useCallback(() => {
@@ -2600,7 +2798,23 @@ export function BoardCanvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    const targetWidth = canvasSize.w * dpr;
+    const targetHeight = canvasSize.h * dpr;
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    // 1. Draw strokes first (so eraser with 'destination-out' only cuts drawings, not sheets/grid)
+    ctx.save();
+    ctx.translate(view.offsetX, view.offsetY);
+    ctx.scale(view.scale, view.scale);
 
     const visibleRect = {
       minX: -view.offsetX / view.scale,
@@ -2610,84 +2824,6 @@ export function BoardCanvas({
     };
 
     const activeSheet = sheets[activeSheetIndex] || sheets[0];
-
-    // ── PHASE 1: Draw backgrounds, grids, and sheet decorations FIRST ──
-    // In sheets mode, draw the sheet page (background + grid + border + header/footer)
-    if (isSheetsMode && sheets.length > 0) {
-      const activeSheetObj = sheets[activeSheetIndex] || sheets[0];
-      const activeIdx = sheets.indexOf(activeSheetObj);
-      if (activeSheetObj) {
-        ctx.save();
-        ctx.translate(view.offsetX, view.offsetY);
-        ctx.scale(view.scale, view.scale);
-
-        // Page Drop Shadow (drawn first so it sits behind the page)
-        ctx.save();
-        const shadowLayers = [
-          { xOff: 1, yOff: 3, blur: 4, alpha: 0.04 },
-          { xOff: 3, yOff: 8, blur: 12, alpha: 0.06 },
-          { xOff: 6, yOff: 16, blur: 24, alpha: 0.08 }
-        ];
-        shadowLayers.forEach(sl => {
-          ctx.fillStyle = `rgba(0, 0, 0, ${sl.alpha})`;
-          ctx.beginPath();
-          const r = 6 + sl.blur / 2;
-          const sx = activeSheetObj.x + sl.xOff - sl.blur / 2;
-          const sy = activeSheetObj.y + sl.yOff - sl.blur / 2;
-          const sw = activeSheetObj.width + sl.blur;
-          const sh = activeSheetObj.height + sl.blur;
-          if (ctx.roundRect) {
-            ctx.roundRect(sx, sy, sw, sh, r);
-          } else {
-            ctx.rect(sx, sy, sw, sh);
-          }
-          ctx.fill();
-        });
-        ctx.restore();
-
-        // Page background, grid, border, header, and footer templates (on top of shadow)
-        drawSheetBackgroundAndLayout(ctx, activeSheetObj, activeIdx, sheets.length, true);
-
-        ctx.restore();
-      }
-    }
-
-    // In infinite canvas mode, draw the background grid
-    if (!isSheetsMode && gridType !== 'none') {
-      ctx.save();
-      const sizeVal = gridSize * view.scale;
-      const startX = view.offsetX % sizeVal;
-      const startY = view.offsetY % sizeVal;
-      const isLightBg = bgColor === '#ffffff' || bgColor === '#f8f9fa' || bgColor === '#e7f5ff' || bgColor === '#fff9db' || bgColor === '#fff0f6' || bgColor === '#ebfbee';
-      ctx.strokeStyle = isLightBg ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.03)';
-      ctx.fillStyle = isLightBg ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.05)';
-      ctx.lineWidth = 1;
-
-      if (sizeVal >= 8) {
-        if (gridType === 'grid') {
-          ctx.beginPath();
-          for (let x = startX; x < canvas.width; x += sizeVal) {
-            ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
-          }
-          for (let y = startY; y < canvas.height; y += sizeVal) {
-            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
-          }
-          ctx.stroke();
-        } else if (gridType === 'lines') {
-          ctx.beginPath();
-          for (let y = startY; y < canvas.height; y += sizeVal) {
-            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
-          }
-          ctx.stroke();
-        }
-      }
-      ctx.restore();
-    }
-
-    // ── PHASE 2: Draw strokes on top of backgrounds ──
-    ctx.save();
-    ctx.translate(view.offsetX, view.offsetY);
-    ctx.scale(view.scale, view.scale);
 
     strokes.forEach((stroke) => {
       if (isSheetsMode && activeSheet && !isStrokeInSheet(stroke, activeSheet)) return;
@@ -2703,7 +2839,6 @@ export function BoardCanvas({
       }
     });
 
-    // ── PHASE 3: Draw selection UI on top ──
     // Selected bounding box
     if (selectedStrokeIds.length > 0 && tool === 'select') {
       const box = getCombinedBoundingBox(selectedStrokeIds);
@@ -2781,6 +2916,85 @@ export function BoardCanvas({
       ctx.restore();
     }
     ctx.restore();
+
+    // 2. Paint backgrounds and grid behind strokes using destination-over
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-over';
+
+    // 2.1. Sheets Layer
+    if (isSheetsMode && sheets.length > 0) {
+      const activeSheetObj = sheets[activeSheetIndex] || sheets[0];
+      const activeIdx = sheets.indexOf(activeSheetObj);
+      if (activeSheetObj) {
+        ctx.save();
+        ctx.translate(view.offsetX, view.offsetY);
+        ctx.scale(view.scale, view.scale);
+
+        // Draw page background, grid, border, header, and footer templates
+        drawSheetBackgroundAndLayout(ctx, activeSheetObj, activeIdx, sheets.length, true);
+
+        // Page Drop Shadow (drawn AFTER, so it goes BEHIND the sheet background in destination-over)
+        ctx.save();
+        const shadowLayers = [
+          { xOff: 1, yOff: 3, blur: 4, alpha: 0.04 },
+          { xOff: 3, yOff: 8, blur: 12, alpha: 0.06 },
+          { xOff: 6, yOff: 16, blur: 24, alpha: 0.08 }
+        ];
+        shadowLayers.forEach(sl => {
+          ctx.fillStyle = `rgba(0, 0, 0, ${sl.alpha})`;
+          ctx.beginPath();
+          const r = 6 + sl.blur / 2;
+          const sx = activeSheetObj.x + sl.xOff - sl.blur / 2;
+          const sy = activeSheetObj.y + sl.yOff - sl.blur / 2;
+          const sw = activeSheetObj.width + sl.blur;
+          const sh = activeSheetObj.height + sl.blur;
+          if (ctx.roundRect) {
+            ctx.roundRect(sx, sy, sw, sh, r);
+          } else {
+            ctx.rect(sx, sy, sw, sh);
+          }
+          ctx.fill();
+        });
+        ctx.restore();
+
+        ctx.restore();
+      }
+    }
+
+    // 2.2. Draw Grid (if not in sheets mode)
+    if (!isSheetsMode && gridType !== 'none') {
+      ctx.save();
+      const sizeVal = gridSize * view.scale;
+      const startX = view.offsetX % sizeVal;
+      const startY = view.offsetY % sizeVal;
+      const isLightBg = bgColor === '#ffffff' || bgColor === '#f8f9fa' || bgColor === '#e7f5ff' || bgColor === '#fff9db' || bgColor === '#fff0f6' || bgColor === '#ebfbee';
+      ctx.strokeStyle = isLightBg ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.03)';
+      ctx.fillStyle = isLightBg ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 1;
+
+      if (sizeVal >= 8) {
+        if (gridType === 'grid') {
+          ctx.beginPath();
+          for (let x = startX; x < canvas.width; x += sizeVal) {
+            ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
+          }
+          for (let y = startY; y < canvas.height; y += sizeVal) {
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
+        } else if (gridType === 'lines') {
+          ctx.beginPath();
+          for (let y = startY; y < canvas.height; y += sizeVal) {
+            ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+          }
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    ctx.restore(); // restores inner translate/scale
+    ctx.restore(); // restores outer scale(dpr)
   }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout, redrawTrigger, canvasSize]);
 
   // Schedule canvas redraw via rAF instead of blocking synchronously
@@ -2800,12 +3014,48 @@ export function BoardCanvas({
     };
   }, [renderCanvasMain]);
 
+  const getSnappedCoords = useCallback((cx: number, cy: number, sheetObj: any) => {
+    let snapX = cx;
+    let snapY = cy;
+
+    if (sheetObj && sheetObj.innerFrameShow === true) {
+      const fMargin = sheetObj.innerFrameMargin !== undefined ? sheetObj.innerFrameMargin : 15;
+      const fx = sheetObj.x + fMargin;
+      const fy = sheetObj.y + fMargin;
+      const fxRight = sheetObj.x + sheetObj.width - fMargin;
+      const fyBottom = sheetObj.y + sheetObj.height - fMargin;
+      const threshold = 10; // Snap threshold in canvas pixels
+
+      if (Math.abs(cx - fx) < threshold) {
+        snapX = fx;
+      } else if (Math.abs(cx - fxRight) < threshold) {
+        snapX = fxRight;
+      }
+
+      if (Math.abs(cy - fy) < threshold) {
+        snapY = fy;
+      } else if (Math.abs(cy - fyBottom) < threshold) {
+        snapY = fyBottom;
+      }
+    }
+    return { x: snapX, y: snapY };
+  }, []);
+
   /* ─── Pointer Input Observers ─── */
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
     // Close any floating windows/menus when clicking on the board canvas
     closeAllFloatingMenus();
 
-    const { x, y } = toCanvasCoords(e.clientX, e.clientY);
+    const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+    let { x, y } = toCanvasCoords(e.clientX, e.clientY);
+    if (isSheetsMode && activeSheet && tool !== 'select') {
+      x = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, x));
+      y = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, y));
+      
+      const snapped = getSnappedCoords(x, y, activeSheet);
+      x = snapped.x;
+      y = snapped.y;
+    }
     const clientX = e.clientX;
     const clientY = e.clientY;
 
@@ -2824,7 +3074,7 @@ export function BoardCanvas({
     const isMiddleClick = e.button === 1;
     const isSpacePan = e.button === 0 && isSpacePressedRef.current;
     
-    const hit = [...strokes].reverse().find((s) => hitTestStroke(s, x, y, s.tool === 'highlighter' ? 14 : 8));
+    const hit = [...strokes].reverse().find((s) => (!isSheetsMode || (activeSheet && isStrokeInSheet(s, activeSheet))) && hitTestStroke(s, x, y, s.tool === 'highlighter' ? 14 : 8));
     const isSelectBgPan = tool === 'select' && e.button === 0 && !hit;
 
     if (isMiddleClick || isSpacePan || isSelectBgPan) {
@@ -2844,16 +3094,6 @@ export function BoardCanvas({
         }
       };
       return;
-    }
-
-    // Restrict selection and drawing initialization to the boundaries of the active sheet when Sheets Mode is active
-    const activeSheet = sheets[activeSheetIndex] || sheets[0];
-    if (isSheetsMode && activeSheet) {
-      const inSheet = x >= activeSheet.x && x <= activeSheet.x + activeSheet.width &&
-                      y >= activeSheet.y && y <= activeSheet.y + activeSheet.height;
-      if (!inSheet) {
-        return;
-      }
     }
 
     if (tool === 'select') {
@@ -2965,11 +3205,21 @@ export function BoardCanvas({
     pointerRef.current = { down: true, x: startX, y: startY, startX, startY };
     currentPenRef.current = [{ x: startX, y: startY }];
     renderOverlay([{ x: startX, y: startY }]);
-  }, [tool, toCanvasCoords, strokes, selectedStrokeIds, hitTestStroke, hitTestSelectionHandle, getCombinedBoundingBox, snapToGrid, gridSize, view, color, fillColor, opacity, fontSize, fontFamily, fontWeight, textAlign, arrowType, arrowheadStart, arrowheadEnd, renderOverlay, closeAllFloatingMenus, textInput]);
+  }, [tool, toCanvasCoords, strokes, selectedStrokeIds, hitTestStroke, hitTestSelectionHandle, getCombinedBoundingBox, snapToGrid, gridSize, view, color, fillColor, opacity, fontSize, fontFamily, fontWeight, textAlign, arrowType, arrowheadStart, arrowheadEnd, renderOverlay, closeAllFloatingMenus, textInput, isSheetsMode, sheets, activeSheetIndex, isStrokeInSheet]);
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
-    const { x, y } = toCanvasCoords(e.clientX, e.clientY);
+    let { x, y } = toCanvasCoords(e.clientX, e.clientY);
     const drag = dragStartRef.current;
+    const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+
+    if (isSheetsMode && activeSheet && tool !== 'select' && drag.mode !== 'pan' && drag.mode !== 'region-select') {
+      x = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, x));
+      y = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, y));
+      
+      const snapped = getSnappedCoords(x, y, activeSheet);
+      x = snapped.x;
+      y = snapped.y;
+    }
 
     if (drag.mode === 'drag-node' && selectedStrokeIds.length === 1) {
       const idx = drag.nodeIndex!;
@@ -2985,7 +3235,17 @@ export function BoardCanvas({
         const orig = drag.originalStrokes[s.id];
         if (!orig) return s;
         const newPts = [...orig.points];
-        newPts[idx] = { x: orig.points[idx].x + dx, y: orig.points[idx].y + dy };
+        let px = orig.points[idx].x + dx;
+        let py = orig.points[idx].y + dy;
+        if (isSheetsMode && activeSheet) {
+          px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, px));
+          py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, py));
+          
+          const snapped = getSnappedCoords(px, py, activeSheet);
+          px = snapped.x;
+          py = snapped.y;
+        }
+        newPts[idx] = { x: px, y: py };
         return { ...s, points: newPts };
       }));
 
@@ -3031,25 +3291,18 @@ export function BoardCanvas({
         dy = Math.round(dy / gridSize) * gridSize;
       }
 
-      // Constraint dragging to active sheet boundaries in Sheets Mode
-      const activeSheet = sheets[activeSheetIndex] || sheets[0];
-      if (isSheetsMode && activeSheet) {
-        const origBox = getCombinedBoundingBox(Object.keys(drag.originalStrokes));
-        if (origBox.minX !== Infinity) {
-          const minAllowedDx = activeSheet.x - origBox.minX;
-          const maxAllowedDx = (activeSheet.x + activeSheet.width) - origBox.maxX;
-          const minAllowedDy = activeSheet.y - origBox.minY;
-          const maxAllowedDy = (activeSheet.y + activeSheet.height) - origBox.maxY;
-          dx = Math.max(minAllowedDx, Math.min(maxAllowedDx, dx));
-          dy = Math.max(minAllowedDy, Math.min(maxAllowedDy, dy));
-        }
-      }
-
       setStrokes((prev) => prev.map((s) => {
         if (!selectedStrokeIds.includes(s.id)) return s;
         const orig = drag.originalStrokes[s.id];
         if (!orig) return s;
-        const newPts = orig.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+        let newPts = orig.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+        if (isSheetsMode && activeSheet) {
+          newPts = newPts.map((p) => {
+            const px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x));
+            const py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y));
+            return getSnappedCoords(px, py, activeSheet);
+          });
+        }
         return { ...s, points: newPts };
       }));
 
@@ -3060,7 +3313,14 @@ export function BoardCanvas({
           selectedStrokeIds.forEach((id) => {
             const orig = drag.originalStrokes[id];
             if (!orig) return;
-            const updatedPts = orig.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+            let updatedPts = orig.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
+            if (isSheetsMode && activeSheet) {
+              updatedPts = updatedPts.map((p) => {
+                const px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x));
+                const py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y));
+                return getSnappedCoords(px, py, activeSheet);
+              });
+            }
             channelRef.current.send({
               type: 'broadcast',
               event: 'stroke_draw',
@@ -3123,7 +3383,7 @@ export function BoardCanvas({
         if (!selectedStrokeIds.includes(s.id)) return s;
         const orig = drag.originalStrokes[s.id];
         if (!orig) return s;
-        const newPts = orig.points.map((p) => {
+        let newPts = orig.points.map((p) => {
           const relX = p.x - origBox.minX;
           const relY = p.y - origBox.minY;
           return {
@@ -3131,6 +3391,13 @@ export function BoardCanvas({
             y: origBox.minY + offsetY + relY * scaleY,
           };
         });
+        if (isSheetsMode && activeSheet) {
+          newPts = newPts.map((p) => {
+            const px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x));
+            const py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y));
+            return getSnappedCoords(px, py, activeSheet);
+          });
+        }
         return { ...s, points: newPts };
       }));
       return;
@@ -3157,7 +3424,7 @@ export function BoardCanvas({
         if (!selectedStrokeIds.includes(s.id)) return s;
         const orig = drag.originalStrokes[s.id];
         if (!orig) return s;
-        const newPts = orig.points.map((p) => {
+        let newPts = orig.points.map((p) => {
           const dx = p.x - cx;
           const dy = p.y - cy;
           return {
@@ -3165,6 +3432,12 @@ export function BoardCanvas({
             y: cy + dx * sin + dy * cos,
           };
         });
+        if (isSheetsMode && activeSheet) {
+          newPts = newPts.map((p) => ({
+            x: Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x)),
+            y: Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y))
+          }));
+        }
         return { ...s, points: newPts };
       }));
       return;
@@ -3208,13 +3481,6 @@ export function BoardCanvas({
         const snappedRad = (closest * Math.PI) / 180;
         drawX = cx + r * Math.cos(snappedRad);
         drawY = cy + r * Math.sin(snappedRad);
-      }
-
-      // Clip drawing coordinates to active sheet bounds in sheets mode
-      const activeSheet = sheets[activeSheetIndex] || sheets[0];
-      if (isSheetsMode && activeSheet) {
-        drawX = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, drawX));
-        drawY = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, drawY));
       }
 
       let newPts: { x: number; y: number }[] = [];
@@ -3305,7 +3571,7 @@ export function BoardCanvas({
         }
       }
     }
-  }, [tool, selectedStrokeIds, snapToGrid, gridSize, toCanvasCoords, renderOverlay, getCombinedBoundingBox, currentUserId, userName, userColor, color, strokeWidth, useFill, fillColor, opacity, arrowType, arrowheadStart, arrowheadEnd]);
+  }, [tool, selectedStrokeIds, snapToGrid, gridSize, toCanvasCoords, renderOverlay, getCombinedBoundingBox, currentUserId, userName, userColor, color, strokeWidth, useFill, fillColor, opacity, arrowType, arrowheadStart, arrowheadEnd, isSheetsMode, sheets, activeSheetIndex]);
 
   const onPointerUp = useCallback(() => {
     const drag = dragStartRef.current;
@@ -3807,6 +4073,46 @@ export function BoardCanvas({
     playClickSound();
   }, [redoStack, strokes, persistStrokes, canDrawLocal]);
 
+  const handleCopyStyle = useCallback(() => {
+    const activeSheet = sheets[activeSheetIndex];
+    if (!activeSheet) return;
+    setCopiedSheetStyle({
+      sheetBg: activeSheet.sheetBg,
+      gridType: activeSheet.gridType,
+      gridSize: activeSheet.gridSize,
+      gridColor: activeSheet.gridColor,
+      showBorder: activeSheet.showBorder,
+      borderColor: activeSheet.borderColor,
+      borderWidth: activeSheet.borderWidth,
+      showPageNumber: activeSheet.showPageNumber,
+      showDate: activeSheet.showDate,
+      date: activeSheet.date,
+      innerFrameShow: activeSheet.innerFrameShow,
+      innerFrameStyle: activeSheet.innerFrameStyle,
+      innerFrameColor: activeSheet.innerFrameColor,
+      innerFrameWidth: activeSheet.innerFrameWidth,
+      innerFrameMargin: activeSheet.innerFrameMargin,
+      watermarkShow: activeSheet.watermarkShow,
+      watermarkText: activeSheet.watermarkText,
+    });
+  }, [activeSheetIndex, sheets]);
+
+  const handlePasteStyle = useCallback(() => {
+    if (!copiedSheetStyle) return;
+    setSheets((prev) => {
+      const next = prev.map((s, idx) => {
+        if (idx === activeSheetIndex) {
+          return { ...s, ...copiedSheetStyle };
+        }
+        return s;
+      });
+      sheetsRef.current = next;
+      broadcastSheets(next, isSheetsModeRef.current);
+      persistStrokes(strokes);
+      return next;
+    });
+  }, [activeSheetIndex, copiedSheetStyle, broadcastSheets, persistStrokes, strokes]);
+
   /* ─── Clear all ─── */
   const handleClearAll = useCallback(async () => {
     if (!canDrawLocal) return;
@@ -4261,16 +4567,23 @@ export function BoardCanvas({
     
     try {
       if (isSheetsMode && sheets.length > 0) {
-        const first = sheets[0];
+        let pagesToExport = parsePageRange(exportPagesRange, sheets.length);
+        if (pagesToExport.length === 0) {
+          pagesToExport = Array.from({ length: sheets.length }, (_, i) => i);
+        }
+
+        const firstIdx = pagesToExport[0];
+        const first = sheets[firstIdx];
         const doc = new jsPDF({
           orientation: first.width > first.height ? 'landscape' : 'portrait',
           unit: 'px',
           format: [first.width, first.height]
         });
 
-        for (let i = 0; i < sheets.length; i++) {
-          const sheet = sheets[i];
-          if (i > 0) {
+        for (let idx = 0; idx < pagesToExport.length; idx++) {
+          const sheetIdx = pagesToExport[idx];
+          const sheet = sheets[sheetIdx];
+          if (idx > 0) {
             doc.addPage([sheet.width, sheet.height], sheet.width > sheet.height ? 'l' : 'p');
           }
 
@@ -4279,11 +4592,11 @@ export function BoardCanvas({
           offscreen.height = sheet.height;
           const ctx = offscreen.getContext('2d');
           if (ctx) {
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = sheet.sheetBg || '#ffffff';
             ctx.fillRect(0, 0, sheet.width, sheet.height);
 
             // Draw the background grid, border, headers, and footers templates
-            drawSheetBackgroundAndLayout(ctx, sheet, i, sheets.length, false);
+            drawSheetBackgroundAndLayout(ctx, sheet, sheetIdx, sheets.length, false);
 
             ctx.save();
             ctx.translate(-sheet.x, -sheet.y);
@@ -4470,6 +4783,37 @@ export function BoardCanvas({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [zoomAt]);
+
+  // Keyboard shortcuts for Undo / Redo (Ctrl+Z and Ctrl+Shift+Z / Ctrl+Y)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const isEditingText =
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        (document.activeElement as HTMLElement)?.isContentEditable;
+
+      if (isEditingText) return;
+
+      const key = e.key.toLowerCase();
+      if (e.ctrlKey || e.metaKey) {
+        if (e.shiftKey && key === 'z') {
+          e.preventDefault();
+          handleRedo();
+        } else if (!e.shiftKey && key === 'z') {
+          e.preventDefault();
+          handleUndo();
+        } else if (key === 'y') {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [handleUndo, handleRedo]);
 
   const handleZoomIn = () => {
     zoomAt(1.25);
@@ -4707,16 +5051,8 @@ export function BoardCanvas({
     if (!canDrawLocal) return;
     if (tool !== 'select') return;
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
-
-    // Restrict editing inside the active sheet when Sheets Mode is active
-    const activeSheet = sheets[activeSheetIndex] || sheets[0];
-    if (isSheetsMode && activeSheet) {
-      const inSheet = x >= activeSheet.x && x <= activeSheet.x + activeSheet.width &&
-                      y >= activeSheet.y && y <= activeSheet.y + activeSheet.height;
-      if (!inSheet) return;
-    }
-    
-    const hit = [...strokes].reverse().find((s) => hitTestStroke(s, x, y, 15));
+    const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+    const hit = [...strokes].reverse().find((s) => (!isSheetsMode || (activeSheet && isStrokeInSheet(s, activeSheet))) && hitTestStroke(s, x, y, 15));
     
     if (hit) {
       if (hit.tool === 'table') {
@@ -4783,22 +5119,14 @@ export function BoardCanvas({
         }
       }
     }
-  }, [tool, strokes, hitTestStroke, toCanvasCoords, view, canDrawLocal]);
+  }, [tool, strokes, hitTestStroke, toCanvasCoords, view, canDrawLocal, isSheetsMode, sheets, activeSheetIndex, isStrokeInSheet]);
 
   // Context Menu
   const onContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     const { x, y } = toCanvasCoords(e.clientX, e.clientY);
-
-    // Restrict context menu inside the active sheet when Sheets Mode is active
-    const activeSheet = sheets[activeSheetIndex] || sheets[0];
-    if (isSheetsMode && activeSheet) {
-      const inSheet = x >= activeSheet.x && x <= activeSheet.x + activeSheet.width &&
-                      y >= activeSheet.y && y <= activeSheet.y + activeSheet.height;
-      if (!inSheet) return;
-    }
-
-    const hit = [...strokes].reverse().find((s) => hitTestStroke(s, x, y, 8));
+    const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+    const hit = [...strokes].reverse().find((s) => (!isSheetsMode || (activeSheet && isStrokeInSheet(s, activeSheet))) && hitTestStroke(s, x, y, 8));
     if (hit) {
       if (!selectedStrokeIds.includes(hit.id)) {
         setSelectedStrokeIds([hit.id]);
@@ -4808,7 +5136,7 @@ export function BoardCanvas({
       setSelectedStrokeIds([]);
       setContextMenu({ x: e.clientX, y: e.clientY, canvasX: x, canvasY: y });
     }
-  }, [strokes, hitTestStroke, toCanvasCoords, selectedStrokeIds, setSelectedStrokeIds, setContextMenu]);
+  }, [strokes, hitTestStroke, toCanvasCoords, selectedStrokeIds, setSelectedStrokeIds, setContextMenu, isSheetsMode, sheets, activeSheetIndex, isStrokeInSheet]);
 
   const doubleClickToEditText = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     onDoubleClick(e);
@@ -5328,7 +5656,19 @@ export function BoardCanvas({
                 Export
               </button>
               {showExportMenu && (
-                <div className="absolute right-0 top-10 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-50 overflow-hidden min-w-[150px] p-1 flex flex-col gap-0.5">
+                <div className="absolute right-0 top-10 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-50 overflow-hidden min-w-[170px] p-1 flex flex-col gap-0.5">
+                  {isSheetsMode && sheets.length > 0 && (
+                    <div className="px-2.5 py-1.5 border-b border-zinc-800 space-y-1">
+                      <label className="text-[9px] text-zinc-500 font-bold block">Page Range (e.g. 1,3-5)</label>
+                      <input
+                        type="text"
+                        placeholder="All pages"
+                        value={exportPagesRange}
+                        onChange={(e) => setExportPagesRange(e.target.value)}
+                        className="w-full py-0.5 px-1.5 bg-zinc-950 border border-zinc-800 rounded text-[9px] text-zinc-300 outline-none"
+                      />
+                    </div>
+                  )}
                   <button onClick={handleExportPNG} className="w-full px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800 hover:text-white rounded-lg transition-colors cursor-pointer flex items-center gap-2">
                     <FileDown className="w-3.5 h-3.5 text-zinc-400" />
                     <span>Export PNG</span>
@@ -5728,7 +6068,7 @@ export function BoardCanvas({
               width={canvasSize.w}
               height={canvasSize.h}
               className="absolute inset-0 block"
-              style={{ cursor: currentCursor, touchAction: 'none' }}
+              style={{ cursor: currentCursor, touchAction: 'none', width: `${canvasSize.w}px`, height: `${canvasSize.h}px` }}
             />
             {/* Overlay preview canvas (handles input events) */}
             <canvas
@@ -5736,7 +6076,7 @@ export function BoardCanvas({
               width={canvasSize.w}
               height={canvasSize.h}
               className="absolute inset-0 block bg-transparent"
-              style={{ cursor: currentCursor, touchAction: 'none' }}
+              style={{ cursor: currentCursor, touchAction: 'none', width: `${canvasSize.w}px`, height: `${canvasSize.h}px` }}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -6640,6 +6980,14 @@ export function BoardCanvas({
                             <Plus className="w-3.5 h-3.5" />
                           </button>
                         </div>
+                        <button
+                          onClick={handleDistributeStrokesToSheets}
+                          className="w-full py-1.5 px-2 bg-zinc-950 border border-fuchsia-500/30 text-fuchsia-400 hover:bg-fuchsia-500/15 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 mt-1.5"
+                          title="Distribute board elements into sheets automatically"
+                        >
+                          <Layers className="w-3 h-3" />
+                          <span>Auto-Distribute Elements to Sheets</span>
+                        </button>
                       </div>
 
                       {/* Pages List */}
@@ -6705,6 +7053,27 @@ export function BoardCanvas({
                       {sheets[activeSheetIndex] && (
                         <div className="space-y-2.5 pt-2.5 border-t border-zinc-800/80">
                           <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Active Page Settings</p>
+
+                          {/* Copy / Paste Page Style */}
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleCopyStyle}
+                              className="flex-1 py-1 px-2 bg-zinc-950 border border-zinc-850 hover:bg-zinc-900 text-zinc-300 rounded-lg text-[9px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1"
+                              title="Copy this page's layout styling"
+                            >
+                              <Copy className="w-3 h-3 text-zinc-400" />
+                              <span>Copy Style</span>
+                            </button>
+                            <button
+                              onClick={handlePasteStyle}
+                              disabled={!copiedSheetStyle}
+                              className="flex-1 py-1 px-2 bg-zinc-950 border border-zinc-850 hover:bg-zinc-900 text-zinc-300 disabled:opacity-30 disabled:hover:bg-zinc-950 rounded-lg text-[9px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1"
+                              title="Paste copied styling to this page"
+                            >
+                              <Clipboard className="w-3 h-3 text-zinc-400" />
+                              <span>Paste Style</span>
+                            </button>
+                          </div>
                           
                           {/* Page Name/Label */}
                           <div className="space-y-1">
@@ -6785,76 +7154,119 @@ export function BoardCanvas({
 
                           {/* Page Background Settings */}
                           <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[8px] text-zinc-500 font-bold block">Page Background</label>
-                              <div className="flex items-center gap-1.5">
-                                {['#ffffff', '#fafaf9', '#f4f4f5', '#f0fdf4', '#eff6ff', '#fffbeb', '#fff1f2'].map((c) => (
-                                  <button
-                                    key={c}
-                                    onClick={() => handleUpdatePageProperty('bgColor', c)}
-                                    className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
-                                      (sheets[activeSheetIndex].bgColor || '#ffffff') === c
-                                        ? 'ring-1 ring-fuchsia-400 border-white'
-                                        : 'border-zinc-700'
-                                    }`}
-                                    style={{ backgroundColor: c }}
-                                    title={c}
-                                  />
-                                ))}
-                                <input
-                                  type="color"
-                                  value={sheets[activeSheetIndex].bgColor || '#ffffff'}
-                                  onChange={(e) => handleUpdatePageProperty('bgColor', e.target.value)}
-                                  className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                            <label className="text-[8px] text-zinc-500 font-bold block">Page Background</label>
+                            <div className="flex items-center gap-1.5">
+                              {['#ffffff', '#fafafa', '#f4f4f5', '#fdfbf7', '#eff6ff', '#fef9c3'].map((bg) => (
+                                <button
+                                  key={bg}
+                                  onClick={() => handleUpdatePageProperty('sheetBg', bg)}
+                                  className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
+                                    (sheets[activeSheetIndex].sheetBg || '#ffffff') === bg
+                                      ? 'ring-1 ring-fuchsia-400 border-white'
+                                      : 'border-zinc-700'
+                                  }`}
+                                  style={{ backgroundColor: bg }}
+                                  title={bg}
                                 />
-                              </div>
+                              ))}
+                              <input
+                                type="color"
+                                value={sheets[activeSheetIndex].sheetBg || '#ffffff'}
+                                onChange={(e) => handleUpdatePageProperty('sheetBg', e.target.value)}
+                                className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                                title="Custom Background"
+                              />
                             </div>
                           </div>
+
+                          {/* Grid Spacing & Color */}
+                          {(sheets[activeSheetIndex].gridType || gridType) !== 'none' && (
+                            <div className="space-y-2 pl-2 border-l border-zinc-800">
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[8px] text-zinc-500 font-bold block">Grid Spacing</label>
+                                  <span className="text-[8px] text-zinc-400 font-bold">
+                                    {sheets[activeSheetIndex].gridSize || gridSize}px
+                                  </span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min={10}
+                                  max={60}
+                                  step={2}
+                                  value={sheets[activeSheetIndex].gridSize || gridSize}
+                                  onChange={(e) => handleUpdatePageProperty('gridSize', parseInt(e.target.value))}
+                                  className="w-full accent-fuchsia-500 h-1 bg-zinc-950 rounded-lg cursor-pointer appearance-none"
+                                />
+                              </div>
+
+                              <div className="space-y-1">
+                                <label className="text-[8px] text-zinc-500 font-bold block">Grid/Line Color</label>
+                                <div className="flex items-center gap-1.5">
+                                  {['rgba(0, 0, 0, 0.08)', 'rgba(0, 0, 0, 0.15)', '#cbd5e1', '#94a3b8', '#6366f1'].map((c) => (
+                                    <button
+                                      key={c}
+                                      onClick={() => handleUpdatePageProperty('gridColor', c)}
+                                      className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
+                                        (sheets[activeSheetIndex].gridColor || 'rgba(0, 0, 0, 0.08)') === c
+                                          ? 'ring-1 ring-fuchsia-400 border-white'
+                                          : 'border-zinc-700'
+                                      }`}
+                                      style={{ backgroundColor: c.startsWith('rgba') ? 'rgba(255, 255, 255, 0.15)' : c }}
+                                      title={c}
+                                    />
+                                  ))}
+                                  <input
+                                    type="color"
+                                    value={sheets[activeSheetIndex].gridColor && !sheets[activeSheetIndex].gridColor.startsWith('rgba') ? sheets[activeSheetIndex].gridColor : '#cbd5e1'}
+                                    onChange={(e) => handleUpdatePageProperty('gridColor', e.target.value)}
+                                    className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                                    title="Custom Grid Color"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
 
                           {/* Inner Frame Settings */}
                           <div className="space-y-1.5">
                             <div className="flex items-center justify-between">
-                              <label className="text-[8px] text-zinc-500 font-bold block">Page Inner Frame</label>
+                              <label className="text-[8px] text-zinc-500 font-bold block">Inner Frame</label>
                               <input
                                 type="checkbox"
-                                checked={!!sheets[activeSheetIndex].showInnerFrame}
-                                onChange={(e) => handleUpdatePageProperty('showInnerFrame', e.target.checked)}
+                                checked={sheets[activeSheetIndex].innerFrameShow === true}
+                                onChange={(e) => handleUpdatePageProperty('innerFrameShow', e.target.checked)}
                                 className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
                               />
                             </div>
 
-                            {!!sheets[activeSheetIndex].showInnerFrame && (
-                              <div className="space-y-1.5 pl-2 border-l border-zinc-800">
-                                {/* Frame Style */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <label className="text-[8px] text-zinc-450 font-semibold">Frame Style</label>
-                                  <div className="flex gap-0.5">
-                                    {['solid', 'dashed', 'dotted'].map((style) => (
-                                      <button
-                                        key={style}
-                                        onClick={() => handleUpdatePageProperty('innerFrameStyle', style)}
-                                        className={`px-1 py-0.5 rounded text-[7px] font-bold border capitalize transition-all cursor-pointer ${
-                                          (sheets[activeSheetIndex].innerFrameStyle || 'solid') === style
-                                            ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
-                                            : 'bg-zinc-950 border-zinc-850 text-zinc-400'
-                                        }`}
-                                      >
-                                        {style}
-                                      </button>
-                                    ))}
-                                  </div>
+                            {sheets[activeSheetIndex].innerFrameShow === true && (
+                              <div className="space-y-2 pl-2 border-l border-zinc-800">
+                                {/* Style */}
+                                <div className="space-y-1">
+                                  <label className="text-[8px] text-zinc-500 font-bold block">Frame Style</label>
+                                  <select
+                                    value={sheets[activeSheetIndex].innerFrameStyle || 'single'}
+                                    onChange={(e) => handleUpdatePageProperty('innerFrameStyle', e.target.value)}
+                                    className="w-full py-0.5 px-1.5 bg-zinc-950 border border-zinc-850 rounded text-[9px] text-zinc-300 outline-none cursor-pointer"
+                                  >
+                                    <option value="single">Single</option>
+                                    <option value="double">Double</option>
+                                    <option value="dashed">Dashed</option>
+                                    <option value="dotted">Dotted</option>
+                                  </select>
                                 </div>
 
-                                {/* Frame Color */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <label className="text-[8px] text-zinc-450 font-semibold">Frame Color</label>
+                                {/* Color */}
+                                <div className="space-y-1">
+                                  <label className="text-[8px] text-zinc-500 font-bold block">Frame Color</label>
                                   <div className="flex items-center gap-1.5">
                                     {['#cbd5e1', '#71717a', '#6366f1', '#ef4444', '#22c55e'].map((c) => (
                                       <button
                                         key={c}
                                         onClick={() => handleUpdatePageProperty('innerFrameColor', c)}
                                         className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
-                                          (sheets[activeSheetIndex].innerFrameColor || '#a1a1aa') === c
+                                          (sheets[activeSheetIndex].innerFrameColor || '#cbd5e1') === c
                                             ? 'ring-1 ring-fuchsia-400 border-white'
                                             : 'border-zinc-700'
                                         }`}
@@ -6864,25 +7276,76 @@ export function BoardCanvas({
                                     ))}
                                     <input
                                       type="color"
-                                      value={sheets[activeSheetIndex].innerFrameColor || '#a1a1aa'}
+                                      value={sheets[activeSheetIndex].innerFrameColor || '#cbd5e1'}
                                       onChange={(e) => handleUpdatePageProperty('innerFrameColor', e.target.value)}
                                       className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
                                     />
                                   </div>
                                 </div>
 
-                                {/* Frame Padding */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <label className="text-[8px] text-zinc-455 font-semibold">Margin Size (px)</label>
+                                {/* Thickness */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-[8px] text-zinc-500 font-bold block">Frame Thickness</label>
+                                    <span className="text-[8px] text-zinc-400 font-bold">
+                                      {sheets[activeSheetIndex].innerFrameWidth !== undefined ? sheets[activeSheetIndex].innerFrameWidth : 1}px
+                                    </span>
+                                  </div>
                                   <input
-                                    type="number"
-                                    min="5"
-                                    max="40"
-                                    value={sheets[activeSheetIndex].innerFramePadding || 15}
-                                    onChange={(e) => handleUpdatePageProperty('innerFramePadding', parseInt(e.target.value) || 15)}
-                                    className="w-10 py-0.5 px-1 bg-zinc-950 border border-zinc-850 rounded text-[9px] text-zinc-300 outline-none font-mono"
+                                    type="range"
+                                    min={1}
+                                    max={5}
+                                    step={1}
+                                    value={sheets[activeSheetIndex].innerFrameWidth !== undefined ? sheets[activeSheetIndex].innerFrameWidth : 1}
+                                    onChange={(e) => handleUpdatePageProperty('innerFrameWidth', parseInt(e.target.value))}
+                                    className="w-full accent-fuchsia-500 h-1 bg-zinc-950 rounded-lg cursor-pointer appearance-none"
                                   />
                                 </div>
+
+                                {/* Margin */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <label className="text-[8px] text-zinc-500 font-bold block">Frame Margin</label>
+                                    <span className="text-[8px] text-zinc-400 font-bold">
+                                      {sheets[activeSheetIndex].innerFrameMargin !== undefined ? sheets[activeSheetIndex].innerFrameMargin : 15}px
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min={5}
+                                    max={45}
+                                    step={1}
+                                    value={sheets[activeSheetIndex].innerFrameMargin !== undefined ? sheets[activeSheetIndex].innerFrameMargin : 15}
+                                    onChange={(e) => handleUpdatePageProperty('innerFrameMargin', parseInt(e.target.value))}
+                                    className="w-full accent-fuchsia-500 h-1 bg-zinc-950 rounded-lg cursor-pointer appearance-none"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Watermark Settings */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[8px] text-zinc-500 font-bold block">Show Watermark</label>
+                              <input
+                                type="checkbox"
+                                checked={sheets[activeSheetIndex].watermarkShow === true}
+                                onChange={(e) => handleUpdatePageProperty('watermarkShow', e.target.checked)}
+                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                              />
+                            </div>
+
+                            {sheets[activeSheetIndex].watermarkShow === true && (
+                              <div className="space-y-1 pl-2 border-l border-zinc-800">
+                                <label className="text-[8px] text-zinc-500 font-bold block">Watermark Text</label>
+                                <input
+                                  type="text"
+                                  value={sheets[activeSheetIndex].watermarkText !== undefined ? sheets[activeSheetIndex].watermarkText : `Ski.ma - ${label || 'Whiteboard'}`}
+                                  onChange={(e) => handleUpdatePageProperty('watermarkText', e.target.value)}
+                                  placeholder={`Ski.ma - ${label || 'Whiteboard'}`}
+                                  className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none"
+                                />
                               </div>
                             )}
                           </div>
