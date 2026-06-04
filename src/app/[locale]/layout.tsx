@@ -54,9 +54,9 @@ export async function generateMetadata({
   const { locale } = await params;
   const isAr = locale === 'ar';
   return {
-    title: isAr ? 'لوحة سير العمل المرئي SaaS' : 'Visual Workflow SaaS',
+    title: isAr ? 'Skima — منصة سير العمل الذكي' : 'Skima — Intelligent Workflow Automation',
     description: isAr
-      ? 'منصة متطورة لتصميم وإدارة سير العمل المرئي المدعوم بالذكاء الاصطناعي.'
-      : 'Advanced Agentic Visual Workflow SaaS Platform',
+      ? 'صمم وأتمت مسارات العمل الذكية بصرياً مع Skima.'
+      : 'Design and automate agentic workflows visually with Skima.',
   };
 }

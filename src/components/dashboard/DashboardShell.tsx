@@ -192,12 +192,12 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
         {/* Sidebar Header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="bg-primary text-primary-foreground p-2 rounded-xl flex items-center justify-center shrink-0 shadow-md shadow-primary/10">
-              <Workflow className="w-5 h-5 animate-pulse" />
+            <div className="bg-linear-to-br from-primary to-accent p-2 rounded-xl flex items-center justify-center shrink-0 shadow-md shadow-primary/15">
+              <Workflow className="w-5 h-5 text-white" />
             </div>
             {(!collapsed || mobileOpen) && (
-              <span className="font-bold text-base tracking-tight truncate bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
-                Visual Workflow
+              <span className="font-extrabold text-base tracking-tight truncate">
+                <span className="bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">ski</span><span className="text-foreground">.ma</span>
               </span>
             )}
           </div>
@@ -267,15 +267,15 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
                 key={idx}
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
-                className={`w-full justify-start gap-3 py-3 rounded-xl transition-all duration-200 cursor-pointer flex items-center hover:no-underline select-none relative group ${
+                className={`w-full justify-start gap-3 py-2.5 rounded-xl transition-all duration-100 cursor-pointer flex items-center hover:no-underline select-none relative group active:scale-[0.97] ${
                   isActive 
                     ? 'bg-accent/10 dark:bg-accent/15 text-accent font-bold' 
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/40 font-medium'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/50 font-medium'
                 } ${
-                  (collapsed && !mobileOpen) ? 'px-0 justify-center' : 'px-4'
+                  (collapsed && !mobileOpen) ? 'px-0 justify-center' : 'px-3.5'
                 }`}
               >
-                <item.icon className={`w-5 h-5 shrink-0 transition-transform duration-200 group-hover:scale-110 ${isActive ? 'text-accent animate-pulse' : 'text-muted-foreground group-hover:text-foreground'}`} />
+                <item.icon className={`w-5 h-5 shrink-0 transition-transform duration-100 group-hover:scale-110 ${isActive ? 'text-accent' : 'text-muted-foreground group-hover:text-foreground'}`} />
                 {(!collapsed || mobileOpen) && <span className="text-sm">{item.name}</span>}
                 
                 {/* Active Sidebar Indicator Strip */}
@@ -294,7 +294,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
               onClick={handleSignOut}
               disabled={isPending}
               variant="outline"
-              className="w-full border-border hover:bg-destructive/10 hover:text-destructive font-semibold rounded-xl py-5 transition-all cursor-pointer flex items-center justify-center gap-2"
+              className="w-full border-border hover:bg-destructive/10 hover:text-destructive font-semibold rounded-xl py-5 transition-all duration-100 cursor-pointer flex items-center justify-center gap-2 active:scale-[0.97]"
             >
               <LogOut className="w-4 h-4" />
               <span>{tAuth('sign_out')}</span>
@@ -306,7 +306,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
               disabled={isPending}
               variant="outline"
               size="icon"
-              className="w-10 h-10 border-border hover:bg-destructive/10 hover:text-destructive rounded-xl mx-auto cursor-pointer"
+              className="w-10 h-10 border-border hover:bg-destructive/10 hover:text-destructive rounded-xl mx-auto cursor-pointer transition-all duration-100 active:scale-[0.97]"
             >
               <LogOut className="w-4 h-4" />
             </Button>
@@ -317,14 +317,14 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
       {/* 2. MAIN BODY */}
       <div className={`flex-1 flex flex-col transition-all duration-300 ps-0 ${collapsed ? 'lg:ps-20' : 'lg:ps-64'}`}>
         {/* Top Navbar */}
-        <header className="h-16 sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border px-6 flex items-center justify-between transition-colors duration-300">
+        <header className="h-16 sticky top-0 z-30 bg-background/80 backdrop-blur-md border-b border-border/70 px-6 flex items-center justify-between transition-colors duration-300">
           <div className="flex items-center gap-4">
             {/* Mobile Sidebar Trigger */}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setMobileOpen(true)}
-              className="lg:hidden w-10 h-10 border border-border rounded-xl"
+              className="lg:hidden w-10 h-10 border border-border rounded-xl transition-all duration-100 active:scale-[0.95]"
             >
               <Menu className="w-5 h-5" />
             </Button>
@@ -332,7 +332,7 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
             {/* Workspace Switcher */}
             {activeWorkspace && (
               <DropdownMenu>
-                <DropdownMenuTrigger className="inline-flex items-center gap-2 px-4 py-2 border border-border bg-card hover:bg-muted/70 backdrop-blur-md rounded-xl text-sm font-semibold cursor-pointer transition-all hover:border-accent/30 shadow-xs focus:outline-hidden select-none">
+                <DropdownMenuTrigger className="inline-flex items-center gap-2 px-4 py-2 border border-border bg-card hover:bg-muted/70 backdrop-blur-md rounded-xl text-sm font-semibold cursor-pointer transition-all duration-100 hover:border-accent/30 active:scale-[0.97] shadow-xs focus:outline-hidden select-none">
                   <Building className="w-4 h-4 text-accent animate-pulse" />
                   <span className="max-w-[120px] truncate">{activeWorkspace.name}</span>
                   <span className={`text-[9px] uppercase font-extrabold px-2 py-0.5 rounded-md border ${

@@ -25,7 +25,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Search,
   Grid,
@@ -643,33 +643,42 @@ export function WorkflowsList({
       ) : (viewMode === 'grid' || !globalThis.window || window.innerWidth < 640) ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredWorkflows.map((wf) => (
-            <Card key={wf.id} className="bg-card/45 border border-border backdrop-blur-md shadow-xs rounded-2xl transition-all duration-300 hover:shadow-md hover:border-accent/30 group relative overflow-hidden flex flex-col justify-between hover:-translate-y-1">
-              {/* Premium Gradient Header */}
-              <div className={`h-24 bg-linear-to-tr ${getCardThemeGradient(wf.id)} flex items-center justify-center p-4 border-b transition-all duration-300 relative`}>
-                <div className="absolute top-3 right-3 rtl:left-3 rtl:right-auto">{getStatusBadge(wf.status)}</div>
-                {wf.is_whiteboard ? (
-                  <Presentation className="w-8 h-8 opacity-45 group-hover:scale-110 group-hover:opacity-75 transition-all duration-300 text-emerald-500" />
-                ) : (
-                  <WorkflowIcon className="w-8 h-8 opacity-45 group-hover:scale-110 group-hover:opacity-75 transition-all duration-300 text-accent" />
-                )}
+            <Card key={wf.id} className="group relative overflow-hidden flex flex-col bg-card border border-border/70 rounded-2xl shadow-xs hover:shadow-md hover:border-accent/25 hover:-translate-y-1 transition-all duration-200 cursor-default">
+
+              {/* Card Header Thumbnail */}
+              <div className={`relative h-[88px] bg-linear-to-br ${getCardThemeGradient(wf.id)} flex items-center justify-center overflow-hidden`}>
+                {/* Decorative blobs */}
+                <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full bg-white/5 blur-xl" />
+                <div className="absolute -bottom-4 -left-4 w-16 h-16 rounded-full bg-black/5 blur-lg" />
+                {/* Icon */}
+                <div className="relative z-10">
+                  {wf.is_whiteboard ? (
+                    <Presentation className="w-9 h-9 text-emerald-500/60 group-hover:text-emerald-500/85 group-hover:scale-110 transition-all duration-200" />
+                  ) : (
+                    <WorkflowIcon className="w-9 h-9 text-accent/55 group-hover:text-accent/85 group-hover:scale-110 transition-all duration-200" />
+                  )}
+                </div>
+                {/* Status badge */}
+                <div className="absolute top-3 inset-e-3">{getStatusBadge(wf.status)}</div>
               </div>
 
-              <CardHeader className="p-5 space-y-1">
+              {/* Card Body */}
+              <div className="flex flex-col flex-1 p-4 gap-3">
+                {/* Title + menu row */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Link href={getEditorLink(wf)} className="hover:underline">
-                        <CardTitle className="text-lg font-bold font-sans tracking-tight line-clamp-1 text-start">
-                          {wf.name}
-                        </CardTitle>
-                      </Link>
-                      {activeTab === 'shared' && getShareRoleBadge((wf as SharedWorkflowItem).role)}
-                    </div>
+                    <Link href={getEditorLink(wf)} className="hover:no-underline group/title">
+                      <h3 className="font-bold text-[15px] tracking-tight leading-snug line-clamp-1 text-foreground group-hover/title:text-accent transition-colors duration-150">
+                        {wf.name}
+                      </h3>
+                    </Link>
+                    {activeTab === 'shared' && (
+                      <div className="mt-1">{getShareRoleBadge((wf as SharedWorkflowItem).role)}</div>
+                    )}
                   </div>
-                  {/* Options Menu */}
                   <DropdownMenu>
-                    <DropdownMenuTrigger className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-muted shrink-0 cursor-pointer focus:outline-hidden">
-                      <MoreVertical className="w-4 h-4 text-muted-foreground" />
+                    <DropdownMenuTrigger className="flex items-center justify-center w-7 h-7 rounded-lg hover:bg-muted text-muted-foreground shrink-0 cursor-pointer focus:outline-hidden opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                      <MoreVertical className="w-4 h-4" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="bg-background border border-border rounded-xl shadow-lg w-44 font-sans">
                       {activeTab === 'shared' ? (
@@ -704,49 +713,62 @@ export function WorkflowsList({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <CardDescription className="text-sm font-light text-muted-foreground line-clamp-2 h-10 mb-3 text-start">
-                  {wf.description || (isRtl ? 'لا يوجد وصف.' : 'No description provided.')}
-                </CardDescription>
 
-                {/* Visual Node Chain Roadmap Preview */}
-                {wf.node_count > 0 && (
-                  <div className="flex items-center gap-1 py-1.5 px-2 bg-muted/40 dark:bg-zinc-900/40 border border-border/60 rounded-xl max-w-fit select-none">
+                {/* Description */}
+                <p className="text-xs text-muted-foreground font-light line-clamp-2 leading-relaxed min-h-[32px]">
+                  {wf.description || (isRtl ? 'لا يوجد وصف.' : 'No description provided.')}
+                </p>
+
+                {/* Node chain pills */}
+                {wf.node_count > 0 ? (
+                  <div className="flex items-center gap-1 flex-wrap">
                     {getMockNodesForWf(wf.id, wf.node_count).map((nNode, nIdx) => (
                       <div key={nIdx} className="flex items-center gap-1">
-                        <span className={`text-[8px] font-extrabold px-2 py-0.5 rounded-md border ${nNode.color}`}>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${nNode.color}`}>
                           {nNode.label}
                         </span>
                         {nIdx < Math.min(wf.node_count, 3) - 1 && (
-                          <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0 rtl:rotate-180" />
+                          <ChevronRight className="w-3 h-3 text-muted-foreground/50 shrink-0 rtl:rotate-180" />
                         )}
                       </div>
                     ))}
                     {wf.node_count > 3 && (
-                      <span className="text-[9px] text-muted-foreground font-mono font-bold ps-1">
+                      <span className="text-[9px] text-muted-foreground/70 font-mono font-semibold bg-muted/60 border border-border/50 px-1.5 py-0.5 rounded-full">
                         +{wf.node_count - 3}
                       </span>
                     )}
                   </div>
-                )}
-              </CardHeader>
-
-              <CardContent className="p-5 pt-0 border-t border-border flex items-center justify-between text-xs text-muted-foreground font-medium">
-                {wf.is_whiteboard ? (
-                  <span className="flex items-center gap-1.5 text-emerald-500">
-                    <Presentation className="w-3.5 h-3.5" />
-                    {isRtl ? 'لوحة رسم مستقلة' : 'Drawing Canvas'}
-                  </span>
                 ) : (
-                  <span className="flex items-center gap-1.5">
-                    <Play className="w-3.5 h-3.5 text-accent" />
-                    {isRtl ? `${wf.node_count} عقد` : `${wf.node_count} nodes`}
-                  </span>
+                  <div className="h-5" />
                 )}
-                <span className="flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5" />
-                  {new Date(wf.updated_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' })}
-                </span>
-              </CardContent>
+              </div>
+
+              {/* Card Footer */}
+              <div className="px-4 py-3 border-t border-border/50 flex items-center justify-between bg-muted/20">
+                <div className="flex items-center gap-3 text-[11px] text-muted-foreground font-medium">
+                  {wf.is_whiteboard ? (
+                    <span className="flex items-center gap-1.5 text-emerald-500/80">
+                      <Presentation className="w-3.5 h-3.5" />
+                      {isRtl ? 'لوحة رسم' : 'Canvas'}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5">
+                      <Play className="w-3 h-3 text-accent" />
+                      {isRtl ? `${wf.node_count} عقد` : `${wf.node_count} nodes`}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    {new Date(wf.updated_at).toLocaleDateString(locale, { month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+                <Link href={getEditorLink(wf)}>
+                  <button className="flex items-center gap-1 text-[11px] font-bold text-accent hover:text-accent/80 transition-colors duration-100 cursor-pointer group/btn">
+                    {isRtl ? 'فتح' : 'Open'}
+                    <ChevronRight className="w-3.5 h-3.5 group-hover/btn:translate-x-0.5 rtl:rotate-180 transition-transform duration-100" />
+                  </button>
+                </Link>
+              </div>
             </Card>
           ))}
         </div>
