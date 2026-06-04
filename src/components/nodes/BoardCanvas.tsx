@@ -1671,34 +1671,45 @@ export function BoardCanvas({
     const box = getCombinedBoundingBox(selectedStrokeIds);
     if (!box || isNaN(newVal)) return;
 
+    let clampedVal = newVal;
+    const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+    if (isSheetsMode && activeSheet) {
+      if (property === 'x') {
+        clampedVal = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width - box.w, newVal));
+      } else if (property === 'y') {
+        clampedVal = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height - box.h, newVal));
+      } else if (property === 'w') {
+        clampedVal = Math.max(5, Math.min(activeSheet.x + activeSheet.width - box.minX, newVal));
+      } else if (property === 'h') {
+        clampedVal = Math.max(5, Math.min(activeSheet.y + activeSheet.height - box.minY, newVal));
+      }
+    }
+
     setStrokes((prev) => {
       const next = prev.map((s) => {
         if (!selectedStrokeIds.includes(s.id)) return s;
         let newPts = s.points.map((p) => {
           if (property === 'x') {
-            const dx = newVal - box.minX;
+            const dx = clampedVal - box.minX;
             return { x: p.x + dx, y: p.y };
           } else if (property === 'y') {
-            const dy = newVal - box.minY;
+            const dy = clampedVal - box.minY;
             return { x: p.x, y: p.y + dy };
           } else if (property === 'w') {
             if (box.w === 0) return p;
-            const scaleX = newVal / box.w;
+            const scaleX = clampedVal / box.w;
             return { x: box.minX + (p.x - box.minX) * scaleX, y: p.y };
           } else if (property === 'h') {
             if (box.h === 0) return p;
-            const scaleY = newVal / box.h;
+            const scaleY = clampedVal / box.h;
             return { x: p.x, y: box.minY + (p.y - box.minY) * scaleY };
           }
           return p;
         });
 
-        const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
         if (isSheetsMode && activeSheet) {
           newPts = newPts.map((p) => {
-            const px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x));
-            const py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y));
-            return getSnappedCoords(px, py, activeSheet);
+            return getSnappedCoords(p.x, p.y, activeSheet);
           });
         }
 
@@ -3798,6 +3809,17 @@ export function BoardCanvas({
         dy = Math.round(dy / gridSize) * gridSize;
       }
 
+      const origBox = getCombinedBoundingBox(Object.keys(drag.originalStrokes));
+      if (isSheetsMode && activeSheet && origBox.minX !== Infinity) {
+        const minAllowedDx = activeSheet.x - origBox.minX;
+        const maxAllowedDx = activeSheet.x + activeSheet.width - origBox.maxX;
+        const minAllowedDy = activeSheet.y - origBox.minY;
+        const maxAllowedDy = activeSheet.y + activeSheet.height - origBox.maxY;
+
+        dx = Math.max(minAllowedDx, Math.min(maxAllowedDx, dx));
+        dy = Math.max(minAllowedDy, Math.min(maxAllowedDy, dy));
+      }
+
       setStrokes((prev) => prev.map((s) => {
         if (!selectedStrokeIds.includes(s.id)) return s;
         const orig = drag.originalStrokes[s.id];
@@ -3805,9 +3827,7 @@ export function BoardCanvas({
         let newPts = orig.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
         if (isSheetsMode && activeSheet) {
           newPts = newPts.map((p) => {
-            const px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x));
-            const py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y));
-            return getSnappedCoords(px, py, activeSheet);
+            return getSnappedCoords(p.x, p.y, activeSheet);
           });
         }
         return { ...s, points: newPts };
@@ -3823,12 +3843,10 @@ export function BoardCanvas({
             let updatedPts = orig.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
             if (isSheetsMode && activeSheet) {
               updatedPts = updatedPts.map((p) => {
-                const px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x));
-                const py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y));
-                return getSnappedCoords(px, py, activeSheet);
+                return getSnappedCoords(p.x, p.y, activeSheet);
               });
             }
-            channelRef.current.send({
+            channelRef.current?.send({
               type: 'broadcast',
               event: 'stroke_draw',
               payload: { userId: currentUserId, stroke: { ...orig, points: updatedPts } }
@@ -5306,7 +5324,17 @@ export function BoardCanvas({
             // Draw the background grid, border, headers, and footers templates
             drawSheetBackgroundAndLayout(ctx, sheet, sheetIdx, sheets.length, false);
 
-            // Create temporary transparent canvas for strokes
+            // Draw images directly to offscreen canvas first
+            ctx.save();
+            ctx.translate(-sheet.x, -sheet.y);
+            strokes.forEach((stroke) => {
+              if (stroke.tool === 'image' && isStrokeInSheet(stroke, sheet)) {
+                drawStrokeWithConnector(ctx, stroke, false);
+              }
+            });
+            ctx.restore();
+
+            // Create temporary transparent canvas for other strokes
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = sheet.width;
             tempCanvas.height = sheet.height;
@@ -5315,7 +5343,7 @@ export function BoardCanvas({
               tempCtx.save();
               tempCtx.translate(-sheet.x, -sheet.y);
               strokes.forEach((stroke) => {
-                if (isStrokeInSheet(stroke, sheet)) {
+                if (stroke.tool !== 'image' && isStrokeInSheet(stroke, sheet)) {
                   drawStrokeWithConnector(tempCtx, stroke, false);
                 }
               });
@@ -5346,7 +5374,17 @@ export function BoardCanvas({
           ctx.fillStyle = bgColor;
           ctx.fillRect(0, 0, cropW, cropH);
 
-          // Create temporary transparent canvas for strokes
+          // Draw images directly to offscreen canvas first
+          ctx.save();
+          ctx.translate(-cropX, -cropY);
+          strokes.forEach((stroke) => {
+            if (stroke.tool === 'image') {
+              drawStrokeWithConnector(ctx, stroke, false);
+            }
+          });
+          ctx.restore();
+
+          // Create temporary transparent canvas for other strokes
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = cropW;
           tempCanvas.height = cropH;
@@ -5355,7 +5393,9 @@ export function BoardCanvas({
             tempCtx.save();
             tempCtx.translate(-cropX, -cropY);
             strokes.forEach((stroke) => {
-              drawStrokeWithConnector(tempCtx, stroke, false);
+              if (stroke.tool !== 'image') {
+                drawStrokeWithConnector(tempCtx, stroke, false);
+              }
             });
             tempCtx.restore();
 
@@ -5407,7 +5447,17 @@ export function BoardCanvas({
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, cropW, cropH);
 
-      // Create temporary transparent canvas for strokes
+      // Draw images directly to offscreen canvas first
+      ctx.save();
+      ctx.translate(-cropX, -cropY);
+      strokes.forEach((stroke) => {
+        if (stroke.tool === 'image') {
+          drawStroke(ctx, stroke, false);
+        }
+      });
+      ctx.restore();
+
+      // Create temporary transparent canvas for other strokes
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = cropW;
       tempCanvas.height = cropH;
@@ -5416,7 +5466,9 @@ export function BoardCanvas({
         tempCtx.save();
         tempCtx.translate(-cropX, -cropY);
         strokes.forEach((stroke) => {
-          drawStroke(tempCtx, stroke, false);
+          if (stroke.tool !== 'image') {
+            drawStroke(tempCtx, stroke, false);
+          }
         });
         tempCtx.restore();
 
