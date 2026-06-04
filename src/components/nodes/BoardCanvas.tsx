@@ -183,11 +183,14 @@ export function BoardCanvas({
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [redrawTrigger, setRedrawTrigger] = useState(0);
   const [tool, setTool] = useState<Tool>('pen');
-  const [color, setColor] = useState('#ffffff');
-  const [recentColors, setRecentColors] = useState<string[]>(['#ffffff', '#ec4899', '#3b82f6']);
+  const [color, setColor] = useState('#22c55e');
+  const [recentColors, setRecentColors] = useState<string[]>(['#22c55e', '#ef4444', '#3b82f6']);
   const [fillColor, setFillColor] = useState('#6366f1');
   const [useFill, setUseFill] = useState(false);
   const [strokeWidth, setStrokeWidth] = useState(2);
+  const [penWidth, setPenWidth] = useState(2);
+  const [highlighterWidth, setHighlighterWidth] = useState(8);
+  const [eraserWidth, setEraserWidth] = useState(15);
   const [opacity, setOpacity] = useState(1);
   const [bgColor, setBgColor] = useState(initialBg || '#121212');
   
@@ -248,6 +251,60 @@ export function BoardCanvas({
   const isSpacePressedRef = useRef(false);
 
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
+
+  // Synchronize brush size/width with the active tool's memory
+  useEffect(() => {
+    if (tool === 'pen') {
+      setStrokeWidth(penWidth);
+    } else if (tool === 'highlighter') {
+      setStrokeWidth(highlighterWidth);
+    } else if (tool === 'eraser') {
+      setStrokeWidth(eraserWidth);
+    }
+  }, [tool, penWidth, highlighterWidth, eraserWidth]);
+
+  // Synchronize selection styles to local state when a single stroke is selected
+  const lastSelectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (selectedStrokeIds.length === 1) {
+      const strokeId = selectedStrokeIds[0];
+      if (strokeId !== lastSelectedIdRef.current) {
+        lastSelectedIdRef.current = strokeId;
+        const stroke = strokes.find((s) => s.id === strokeId);
+        if (stroke) {
+          if (stroke.color) setColor(stroke.color);
+          if (stroke.width) {
+            setStrokeWidth(stroke.width);
+            if (stroke.tool === 'pen') setPenWidth(stroke.width);
+            else if (stroke.tool === 'highlighter') setHighlighterWidth(stroke.width);
+            else if (stroke.tool === 'eraser') setEraserWidth(stroke.width);
+          }
+          if (stroke.opacity !== undefined) setOpacity(stroke.opacity);
+          if (stroke.fillColor) setFillColor(stroke.fillColor);
+          if (stroke.fill !== undefined) setUseFill(stroke.fill);
+          if (stroke.fontSize) setFontSize(stroke.fontSize);
+          if (stroke.fontFamily) setFontFamily(stroke.fontFamily);
+          if (stroke.fontWeight) setFontWeight(stroke.fontWeight);
+          if (stroke.textAlign) setTextAlign(stroke.textAlign);
+          if (stroke.textStyle) setTextStyle(stroke.textStyle);
+          if (stroke.textDecoration) setTextDecoration(stroke.textDecoration);
+          if (stroke.textBgColor !== undefined) setTextBgColor(stroke.textBgColor || '');
+          if (stroke.textBorderColor !== undefined) setTextBorderColor(stroke.textBorderColor || '');
+          if (stroke.textBorderWidth !== undefined) setTextBorderWidth(stroke.textBorderWidth);
+          if (stroke.textBorderStyle !== undefined) setTextBorderStyle(stroke.textBorderStyle);
+          if (stroke.textPadding !== undefined) setTextPadding(stroke.textPadding);
+          if (stroke.textBorderRadius !== undefined) setTextBorderRadius(stroke.textBorderRadius);
+          if (stroke.textLineHeight !== undefined) setTextLineHeight(stroke.textLineHeight);
+          if (stroke.arrowType) setArrowType(stroke.arrowType);
+          if (stroke.arrowheadStart) setArrowheadStart(stroke.arrowheadStart);
+          if (stroke.arrowheadEnd) setArrowheadEnd(stroke.arrowheadEnd);
+        }
+      }
+    } else {
+      lastSelectedIdRef.current = null;
+    }
+  }, [selectedStrokeIds, strokes]);
+
   const [hoveredHandle, setHoveredHandle] = useState<{ type: string; nodeIndex?: number } | null>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const minimapOffscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -453,6 +510,11 @@ export function BoardCanvas({
       setSelectedStrokeIds([]);
     }
   }, [tool]);
+
+  // Clear selection when switching sheets or toggling sheet mode
+  useEffect(() => {
+    setSelectedStrokeIds([]);
+  }, [activeSheetIndex, isSheetsMode]);
 
   // Close shapes menu on document click
   useEffect(() => {
@@ -901,6 +963,22 @@ export function BoardCanvas({
     return cx >= sheet.x && cx <= sheet.x + sheet.width && cy >= sheet.y && cy <= sheet.y + sheet.height;
   }, [getStrokeBoundingBox]);
 
+  // Ensure selected strokes are always inside the active sheet when in Sheets Mode
+  useEffect(() => {
+    if (isSheetsMode && selectedStrokeIds.length > 0) {
+      const activeSheet = sheets[activeSheetIndex] || sheets[0];
+      if (activeSheet) {
+        const filtered = selectedStrokeIds.filter(id => {
+          const s = strokes.find(st => st.id === id);
+          return s ? isStrokeInSheet(s, activeSheet) : false;
+        });
+        if (filtered.length !== selectedStrokeIds.length) {
+          setSelectedStrokeIds(filtered);
+        }
+      }
+    }
+  }, [isSheetsMode, activeSheetIndex, sheets, strokes, selectedStrokeIds, isStrokeInSheet]);
+
   const handleDistributeStrokesToSheets = useCallback(() => {
     if (strokes.length === 0) {
       const defaultSheet = {
@@ -1309,9 +1387,23 @@ export function BoardCanvas({
     if (!stroke.points || stroke.points.length === 0) return false;
     if (stroke.tool === 'eraser') return false;
 
+    let qx = x;
+    let qy = y;
+    if (stroke.angle && stroke.angle !== 0) {
+      const box = getStrokeBoundingBox(stroke);
+      const cx = (box.minX + box.maxX) / 2;
+      const cy = (box.minY + box.maxY) / 2;
+      const cos = Math.cos(-stroke.angle);
+      const sin = Math.sin(-stroke.angle);
+      const dx = x - cx;
+      const dy = y - cy;
+      qx = cx + dx * cos - dy * sin;
+      qy = cy + dx * sin + dy * cos;
+    }
+
     if (stroke.tool === 'text') {
       const box = getTextStrokeBoundingBox(stroke);
-      return x >= box.minX - tolerance && x <= box.maxX + tolerance && y >= box.minY - tolerance && y <= box.maxY + tolerance;
+      return qx >= box.minX - tolerance && qx <= box.maxX + tolerance && qy >= box.minY - tolerance && qy <= box.maxY + tolerance;
     }
 
     if (stroke.tool === 'table' && stroke.points.length >= 2) {
@@ -1321,7 +1413,7 @@ export function BoardCanvas({
       const minY = Math.min(p0.y, pN.y);
       const maxX = Math.max(p0.x, pN.x);
       const maxY = Math.max(p0.y, pN.y);
-      return x >= minX - tolerance && x <= maxX + tolerance && y >= minY - tolerance && y <= maxY + tolerance;
+      return qx >= minX - tolerance && qx <= maxX + tolerance && qy >= minY - tolerance && qy <= maxY + tolerance;
     }
 
     const isBoxShape = [
@@ -1339,12 +1431,12 @@ export function BoardCanvas({
       const maxY = Math.max(p0.y, pN.y);
       
       if (stroke.fill || stroke.tool === 'sticky' || stroke.tool === 'image') {
-        return x >= minX - tolerance && x <= maxX + tolerance && y >= minY - tolerance && y <= maxY + tolerance;
+        return qx >= minX - tolerance && qx <= maxX + tolerance && qy >= minY - tolerance && qy <= maxY + tolerance;
       } else {
-        const nearLeft = Math.abs(x - minX) <= tolerance && y >= minY - tolerance && y <= maxY + tolerance;
-        const nearRight = Math.abs(x - maxX) <= tolerance && y >= minY - tolerance && y <= maxY + tolerance;
-        const nearTop = Math.abs(y - minY) <= tolerance && x >= minX - tolerance && x <= maxX + tolerance;
-        const nearBottom = Math.abs(y - maxY) <= tolerance && x >= minX - tolerance && x <= maxX + tolerance;
+        const nearLeft = Math.abs(qx - minX) <= tolerance && qy >= minY - tolerance && qy <= maxY + tolerance;
+        const nearRight = Math.abs(qx - maxX) <= tolerance && qy >= minY - tolerance && qy <= maxY + tolerance;
+        const nearTop = Math.abs(qy - minY) <= tolerance && qx >= minX - tolerance && qx <= maxX + tolerance;
+        const nearBottom = Math.abs(qy - maxY) <= tolerance && qx >= minX - tolerance && qx <= maxX + tolerance;
         return nearLeft || nearRight || nearTop || nearBottom;
       }
     }
@@ -1357,7 +1449,7 @@ export function BoardCanvas({
       const rx = Math.abs(pN.x - p0.x) / 2;
       const ry = Math.abs(pN.y - p0.y) / 2;
       if (rx === 0 || ry === 0) return false;
-      const normDist = ((x - cx) ** 2) / (rx ** 2) + ((y - cy) ** 2) / (ry ** 2);
+      const normDist = ((qx - cx) ** 2) / (rx ** 2) + ((qy - cy) ** 2) / (ry ** 2);
       if (stroke.fill) {
         return normDist <= 1.05;
       } else {
@@ -1387,7 +1479,7 @@ export function BoardCanvas({
       };
       
       if (stroke.fill) {
-        return ptInTriangle({ x, y }, v0, v1, v2);
+        return ptInTriangle({ x: qx, y: qy }, v0, v1, v2);
       } else {
         const nearEdge = (p: {x: number; y: number}, a: {x: number; y: number}, b: {x: number; y: number}) => {
           const dx = b.x - a.x, dy = b.y - a.y;
@@ -1397,7 +1489,7 @@ export function BoardCanvas({
           const px = a.x + t*dx, py = a.y + t*dy;
           return Math.sqrt((p.x - px)**2 + (p.y - py)**2) <= tolerance;
         };
-        return nearEdge({ x, y }, v0, v1) || nearEdge({ x, y }, v1, v2) || nearEdge({ x, y }, v2, v0);
+        return nearEdge({ x: qx, y: qy }, v0, v1) || nearEdge({ x: qx, y: qy }, v1, v2) || nearEdge({ x: qx, y: qy }, v2, v0);
       }
     }
 
@@ -1423,9 +1515,9 @@ export function BoardCanvas({
       };
 
       if (stroke.fill) {
-        return x >= minX && x <= minX + w && y >= minY && y <= minY + h;
+        return qx >= minX && qx <= minX + w && qy >= minY && qy <= minY + h;
       }
-      return nearEdge({x,y}, v0, v1) || nearEdge({x,y}, v1, v2) || nearEdge({x,y}, v2, v3) || nearEdge({x,y}, v3, v0);
+      return nearEdge({x: qx, y: qy}, v0, v1) || nearEdge({x: qx, y: qy}, v1, v2) || nearEdge({x: qx, y: qy}, v2, v3) || nearEdge({x: qx, y: qy}, v3, v0);
     }
 
     for (let i = 0; i < stroke.points.length - 1; i++) {
@@ -1433,15 +1525,32 @@ export function BoardCanvas({
       const dx = nx.x - px.x, dy = nx.y - px.y;
       const len = Math.sqrt(dx * dx + dy * dy);
       if (len === 0) continue;
-      const t = Math.max(0, Math.min(1, ((x - px.x) * dx + (y - px.y) * dy) / (len * len)));
+      const t = Math.max(0, Math.min(1, ((qx - px.x) * dx + (qy - px.y) * dy) / (len * len)));
       const projX = px.x + t * dx, projY = px.y + t * dy;
-      if (Math.sqrt((x - projX) ** 2 + (y - projY) ** 2) <= tolerance) return true;
+      if (Math.sqrt((qx - projX) ** 2 + (qy - projY) ** 2) <= tolerance) return true;
     }
     return false;
-  }, [getTextStrokeBoundingBox]);
+  }, [getTextStrokeBoundingBox, getStrokeBoundingBox]);
 
   const hitTestSelectionHandle = useCallback((x: number, y: number): { type: string; nodeIndex?: number } | null => {
     if (selectedStrokeIds.length === 0) return null;
+
+    let qx = x;
+    let qy = y;
+    if (selectedStrokeIds.length === 1) {
+      const s = strokes.find((st) => st.id === selectedStrokeIds[0]);
+      if (s && s.angle && s.angle !== 0) {
+        const box = getStrokeBoundingBox(s);
+        const cx = (box.minX + box.maxX) / 2;
+        const cy = (box.minY + box.maxY) / 2;
+        const cos = Math.cos(-s.angle);
+        const sin = Math.sin(-s.angle);
+        const dx = x - cx;
+        const dy = y - cy;
+        qx = cx + dx * cos - dy * sin;
+        qy = cy + dx * sin + dy * cos;
+      }
+    }
 
     // Check individual line/arrow node handles first
     if (selectedStrokeIds.length === 1) {
@@ -1452,7 +1561,7 @@ export function BoardCanvas({
         let minDist = Infinity;
         for (let i = 0; i < s.points.length; i++) {
           const p = s.points[i];
-          const dist = Math.hypot(x - p.x, y - p.y);
+          const dist = Math.hypot(qx - p.x, qy - p.y);
           if (dist < minDist) {
             minDist = dist;
             closestIndex = i;
@@ -1486,7 +1595,7 @@ export function BoardCanvas({
     let minDist = Infinity;
 
     for (const h of handles) {
-      const dist = Math.hypot(x - h.x, y - h.y);
+      const dist = Math.hypot(qx - h.x, qy - h.y);
       if (dist < minDist) {
         minDist = dist;
         closestHandle = h;
@@ -1497,7 +1606,7 @@ export function BoardCanvas({
       return { type: closestHandle.name };
     }
     return null;
-  }, [selectedStrokeIds, strokes, getCombinedBoundingBox, view.scale]);
+  }, [selectedStrokeIds, strokes, view.scale, getCombinedBoundingBox, getStrokeBoundingBox]);
 
   // Properties modification applying to selection
   const updateSelectedStrokesProperty = useCallback((updater: (s: BoardStroke) => BoardStroke) => {
@@ -1622,42 +1731,92 @@ export function BoardCanvas({
     setStrokes((prev) => {
       const next = prev.map((s) => {
         if (!selectedStrokeIds.includes(s.id)) return s;
-        let newPts = s.points.map((p) => {
-          const dx = p.x - cx;
-          const dy = p.y - cy;
-          return {
-            x: cx + dx * cos - dy * sin,
-            y: cy + dx * sin + dy * cos,
-          };
-        });
 
-        const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
-        if (isSheetsMode && activeSheet) {
-          newPts = newPts.map((p) => ({
-            x: Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x)),
-            y: Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y))
+        const isShape = !['pen', 'highlighter', 'line', 'arrow'].includes(s.tool);
+        if (isShape) {
+          const sBox = getStrokeBoundingBox(s);
+          const ocx = (sBox.minX + sBox.maxX) / 2;
+          const ocy = (sBox.minY + sBox.maxY) / 2;
+          const newOcx = cx + (ocx - cx) * cos - (ocy - cy) * sin;
+          const newOcy = cy + (ocx - cx) * sin + (ocy - cy) * cos;
+          const shiftX = newOcx - ocx;
+          const shiftY = newOcy - ocy;
+
+          let newPts = s.points.map((p) => ({
+            x: p.x + shiftX,
+            y: p.y + shiftY,
           }));
-        }
 
-        const updated = { ...s, points: newPts };
-        if (channelRef.current?.state === 'joined') {
-          channelRef.current.send({
-            type: 'broadcast',
-            event: 'stroke_add',
-            payload: { stroke: updated, userId: currentUserId }
+          const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+          if (isSheetsMode && activeSheet) {
+            const clampedOcx = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, newOcx));
+            const clampedOcy = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, newOcy));
+            const finalShiftX = clampedOcx - ocx;
+            const finalShiftY = clampedOcy - ocy;
+            newPts = s.points.map((p) => ({
+              x: p.x + finalShiftX,
+              y: p.y + finalShiftY,
+            }));
+          }
+
+          const updated = {
+            ...s,
+            points: newPts,
+            angle: (s.angle || 0) + angle,
+          };
+          if (channelRef.current?.state === 'joined') {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'stroke_add',
+              payload: { stroke: updated, userId: currentUserId }
+            });
+          }
+          return updated;
+        } else {
+          let newPts = s.points.map((p) => {
+            const dx = p.x - cx;
+            const dy = p.y - cy;
+            return {
+              x: cx + dx * cos - dy * sin,
+              y: cy + dx * sin + dy * cos,
+            };
           });
+
+          const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+          if (isSheetsMode && activeSheet) {
+            newPts = newPts.map((p) => ({
+              x: Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x)),
+              y: Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y))
+            }));
+          }
+
+          const updated = { ...s, points: newPts };
+          if (channelRef.current?.state === 'joined') {
+            channelRef.current.send({
+              type: 'broadcast',
+              event: 'stroke_add',
+              payload: { stroke: updated, userId: currentUserId }
+            });
+          }
+          return updated;
         }
-        return updated;
       });
       persistStrokes(next);
       return next;
     });
-  }, [selectedStrokeIds, getCombinedBoundingBox, isSheetsMode, sheets, activeSheetIndex, currentUserId, persistStrokes]);
+  }, [selectedStrokeIds, getCombinedBoundingBox, isSheetsMode, sheets, activeSheetIndex, currentUserId, persistStrokes, getStrokeBoundingBox]);
 
   const handleStrokeWidthChange = useCallback((newWidth: number) => {
     setStrokeWidth(newWidth);
+    if (tool === 'pen') {
+      setPenWidth(newWidth);
+    } else if (tool === 'highlighter') {
+      setHighlighterWidth(newWidth);
+    } else if (tool === 'eraser') {
+      setEraserWidth(newWidth);
+    }
     updateSelectedStrokesProperty((s) => ({ ...s, width: newWidth }));
-  }, [updateSelectedStrokesProperty]);
+  }, [tool, updateSelectedStrokesProperty]);
 
   const handleOpacityChange = useCallback((newOpacity: number) => {
     setOpacity(newOpacity);
@@ -1841,6 +2000,16 @@ export function BoardCanvas({
       ctx.shadowBlur = 8;
     }
 
+    const hasRotation = stroke.angle !== undefined && stroke.angle !== 0;
+    if (hasRotation) {
+      const box = getStrokeBoundingBox(stroke);
+      const cx = (box.minX + box.maxX) / 2;
+      const cy = (box.minY + box.maxY) / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(stroke.angle || 0);
+      ctx.translate(-cx, -cy);
+    }
+
     if (stroke.tool === 'pen' || stroke.tool === 'highlighter') {
       if (stroke.points.length < 2) { ctx.restore(); return; }
       ctx.save();
@@ -2005,6 +2174,24 @@ export function BoardCanvas({
         img.src = imgUrl;
         imageCache.set(imgUrl, img);
       }
+      const borderRadius = stroke.textBorderRadius || 0;
+      const borderWidth = stroke.textBorderWidth || 0;
+      const borderColor = stroke.textBorderColor || '';
+      const borderStyle = stroke.textBorderStyle || 'solid';
+
+      ctx.save();
+
+      // If we have a rounded corner, clip the canvas context
+      if (borderRadius > 0) {
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(p1.x, p1.y, w, h, borderRadius);
+        } else {
+          ctx.rect(p1.x, p1.y, w, h);
+        }
+        ctx.clip();
+      }
+
       if (img.complete) {
         ctx.drawImage(img, p1.x, p1.y, w, h);
       } else {
@@ -2019,6 +2206,30 @@ export function BoardCanvas({
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('Loading image...', p1.x + w / 2, p1.y + h / 2);
+        ctx.restore();
+      }
+
+      ctx.restore(); // Restore clipping context
+
+      // Draw border if border width is set and color is provided
+      if (borderWidth > 0 && borderColor) {
+        ctx.save();
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = borderWidth;
+        if (borderStyle === 'dashed') {
+          ctx.setLineDash([borderWidth * 2, borderWidth * 2]);
+        } else if (borderStyle === 'dotted') {
+          ctx.setLineDash([borderWidth, borderWidth * 1.5]);
+        } else {
+          ctx.setLineDash([]);
+        }
+        ctx.beginPath();
+        if (borderRadius > 0 && ctx.roundRect) {
+          ctx.roundRect(p1.x, p1.y, w, h, borderRadius);
+        } else {
+          ctx.rect(p1.x, p1.y, w, h);
+        }
+        ctx.stroke();
         ctx.restore();
       }
 
@@ -3045,6 +3256,17 @@ export function BoardCanvas({
       const box = getCombinedBoundingBox(selectedStrokeIds);
       if (box.minX !== Infinity) {
         ctx.save();
+        
+        const singleStroke = selectedStrokeIds.length === 1 ? strokes.find(s => s.id === selectedStrokeIds[0]) : null;
+        const hasRotation = singleStroke && singleStroke.angle !== undefined && singleStroke.angle !== 0;
+        if (hasRotation) {
+          const cx = box.minX + box.w / 2;
+          const cy = box.minY + box.h / 2;
+          ctx.translate(cx, cy);
+          ctx.rotate(singleStroke.angle || 0);
+          ctx.translate(-cx, -cy);
+        }
+
         ctx.strokeStyle = '#6366f1';
         ctx.lineWidth = 1.5 / view.scale;
         ctx.setLineDash([4 / view.scale, 4 / view.scale]);
@@ -3629,62 +3851,187 @@ export function BoardCanvas({
       }
 
       const handle = drag.resizeHandle!;
+      const singleStroke = selectedStrokeIds.length === 1 ? strokes.find(s => s.id === selectedStrokeIds[0]) : null;
+      const angle = singleStroke?.angle || 0;
+
       let scaleX = 1, scaleY = 1;
       let targetW = origBox.w, targetH = origBox.h;
       let offsetX = 0, offsetY = 0;
 
-      if (handle.includes('r')) {
-        targetW = Math.max(10, origBox.w + dx);
-        scaleX = targetW / origBox.w;
-      } else if (handle.includes('l')) {
-        targetW = Math.max(10, origBox.w - dx);
-        scaleX = targetW / origBox.w;
-        offsetX = origBox.w - targetW;
-      }
+      if (singleStroke && angle !== 0) {
+        // Rotated local resize
+        const cos = Math.cos(-angle);
+        const sin = Math.sin(-angle);
+        const localDx = dx * cos - dy * sin;
+        const localDy = dx * sin + dy * cos;
 
-      if (handle.includes('b')) {
-        targetH = Math.max(10, origBox.h + dy);
-        scaleY = targetH / origBox.h;
-      } else if (handle.includes('t')) {
-        targetH = Math.max(10, origBox.h - dy);
-        scaleY = targetH / origBox.h;
-        offsetY = origBox.h - targetH;
-      }
-
-      if (e.shiftKey) {
-        const ratio = origBox.w / origBox.h;
-        if (handle.includes('r') || handle.includes('l')) {
-          targetH = targetW / ratio;
-          scaleY = targetH / origBox.h;
-          if (handle.includes('t')) offsetY = origBox.h - targetH;
-        } else {
-          targetW = targetH * ratio;
+        if (handle.includes('r')) {
+          targetW = Math.max(10, origBox.w + localDx);
           scaleX = targetW / origBox.w;
-          if (handle.includes('l')) offsetX = origBox.w - targetW;
+        } else if (handle.includes('l')) {
+          targetW = Math.max(10, origBox.w - localDx);
+          scaleX = targetW / origBox.w;
+          offsetX = origBox.w - targetW;
         }
-      }
 
-      setStrokes((prev) => prev.map((s) => {
-        if (!selectedStrokeIds.includes(s.id)) return s;
-        const orig = drag.originalStrokes[s.id];
-        if (!orig) return s;
-        let newPts = orig.points.map((p) => {
-          const relX = p.x - origBox.minX;
-          const relY = p.y - origBox.minY;
-          return {
-            x: origBox.minX + offsetX + relX * scaleX,
-            y: origBox.minY + offsetY + relY * scaleY,
-          };
-        });
-        if (isSheetsMode && activeSheet) {
-          newPts = newPts.map((p) => {
-            const px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x));
-            const py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y));
-            return getSnappedCoords(px, py, activeSheet);
-          });
+        if (handle.includes('b')) {
+          targetH = Math.max(10, origBox.h + localDy);
+          scaleY = targetH / origBox.h;
+        } else if (handle.includes('t')) {
+          targetH = Math.max(10, origBox.h - localDy);
+          scaleY = targetH / origBox.h;
+          offsetY = origBox.h - targetH;
         }
-        return { ...s, points: newPts };
-      }));
+
+        if (e.shiftKey) {
+          const ratio = origBox.w / origBox.h;
+          if (handle.includes('r') || handle.includes('l')) {
+            targetH = targetW / ratio;
+            scaleY = targetH / origBox.h;
+            if (handle.includes('t')) offsetY = origBox.h - targetH;
+          } else {
+            targetW = targetH * ratio;
+            scaleX = targetW / origBox.w;
+            if (handle.includes('l')) offsetX = origBox.w - targetW;
+          }
+        }
+
+        // Anchor logic to prevent drift
+        // 1. Get original anchor in local space
+        let anchorLocalX = origBox.minX;
+        let anchorLocalY = origBox.minY;
+        if (handle.includes('l')) anchorLocalX = origBox.maxX;
+        if (handle.includes('r')) anchorLocalX = origBox.minX;
+        if (handle.includes('t')) anchorLocalY = origBox.maxY;
+        if (handle.includes('b')) anchorLocalY = origBox.minY;
+        if (!handle.includes('l') && !handle.includes('r')) anchorLocalX = origBox.minX + origBox.w / 2;
+        if (!handle.includes('t') && !handle.includes('b')) anchorLocalY = origBox.minY + origBox.h / 2;
+
+        // 2. Get original anchor in world space
+        const origCenter = { x: origBox.minX + origBox.w / 2, y: origBox.minY + origBox.h / 2 };
+        const cosW = Math.cos(angle);
+        const sinW = Math.sin(angle);
+        const origAnchorWorld = {
+          x: origCenter.x + (anchorLocalX - origCenter.x) * cosW - (anchorLocalY - origCenter.y) * sinW,
+          y: origCenter.y + (anchorLocalX - origCenter.x) * sinW + (anchorLocalY - origCenter.y) * cosW,
+        };
+
+        // 3. Get resized anchor in local space
+        const newMinX = origBox.minX + offsetX;
+        const newMinY = origBox.minY + offsetY;
+        let resizedAnchorLocalX = newMinX;
+        let resizedAnchorLocalY = newMinY;
+        if (handle.includes('l')) resizedAnchorLocalX = newMinX + targetW;
+        if (handle.includes('r')) resizedAnchorLocalX = newMinX;
+        if (handle.includes('t')) resizedAnchorLocalY = newMinY + targetH;
+        if (handle.includes('b')) resizedAnchorLocalY = newMinY;
+        if (!handle.includes('l') && !handle.includes('r')) resizedAnchorLocalX = newMinX + targetW / 2;
+        if (!handle.includes('t') && !handle.includes('b')) resizedAnchorLocalY = newMinY + targetH / 2;
+
+        // 4. Get new center and world anchor coordinate before shifting
+        const newCenterRaw = { x: newMinX + targetW / 2, y: newMinY + targetH / 2 };
+        const newAnchorWorld = {
+          x: newCenterRaw.x + (resizedAnchorLocalX - newCenterRaw.x) * cosW - (resizedAnchorLocalY - newCenterRaw.y) * sinW,
+          y: newCenterRaw.y + (resizedAnchorLocalX - newCenterRaw.x) * sinW + (resizedAnchorLocalY - newCenterRaw.y) * cosW,
+        };
+
+        // 5. Shift needed in world space
+        const shiftWorldX = origAnchorWorld.x - newAnchorWorld.x;
+        const shiftWorldY = origAnchorWorld.y - newAnchorWorld.y;
+
+        // 6. Shift needed in local space (rotate shiftWorld by -angle)
+        const shiftLocalX = shiftWorldX * cos - shiftWorldY * sin;
+        const shiftLocalY = shiftWorldX * sin + shiftWorldY * cos;
+
+        setStrokes((prev) => prev.map((s) => {
+          if (!selectedStrokeIds.includes(s.id)) return s;
+          const orig = drag.originalStrokes[s.id];
+          if (!orig) return s;
+          let newPts = orig.points.map((p) => {
+            const relX = p.x - origBox.minX;
+            const relY = p.y - origBox.minY;
+            return {
+              x: origBox.minX + offsetX + relX * scaleX + shiftLocalX,
+              y: origBox.minY + offsetY + relY * scaleY + shiftLocalY,
+            };
+          });
+
+          if (isSheetsMode && activeSheet) {
+            const newBox = {
+              minX: origBox.minX + offsetX + shiftLocalX,
+              minY: origBox.minY + offsetY + shiftLocalY,
+              maxX: origBox.minX + offsetX + shiftLocalX + targetW,
+              maxY: origBox.minY + offsetY + shiftLocalY + targetH,
+            };
+            const scx = (newBox.minX + newBox.maxX) / 2;
+            const scy = (newBox.minY + newBox.maxY) / 2;
+            const clampedScx = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, scx));
+            const clampedScy = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, scy));
+            const shiftCorrectX = clampedScx - scx;
+            const shiftCorrectY = clampedScy - scy;
+            newPts = newPts.map(p => ({
+              x: p.x + shiftCorrectX,
+              y: p.y + shiftCorrectY
+            }));
+          }
+
+          return { ...s, points: newPts };
+        }));
+      } else {
+        // Standard non-rotated resize
+        if (handle.includes('r')) {
+          targetW = Math.max(10, origBox.w + dx);
+          scaleX = targetW / origBox.w;
+        } else if (handle.includes('l')) {
+          targetW = Math.max(10, origBox.w - dx);
+          scaleX = targetW / origBox.w;
+          offsetX = origBox.w - targetW;
+        }
+
+        if (handle.includes('b')) {
+          targetH = Math.max(10, origBox.h + dy);
+          scaleY = targetH / origBox.h;
+        } else if (handle.includes('t')) {
+          targetH = Math.max(10, origBox.h - dy);
+          scaleY = targetH / origBox.h;
+          offsetY = origBox.h - targetH;
+        }
+
+        if (e.shiftKey) {
+          const ratio = origBox.w / origBox.h;
+          if (handle.includes('r') || handle.includes('l')) {
+            targetH = targetW / ratio;
+            scaleY = targetH / origBox.h;
+            if (handle.includes('t')) offsetY = origBox.h - targetH;
+          } else {
+            targetW = targetH * ratio;
+            scaleX = targetW / origBox.w;
+            if (handle.includes('l')) offsetX = origBox.w - targetW;
+          }
+        }
+
+        setStrokes((prev) => prev.map((s) => {
+          if (!selectedStrokeIds.includes(s.id)) return s;
+          const orig = drag.originalStrokes[s.id];
+          if (!orig) return s;
+          let newPts = orig.points.map((p) => {
+            const relX = p.x - origBox.minX;
+            const relY = p.y - origBox.minY;
+            return {
+              x: origBox.minX + offsetX + relX * scaleX,
+              y: origBox.minY + offsetY + relY * scaleY,
+            };
+          });
+          if (isSheetsMode && activeSheet) {
+            newPts = newPts.map((p) => {
+              const px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x));
+              const py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y));
+              return getSnappedCoords(px, py, activeSheet);
+            });
+          }
+          return { ...s, points: newPts };
+        }));
+      }
       return;
     }
 
@@ -3710,21 +4057,55 @@ export function BoardCanvas({
         if (!selectedStrokeIds.includes(s.id)) return s;
         const orig = drag.originalStrokes[s.id];
         if (!orig) return s;
-        let newPts = orig.points.map((p) => {
-          const dx = p.x - cx;
-          const dy = p.y - cy;
-          return {
-            x: cx + dx * cos - dy * sin,
-            y: cy + dx * sin + dy * cos,
-          };
-        });
-        if (isSheetsMode && activeSheet) {
-          newPts = newPts.map((p) => ({
-            x: Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x)),
-            y: Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y))
+
+        const isShape = !['pen', 'highlighter', 'line', 'arrow'].includes(orig.tool);
+        if (isShape) {
+          const origBox = getStrokeBoundingBox(orig);
+          const ocx = (origBox.minX + origBox.maxX) / 2;
+          const ocy = (origBox.minY + origBox.maxY) / 2;
+          const newOcx = cx + (ocx - cx) * cos - (ocy - cy) * sin;
+          const newOcy = cy + (ocx - cx) * sin + (ocy - cy) * cos;
+          const shiftX = newOcx - ocx;
+          const shiftY = newOcy - ocy;
+
+          let newPts = orig.points.map((p) => ({
+            x: p.x + shiftX,
+            y: p.y + shiftY,
           }));
+
+          if (isSheetsMode && activeSheet) {
+            const clampedOcx = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, newOcx));
+            const clampedOcy = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, newOcy));
+            const finalShiftX = clampedOcx - ocx;
+            const finalShiftY = clampedOcy - ocy;
+            newPts = orig.points.map((p) => ({
+              x: p.x + finalShiftX,
+              y: p.y + finalShiftY,
+            }));
+          }
+
+          return {
+            ...s,
+            points: newPts,
+            angle: (orig.angle || 0) + angle,
+          };
+        } else {
+          let newPts = orig.points.map((p) => {
+            const dx = p.x - cx;
+            const dy = p.y - cy;
+            return {
+              x: cx + dx * cos - dy * sin,
+              y: cy + dx * sin + dy * cos,
+            };
+          });
+          if (isSheetsMode && activeSheet) {
+            newPts = newPts.map((p) => ({
+              x: Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x)),
+              y: Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y))
+            }));
+          }
+          return { ...s, points: newPts };
         }
-        return { ...s, points: newPts };
       }));
       return;
     }
@@ -3871,8 +4252,10 @@ export function BoardCanvas({
       const maxY = Math.max(regionSelectStart.y, regionSelectCurrent.y);
 
       const newlySelected: string[] = [];
+      const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
       strokes.forEach((s) => {
         if (s.tool === 'eraser') return;
+        if (isSheetsMode && activeSheet && !isStrokeInSheet(s, activeSheet)) return;
         const box = getStrokeBoundingBox(s);
         const overlap = !(
           box.maxX < minX ||
@@ -4786,6 +5169,8 @@ export function BoardCanvas({
       const dashStr = s.strokeDasharray ? `stroke-dasharray="${s.strokeDasharray}"` : '';
       const fillStr = s.fill ? (s.fillColor || s.color) : 'none';
       
+      let elementSVG = '';
+
       if (s.tool === 'pen' || s.tool === 'highlighter' || s.tool === 'eraser') {
         let pathStr = `M ${s.points[0].x} ${s.points[0].y}`;
         for (let i = 1; i < s.points.length; i++) {
@@ -4794,29 +5179,52 @@ export function BoardCanvas({
         const strokeWidthVal = s.tool === 'highlighter' ? s.width * 2.5 : s.width;
         const strokeOpacity = s.tool === 'highlighter' ? 0.45 : 1;
         const strokeColor = s.tool === 'eraser' ? bgColor : (s.color || '#ffffff');
-        svgContent += `<path d="${pathStr}" stroke="${strokeColor}" stroke-width="${strokeWidthVal}" stroke-linecap="round" stroke-linejoin="round" fill="none" ${opacityStr} stroke-opacity="${strokeOpacity}" />`;
+        elementSVG += `<path d="${pathStr}" stroke="${strokeColor}" stroke-width="${strokeWidthVal}" stroke-linecap="round" stroke-linejoin="round" fill="none" ${opacityStr} stroke-opacity="${strokeOpacity}" />`;
       } else if (s.tool === 'text') {
         const p = s.points[0];
         const align = s.textAlign || 'left';
         const anchor = align === 'center' ? 'middle' : (align === 'right' ? 'end' : 'start');
-        svgContent += `<text x="${p.x}" y="${p.y}" fill="${s.color || '#ffffff'}" font-size="${s.fontSize || 18}" font-family="${s.fontFamily || 'sans-serif'}" font-weight="${s.fontWeight || 'normal'}" text-anchor="${anchor}">${s.text || ''}</text>`;
+        elementSVG += `<text x="${p.x}" y="${p.y}" fill="${s.color || '#ffffff'}" font-size="${s.fontSize || 18}" font-family="${s.fontFamily || 'sans-serif'}" font-weight="${s.fontWeight || 'normal'}" text-anchor="${anchor}">${s.text || ''}</text>`;
       } else if (s.tool === 'sticky') {
         const p1 = s.points[0];
         const p2 = s.points[1] || { x: p1.x + 160, y: p1.y + 160 };
         const w = p2.x - p1.x;
         const h = p2.y - p1.y;
-        svgContent += `<g>`;
-        svgContent += `<rect x="${p1.x}" y="${p1.y}" width="${w}" height="${h}" rx="8" fill="${s.fillColor || '#fef08a'}" />`;
+        elementSVG += `<g>`;
+        elementSVG += `<rect x="${p1.x}" y="${p1.y}" width="${w}" height="${h}" rx="8" fill="${s.fillColor || '#fef08a'}" />`;
         if (s.text) {
-          svgContent += `<text x="${p1.x + w/2}" y="${p1.y + h/2}" fill="${s.color || '#18181b'}" font-size="${s.fontSize || 13}" font-family="sans-serif" font-weight="bold" text-anchor="middle" dominant-baseline="middle">${s.text}</text>`;
+          elementSVG += `<text x="${p1.x + w/2}" y="${p1.y + h/2}" fill="${s.color || '#18181b'}" font-size="${s.fontSize || 13}" font-family="sans-serif" font-weight="bold" text-anchor="middle" dominant-baseline="middle">${s.text}</text>`;
         }
-        svgContent += `</g>`;
-      } else if (s.tool === 'image' && s.imageUrl) {
+        elementSVG += `</g>`;
+      } else if (s.tool === 'image') {
         const p1 = s.points[0];
         const p2 = s.points[1] || { x: p1.x + 300, y: p1.y + 200 };
         const w = p2.x - p1.x;
         const h = p2.y - p1.y;
-        svgContent += `<image href="${s.imageUrl}" x="${p1.x}" y="${p1.y}" width="${w}" height="${h}" ${opacityStr} />`;
+        const borderRadius = s.textBorderRadius || 0;
+        const borderWidth = s.textBorderWidth || 0;
+        const borderColor = s.textBorderColor || '';
+        const borderStyle = s.textBorderStyle || 'solid';
+
+        elementSVG += `<g>`;
+        if (borderRadius > 0) {
+          elementSVG += `<clipPath id="clip-${s.id}">`;
+          elementSVG += `<rect x="${p1.x}" y="${p1.y}" width="${w}" height="${h}" rx="${borderRadius}" />`;
+          elementSVG += `</clipPath>`;
+          elementSVG += `<image href="${s.imageUrl}" x="${p1.x}" y="${p1.y}" width="${w}" height="${h}" clip-path="url(#clip-${s.id})" ${opacityStr} />`;
+        } else {
+          elementSVG += `<image href="${s.imageUrl}" x="${p1.x}" y="${p1.y}" width="${w}" height="${h}" ${opacityStr} />`;
+        }
+        if (borderWidth > 0 && borderColor) {
+          let imageDashStr = '';
+          if (borderStyle === 'dashed') {
+            imageDashStr = `stroke-dasharray="${borderWidth * 2},${borderWidth * 2}"`;
+          } else if (borderStyle === 'dotted') {
+            imageDashStr = `stroke-dasharray="${borderWidth},${borderWidth * 1.5}"`;
+          }
+          elementSVG += `<rect x="${p1.x}" y="${p1.y}" width="${w}" height="${h}" rx="${borderRadius}" stroke="${borderColor}" stroke-width="${borderWidth}" fill="none" ${imageDashStr} ${opacityStr} />`;
+        }
+        elementSVG += `</g>`;
       } else if (s.points.length >= 2) {
         const p0 = s.points[0];
         const pN = s.points[s.points.length - 1];
@@ -4826,16 +5234,28 @@ export function BoardCanvas({
         const ph = Math.abs(pN.y - p0.y);
         
         if (s.tool === 'rect') {
-          svgContent += `<rect x="${px}" y="${py}" width="${pw}" height="${ph}" stroke="${s.color}" stroke-width="${s.width}" fill="${fillStr}" ${dashStr} ${opacityStr} />`;
+          elementSVG += `<rect x="${px}" y="${py}" width="${pw}" height="${ph}" stroke="${s.color}" stroke-width="${s.width}" fill="${fillStr}" ${dashStr} ${opacityStr} />`;
         } else if (s.tool === 'circle') {
-          svgContent += `<ellipse cx="${px + pw/2}" cy="${py + ph/2}" rx="${pw/2}" ry="${ph/2}" stroke="${s.color}" stroke-width="${s.width}" fill="${fillStr}" ${dashStr} ${opacityStr} />`;
+          elementSVG += `<ellipse cx="${px + pw/2}" cy="${py + ph/2}" rx="${pw/2}" ry="${ph/2}" stroke="${s.color}" stroke-width="${s.width}" fill="${fillStr}" ${dashStr} ${opacityStr} />`;
         } else if (s.tool === 'triangle') {
-          svgContent += `<polygon points="${px + pw/2},${py} ${px + pw},${py + ph} ${px},${py + ph}" stroke="${s.color}" stroke-width="${s.width}" fill="${fillStr}" ${dashStr} ${opacityStr} />`;
+          elementSVG += `<polygon points="${px + pw/2},${py} ${px + pw},${py + ph} ${px},${py + ph}" stroke="${s.color}" stroke-width="${s.width}" fill="${fillStr}" ${dashStr} ${opacityStr} />`;
         } else if (s.tool === 'line') {
-          svgContent += `<line x1="${p0.x}" y1="${p0.y}" x2="${pN.x}" y2="${pN.y}" stroke="${s.color}" stroke-width="${s.width}" ${dashStr} ${opacityStr} />`;
+          elementSVG += `<line x1="${p0.x}" y1="${p0.y}" x2="${pN.x}" y2="${pN.y}" stroke="${s.color}" stroke-width="${s.width}" ${dashStr} ${opacityStr} />`;
         } else {
           const ptsStr = s.points.map(p => `${p.x},${p.y}`).join(' ');
-          svgContent += `<polygon points="${ptsStr}" stroke="${s.color}" stroke-width="${s.width}" fill="${fillStr}" ${dashStr} ${opacityStr} />`;
+          elementSVG += `<polygon points="${ptsStr}" stroke="${s.color}" stroke-width="${s.width}" fill="${fillStr}" ${dashStr} ${opacityStr} />`;
+        }
+      }
+
+      if (elementSVG) {
+        if (s.angle !== undefined && s.angle !== 0) {
+          const box = getStrokeBoundingBox(s);
+          const cx = (box.minX + box.maxX) / 2;
+          const cy = (box.minY + box.maxY) / 2;
+          const deg = (s.angle * 180) / Math.PI;
+          svgContent += `<g transform="rotate(${deg} ${cx} ${cy})">${elementSVG}</g>`;
+        } else {
+          svgContent += elementSVG;
         }
       }
     });
@@ -4886,14 +5306,24 @@ export function BoardCanvas({
             // Draw the background grid, border, headers, and footers templates
             drawSheetBackgroundAndLayout(ctx, sheet, sheetIdx, sheets.length, false);
 
-            ctx.save();
-            ctx.translate(-sheet.x, -sheet.y);
-            strokes.forEach((stroke) => {
-              if (isStrokeInSheet(stroke, sheet)) {
-                drawStrokeWithConnector(ctx, stroke, false);
-              }
-            });
-            ctx.restore();
+            // Create temporary transparent canvas for strokes
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = sheet.width;
+            tempCanvas.height = sheet.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            if (tempCtx) {
+              tempCtx.save();
+              tempCtx.translate(-sheet.x, -sheet.y);
+              strokes.forEach((stroke) => {
+                if (isStrokeInSheet(stroke, sheet)) {
+                  drawStrokeWithConnector(tempCtx, stroke, false);
+                }
+              });
+              tempCtx.restore();
+
+              // Draw temp canvas onto offscreen canvas
+              ctx.drawImage(tempCanvas, 0, 0);
+            }
 
             const imgData = offscreen.toDataURL('image/png');
             doc.addImage(imgData, 'PNG', 0, 0, sheet.width, sheet.height);
@@ -4916,12 +5346,22 @@ export function BoardCanvas({
           ctx.fillStyle = bgColor;
           ctx.fillRect(0, 0, cropW, cropH);
 
-          ctx.save();
-          ctx.translate(-cropX, -cropY);
-          strokes.forEach((stroke) => {
-            drawStrokeWithConnector(ctx, stroke, false);
-          });
-          ctx.restore();
+          // Create temporary transparent canvas for strokes
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = cropW;
+          tempCanvas.height = cropH;
+          const tempCtx = tempCanvas.getContext('2d');
+          if (tempCtx) {
+            tempCtx.save();
+            tempCtx.translate(-cropX, -cropY);
+            strokes.forEach((stroke) => {
+              drawStrokeWithConnector(tempCtx, stroke, false);
+            });
+            tempCtx.restore();
+
+            // Draw temp canvas onto offscreen canvas
+            ctx.drawImage(tempCanvas, 0, 0);
+          }
 
           const imgData = offscreen.toDataURL('image/png');
           const doc = new jsPDF({
@@ -4967,12 +5407,22 @@ export function BoardCanvas({
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, cropW, cropH);
 
-      ctx.save();
-      ctx.translate(-cropX, -cropY);
-      strokes.forEach((stroke) => {
-        drawStroke(ctx, stroke, false);
-      });
-      ctx.restore();
+      // Create temporary transparent canvas for strokes
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = cropW;
+      tempCanvas.height = cropH;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (tempCtx) {
+        tempCtx.save();
+        tempCtx.translate(-cropX, -cropY);
+        strokes.forEach((stroke) => {
+          drawStroke(tempCtx, stroke, false);
+        });
+        tempCtx.restore();
+
+        // Draw temp canvas onto offscreen canvas
+        ctx.drawImage(tempCanvas, 0, 0);
+      }
 
       const link = document.createElement('a');
       link.download = `board-${nodeId.slice(0, 6)}.png`;
@@ -5419,6 +5869,61 @@ export function BoardCanvas({
           insertImage(textData.trim(), targetX, targetY);
           return;
         }
+
+        // 5. Plain text paste as a text element
+        e.preventDefault();
+        let cx = 0, cy = 0;
+        const canvas = canvasRef.current;
+        if (targetX !== undefined && targetY !== undefined) {
+          const coords = toCanvasCoords(targetX, targetY);
+          cx = coords.x;
+          cy = coords.y;
+        } else if (canvas) {
+          cx = (canvas.clientWidth / 2 - view.offsetX) / view.scale;
+          cy = (canvas.clientHeight / 2 - view.offsetY) / view.scale;
+        }
+
+        const newStroke: BoardStroke = {
+          id: generateUUID(),
+          tool: 'text',
+          points: [{ x: cx, y: cy }],
+          color: color || '#22c55e',
+          width: strokeWidth || 2,
+          text: textData,
+          fontSize: fontSize || 18,
+          fill: false,
+          opacity: opacity ?? 1,
+          fontFamily: fontFamily || 'sans-serif',
+          fontWeight: fontWeight || 'normal',
+          textAlign: textAlign || 'left',
+          textStyle: textStyle || 'normal',
+          textDecoration: textDecoration || 'none',
+          textBgColor: textBgColor || undefined,
+          textBorderColor: textBorderColor || undefined,
+          textBorderWidth: textBorderWidth,
+          textBorderStyle: textBorderStyle,
+          textPadding: textPadding,
+          textBorderRadius: textBorderRadius,
+          textLineHeight: textLineHeight,
+        };
+
+        setUndoStack((prev) => [...prev, strokes]);
+        setRedoStack([]);
+        const nextStrokes = [...strokes, newStroke];
+        setStrokes(nextStrokes);
+        persistStrokes(nextStrokes);
+        setSelectedStrokeIds([newStroke.id]);
+        setTool('select');
+        playClickSound();
+
+        if (channelRef.current?.state === 'joined') {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'stroke_add',
+            payload: { stroke: newStroke, userId: currentUserId }
+          });
+        }
+        return;
       }
     };
 
@@ -5428,7 +5933,7 @@ export function BoardCanvas({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('paste', onPaste);
     };
-  }, [textInput.active, selectedStrokeIds, strokes, handleUndo, handleRedo, handleDeleteSelected, handleCopyStrokes, handlePasteStrokes, handleDuplicateStrokesDirect, handleCutStrokes, persistStrokes, handleCloseConfirm, copiedStrokes, insertImage, canDrawLocal, zoomAt]);
+  }, [textInput.active, selectedStrokeIds, strokes, handleUndo, handleRedo, handleDeleteSelected, handleCopyStrokes, handlePasteStrokes, handleDuplicateStrokesDirect, handleCutStrokes, persistStrokes, handleCloseConfirm, copiedStrokes, insertImage, canDrawLocal, zoomAt, view, color, strokeWidth, fontSize, opacity, fontFamily, fontWeight, textAlign, textStyle, textDecoration, textBgColor, textBorderColor, textBorderWidth, textBorderStyle, textPadding, textBorderRadius, textLineHeight, currentUserId]);
 
   /* ─── Double click to edit shape ─── */
   const onDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -5689,18 +6194,28 @@ export function BoardCanvas({
       if (s.tool === 'image') {
         flushMinimapOffscreen();
 
-        ctx.save();
-        ctx.strokeStyle = s.color || '#ffffff';
-        ctx.lineWidth = Math.max(1, (s.width || 2) * 0.5) / mapScale;
-        ctx.fillStyle = s.fillColor || s.color || 'rgba(255,255,255,0.1)';
-        ctx.globalAlpha = 0.6;
-
         const p0 = s.points[0];
         const pN = s.points[s.points.length - 1];
         const px = Math.min(p0.x, pN.x);
         const py = Math.min(p0.y, pN.y);
         const pw = Math.abs(pN.x - p0.x);
         const ph = Math.abs(pN.y - p0.y);
+        
+        const borderRadius = s.textBorderRadius || 0;
+        const borderWidth = s.textBorderWidth || 0;
+        const borderColor = s.textBorderColor || '';
+
+        ctx.save();
+        if (borderRadius > 0) {
+          ctx.beginPath();
+          if (ctx.roundRect) {
+            ctx.roundRect(px, py, pw, ph, borderRadius);
+          } else {
+            ctx.rect(px, py, pw, ph);
+          }
+          ctx.clip();
+        }
+
         const img = imageCache.get(s.imageUrl || '');
         if (img && img.complete) {
           try {
@@ -5717,7 +6232,21 @@ export function BoardCanvas({
           ctx.fillRect(px, py, pw, ph);
           ctx.strokeRect(px, py, pw, ph);
         }
-        ctx.restore();
+        ctx.restore(); // Restore clip context
+
+        if (borderWidth > 0 && borderColor) {
+          ctx.save();
+          ctx.strokeStyle = borderColor;
+          ctx.lineWidth = borderWidth / mapScale;
+          ctx.beginPath();
+          if (borderRadius > 0 && ctx.roundRect) {
+            ctx.roundRect(px, py, pw, ph, borderRadius);
+          } else {
+            ctx.rect(px, py, pw, ph);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
       } else if (offCtx) {
         offCtx.save();
         offCtx.strokeStyle = s.color || '#ffffff';
@@ -5957,6 +6486,1721 @@ export function BoardCanvas({
     { id: 'diag-document', label: 'Document', group: 'Diagram' },
     { id: 'table', label: 'Table', group: 'Advanced' },
   ];
+
+  const selectedTools = selectedStrokes.map((s) => s.tool);
+  const isPenOrHighlighterActive = ['pen', 'highlighter'].includes(tool) || selectedStrokes.some((s) => ['pen', 'highlighter'].includes(s.tool));
+  const isEraserActive = tool === 'eraser';
+  
+  const TEXT_CAPABLE_TOOLS = [
+    'text', 'sticky', 'table', 'rect', 'rounded-rect', 'circle', 'ellipse',
+    'triangle', 'diamond', 'hexagon', 'flow-process', 'flow-decision',
+    'flow-data', 'flow-terminator', 'diag-cloud', 'diag-database',
+    'diag-cylinder', 'diag-document'
+  ];
+  const isTextCapableActive = TEXT_CAPABLE_TOOLS.includes(tool) || selectedStrokes.some((s) => TEXT_CAPABLE_TOOLS.includes(s.tool));
+  
+  const isTextActive = tool === 'text' || selectedStrokes.some((s) => s.tool === 'text');
+  const isStickyActive = tool === 'sticky' || selectedStrokes.some((s) => s.tool === 'sticky');
+  
+  const SHAPE_TOOLS = [
+    'rect', 'circle', 'triangle', 'rounded-rect', 'ellipse', 'diamond',
+    'hexagon', 'flow-process', 'flow-decision', 'flow-data', 'flow-terminator',
+    'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'
+  ];
+  const isShapeActive = SHAPE_TOOLS.includes(tool) || selectedStrokes.some((s) => SHAPE_TOOLS.includes(s.tool));
+  
+  const isConnectorActive = ['line', 'arrow'].includes(tool) || selectedStrokes.some((s) => ['line', 'arrow'].includes(s.tool));
+  const isTableActive = tool === 'table' || selectedStrokes.some((s) => s.tool === 'table');
+  const isImageActive = tool === 'image' || selectedStrokes.some((s) => s.tool === 'image');
+  const isCanvasGlobalActive = tool === 'select' && selectedStrokeIds.length === 0;
+
+  const renderActionsPanel = () => {
+    const selectedBox = getCombinedBoundingBox(selectedStrokeIds);
+    const currentSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+    const minX = Math.min(currentSheet ? currentSheet.x : -1000, Math.round(selectedBox?.minX || 0));
+    const maxX = Math.max(currentSheet ? currentSheet.x + currentSheet.width : canvasSize.w + 1000, Math.round(selectedBox?.minX || 0));
+    const minY = Math.min(currentSheet ? currentSheet.y : -1000, Math.round(selectedBox?.minY || 0));
+    const maxY = Math.max(currentSheet ? currentSheet.y + currentSheet.height : canvasSize.h + 1000, Math.round(selectedBox?.minY || 0));
+    const maxW = Math.max(currentSheet ? currentSheet.width : canvasSize.w + 1000, Math.round(selectedBox?.w || 0));
+    const maxH = Math.max(currentSheet ? currentSheet.height : canvasSize.h + 1000, Math.round(selectedBox?.h || 0));
+
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Actions ({selectedStrokeIds.length} selected)</p>
+        
+        {selectedStrokeIds.length >= 2 && (
+          <>
+            {/* Alignments */}
+            <div className="grid grid-cols-4 gap-1">
+              <button onClick={() => handleAlignStrokes('left')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Left">
+                <AlignLeft className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => handleAlignStrokes('center-h')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Center X">
+                <AlignCenter className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => handleAlignStrokes('right')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Right">
+                <AlignRight className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => handleAlignStrokes('top')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Top">
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              <button onClick={() => handleAlignStrokes('bottom')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Bottom">
+                <ChevronUp className="w-3.5 h-3.5 rotate-180" />
+              </button>
+              <button onClick={() => handleAlignStrokes('center-v')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Center Y">
+                <Move className="w-3.5 h-3.5 rotate-90" />
+              </button>
+              <button onClick={() => handleAlignStrokes('distribute-h')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer text-[10px] font-bold" title="Distribute Horizontally">
+                D-H
+              </button>
+              <button onClick={() => handleAlignStrokes('distribute-v')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer text-[10px] font-bold" title="Distribute Vertically">
+                D-V
+              </button>
+            </div>
+
+            {/* Grouping */}
+            <div className="flex gap-1.5">
+              <button onClick={handleGroupStrokes} className="flex-1 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[10px] font-bold text-zinc-300 hover:text-white cursor-pointer">
+                Group
+              </button>
+              <button onClick={handleUngroupStrokes} className="flex-1 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[10px] font-bold text-zinc-300 hover:text-white cursor-pointer">
+                Ungroup
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Layering */}
+        <div className="grid grid-cols-4 gap-1">
+          <button onClick={handleBringToFront} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-400 hover:text-white cursor-pointer" title="Bring to Front">
+            Front
+          </button>
+          <button onClick={handleBringForward} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-400 hover:text-white cursor-pointer" title="Bring Forward">
+            Fwd
+          </button>
+          <button onClick={handleSendBackward} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-400 hover:text-white cursor-pointer" title="Send Backward">
+            Back
+          </button>
+          <button onClick={handleSendToBack} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-400 hover:text-white cursor-pointer" title="Send to Back">
+            Base
+          </button>
+        </div>
+
+        {/* Direct clipboard helpers */}
+        <div className="flex gap-1.5">
+          <button onClick={handleCopyStrokes} className="flex-1 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-300 hover:text-white cursor-pointer flex items-center justify-center gap-1">
+            <Copy className="w-2.5 h-2.5" /> Copy
+          </button>
+          <button onClick={handleDuplicateStrokesDirect} className="flex-1 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-300 hover:text-white cursor-pointer flex items-center justify-center gap-1">
+            <Layers className="w-2.5 h-2.5" /> Dupl
+          </button>
+        </div>
+
+        {/* Geometry and Rotation steps */}
+        {selectedBox && selectedBox.w !== undefined && (
+          <div className="space-y-3.5 pt-3.5 border-t border-zinc-800/80">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Geometry</p>
+            <div className="space-y-3">
+              {/* X Position */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400">
+                  <span>X Position</span>
+                  <input
+                    type="number"
+                    value={Math.round(selectedBox.minX)}
+                    onChange={(e) => handleGeometryChange('x', Number(e.target.value))}
+                    className="w-16 py-0.5 px-1.5 bg-zinc-950 border border-zinc-850 rounded text-[10px] font-mono text-zinc-300 text-right outline-none focus:border-indigo-500/50 transition-colors"
+                  />
+                </div>
+                <input
+                  type="range"
+                  min={minX}
+                  max={maxX}
+                  value={Math.round(selectedBox.minX)}
+                  onChange={(e) => handleGeometryChange('x', Number(e.target.value))}
+                  className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 focus:outline-none transition-all"
+                />
+              </div>
+
+              {/* Y Position */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400">
+                  <span>Y Position</span>
+                  <input
+                    type="number"
+                    value={Math.round(selectedBox.minY)}
+                    onChange={(e) => handleGeometryChange('y', Number(e.target.value))}
+                    className="w-16 py-0.5 px-1.5 bg-zinc-950 border border-zinc-850 rounded text-[10px] font-mono text-zinc-300 text-right outline-none focus:border-indigo-500/50 transition-colors"
+                  />
+                </div>
+                <input
+                  type="range"
+                  min={minY}
+                  max={maxY}
+                  value={Math.round(selectedBox.minY)}
+                  onChange={(e) => handleGeometryChange('y', Number(e.target.value))}
+                  className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 focus:outline-none transition-all"
+                />
+              </div>
+
+              {/* Width */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400">
+                  <span>Width</span>
+                  <input
+                    type="number"
+                    min={5}
+                    value={Math.round(selectedBox.w)}
+                    onChange={(e) => handleGeometryChange('w', Math.max(5, Number(e.target.value)))}
+                    className="w-16 py-0.5 px-1.5 bg-zinc-950 border border-zinc-850 rounded text-[10px] font-mono text-zinc-300 text-right outline-none focus:border-indigo-500/50 transition-colors"
+                  />
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={maxW}
+                  value={Math.round(selectedBox.w)}
+                  onChange={(e) => handleGeometryChange('w', Math.max(5, Number(e.target.value)))}
+                  className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 focus:outline-none transition-all"
+                />
+              </div>
+
+              {/* Height */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center text-[10px] font-bold text-zinc-400">
+                  <span>Height</span>
+                  <input
+                    type="number"
+                    min={5}
+                    value={Math.round(selectedBox.h)}
+                    onChange={(e) => handleGeometryChange('h', Math.max(5, Number(e.target.value)))}
+                    className="w-16 py-0.5 px-1.5 bg-zinc-950 border border-zinc-850 rounded text-[10px] font-mono text-zinc-300 text-right outline-none focus:border-indigo-500/50 transition-colors"
+                  />
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={maxH}
+                  value={Math.round(selectedBox.h)}
+                  onChange={(e) => handleGeometryChange('h', Math.max(5, Number(e.target.value)))}
+                  className="w-full h-1 bg-zinc-850 rounded-lg appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 focus:outline-none transition-all"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-[8px] text-zinc-500 font-bold block mb-1">Rotate</label>
+              <div className="grid grid-cols-4 gap-1">
+                <button
+                  onClick={() => handleNumericRotate(-90)}
+                  className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
+                  title="Rotate -90°"
+                >
+                  -90°
+                </button>
+                <button
+                  onClick={() => handleNumericRotate(-15)}
+                  className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
+                  title="Rotate -15°"
+                >
+                  -15°
+                </button>
+                <button
+                  onClick={() => handleNumericRotate(15)}
+                  className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
+                  title="Rotate +15°"
+                >
+                  +15°
+                </button>
+                <button
+                  onClick={() => handleNumericRotate(90)}
+                  className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
+                  title="Rotate +90°"
+                >
+                  +90°
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderPenPanel = () => {
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Brush Settings</p>
+        
+        {/* Colors Swatches (Border) */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Brush Color</label>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {getActivePalettes().slice(0, 8).map((c) => (
+              <button key={c} onClick={() => handleBrushColorChange(c)}
+                className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
+              />
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {getActivePalettes().slice(8, 16).map((c) => (
+              <button key={c} onClick={() => handleBrushColorChange(c)}
+                className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[8px] text-zinc-500">Custom</span>
+            <input type="color" value={color} onChange={(e) => handleBrushColorChange(e.target.value)}
+              className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
+            />
+          </div>
+        </div>
+
+        {/* Stroke Width */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Brush Size</label>
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {STROKE_WIDTHS.slice(0, 3).map((w) => (
+              <button key={w} onClick={() => handleStrokeWidthChange(w)}
+                className={`h-7 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center
+                  ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-750'}`}
+              >
+                {w}px
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {STROKE_WIDTHS.slice(3, 6).map((w) => (
+              <button key={w} onClick={() => handleStrokeWidthChange(w)}
+                className={`h-7 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center
+                  ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-750'}`}
+              >
+                {w}px
+              </button>
+            ))}
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={48}
+            value={strokeWidth}
+            onChange={(e) => handleStrokeWidthChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+        </div>
+
+        {/* Opacity Control */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Opacity</label>
+          <input
+            type="range"
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={opacity}
+            onChange={(e) => handleOpacityChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{Math.round(opacity * 100)}%</p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderEraserPanel = () => {
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Eraser Settings</p>
+        
+        {/* Eraser Width */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Eraser Size</label>
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {[5, 10, 15].map((w) => (
+              <button key={w} onClick={() => handleStrokeWidthChange(w)}
+                className={`h-7 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center
+                  ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-750'}`}
+              >
+                {w}px
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {[20, 30, 45].map((w) => (
+              <button key={w} onClick={() => handleStrokeWidthChange(w)}
+                className={`h-7 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center
+                  ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-750'}`}
+              >
+                {w}px
+              </button>
+            ))}
+          </div>
+          <input
+            type="range"
+            min={5}
+            max={60}
+            value={strokeWidth}
+            onChange={(e) => handleStrokeWidthChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderTypographyPanel = () => {
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Typography</p>
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Font Size</label>
+          <input
+            type="range"
+            min={8}
+            max={72}
+            value={fontSize}
+            onChange={(e) => handleFontSizeChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{fontSize}px</p>
+        </div>
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Font Family</label>
+          <select
+            value={fontFamily}
+            onChange={(e) => handleFontFamilyChange(e.target.value)}
+            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+          >
+            <option value="Inter, sans-serif">Inter (Sans)</option>
+            <option value="Georgia, serif">Georgia (Serif)</option>
+            <option value="monospace">Monospace</option>
+            <option value="'Comic Sans MS', cursive">Comic Sans</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Text Style</label>
+          <div className="flex gap-1 mb-2">
+            <button
+              onClick={() => handleFontWeightChange(fontWeight === 'bold' ? 'normal' : 'bold')}
+              className={`flex-1 h-7 rounded-lg text-xs font-bold transition-all border cursor-pointer flex items-center justify-center
+                ${fontWeight === 'bold' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+              title="Bold"
+            >
+              <Bold className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => handleTextStyleChange(textStyle === 'italic' ? 'normal' : 'italic')}
+              className={`flex-1 h-7 rounded-lg text-xs transition-all border cursor-pointer flex items-center justify-center
+                ${textStyle === 'italic' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+              title="Italic"
+            >
+              <Italic className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => handleTextDecorationChange(textDecoration === 'underline' ? 'none' : 'underline')}
+              className={`flex-1 h-7 rounded-lg text-xs transition-all border cursor-pointer flex items-center justify-center
+                ${textDecoration === 'underline' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+              title="Underline"
+            >
+              <Underline className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => handleTextDecorationChange(textDecoration === 'line-through' ? 'none' : 'line-through')}
+              className={`flex-1 h-7 rounded-lg text-xs transition-all border cursor-pointer flex items-center justify-center
+                ${textDecoration === 'line-through' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+              title="Strikethrough"
+            >
+              <Strikethrough className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Alignment</label>
+          <div className="flex gap-1">
+            <button
+              onClick={() => handleTextAlignChange('left')}
+              className={`flex-1 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
+                ${textAlign === 'left' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+              title="Align Left"
+            >
+              <AlignLeft className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => handleTextAlignChange('center')}
+              className={`flex-1 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
+                ${textAlign === 'center' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+              title="Align Center"
+            >
+              <AlignCenter className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => handleTextAlignChange('right')}
+              className={`flex-1 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
+                ${textAlign === 'right' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+              title="Align Right"
+            >
+              <AlignRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Line Height</label>
+          <input
+            type="range"
+            min={1.0}
+            max={2.5}
+            step={0.1}
+            value={textLineHeight}
+            onChange={(e) => handleTextLineHeightChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{textLineHeight}</p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTextContainerPanel = () => {
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Text Container</p>
+        
+        {/* Background color */}
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-[8px] text-zinc-500 font-bold">Background Fill</label>
+            {textBgColor && (
+              <button
+                onClick={() => handleTextBgColorChange('')}
+                className="text-[8px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer bg-transparent border-none outline-none p-0"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={textBgColor || '#000000'}
+              onChange={(e) => handleTextBgColorChange(e.target.value)}
+              className="w-8 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer shrink-0"
+            />
+            <span className="text-[10px] text-zinc-400 font-mono">
+              {textBgColor ? textBgColor.toUpperCase() : 'Transparent'}
+            </span>
+          </div>
+        </div>
+
+        {/* Border color */}
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-[8px] text-zinc-500 font-bold">Border Color</label>
+            {textBorderColor && (
+              <button
+                onClick={() => handleTextBorderColorChange('')}
+                className="text-[8px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer bg-transparent border-none outline-none p-0"
+              >
+                None
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={textBorderColor || '#ffffff'}
+              onChange={(e) => {
+                handleTextBorderColorChange(e.target.value);
+                if (textBorderWidth === 0) handleTextBorderWidthChange(1);
+              }}
+              className="w-8 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer shrink-0"
+            />
+            <span className="text-[10px] text-zinc-400 font-mono">
+              {textBorderColor ? textBorderColor.toUpperCase() : 'None'}
+            </span>
+          </div>
+        </div>
+
+        {/* Border width */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Border Width</label>
+          <input
+            type="range"
+            min={0}
+            max={10}
+            value={textBorderWidth}
+            onChange={(e) => handleTextBorderWidthChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{textBorderWidth}px</p>
+        </div>
+
+        {/* Border style */}
+        {textBorderWidth > 0 && (
+          <div>
+            <label className="text-[8px] text-zinc-500 font-bold block mb-1">Border Style</label>
+            <select
+              value={textBorderStyle}
+              onChange={(e) => handleTextBorderStyleChange(e.target.value as any)}
+              className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+            >
+              <option value="solid">Solid</option>
+              <option value="dashed">Dashed</option>
+              <option value="dotted">Dotted</option>
+            </select>
+          </div>
+        )}
+
+        {/* Padding */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Padding</label>
+          <input
+            type="range"
+            min={0}
+            max={40}
+            value={textPadding}
+            onChange={(e) => handleTextPaddingChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{textPadding}px</p>
+        </div>
+
+        {/* Border Radius */}
+        {(textBgColor || textBorderColor) && (
+          <div>
+            <label className="text-[8px] text-zinc-500 font-bold block mb-1">Corner Radius</label>
+            <input
+              type="range"
+              min={0}
+              max={30}
+              value={textBorderRadius}
+              onChange={(e) => handleTextBorderRadiusChange(Number(e.target.value))}
+              className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+            />
+            <p className="text-[9px] text-zinc-400 text-center mt-1">{textBorderRadius}px</p>
+          </div>
+        )}
+
+        {/* Opacity Control */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Opacity</label>
+          <input
+            type="range"
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={opacity}
+            onChange={(e) => handleOpacityChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{Math.round(opacity * 100)}%</p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStickyPanel = () => {
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Sticky Note Color</p>
+        
+        {/* Sticky Background color */}
+        <div>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {['#fef08a', '#bbf7d0', '#bfdbfe', '#fbcfe8', '#fed7aa', '#ddd6fe', '#cbd5e1', '#ffffff'].map((c) => (
+              <button key={c} onClick={() => handleFillColorChange(c)}
+                className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                style={{ backgroundColor: c, borderColor: fillColor === c ? '#d946ef' : 'transparent' }}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[8px] text-zinc-500">Custom</span>
+            <input type="color" value={fillColor || '#fef08a'} onChange={(e) => handleFillColorChange(e.target.value)}
+              className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
+            />
+          </div>
+        </div>
+
+        {/* Opacity Control */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Opacity</label>
+          <input
+            type="range"
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={opacity}
+            onChange={(e) => handleOpacityChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{Math.round(opacity * 100)}%</p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderShapePanel = () => {
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Shape Styling</p>
+        
+        {/* Fill Shape toggle */}
+        <div className="flex items-center justify-between">
+          <span className="text-[8px] text-zinc-500 font-bold uppercase">Fill Shape</span>
+          <button
+            onClick={() => handleUseFillChange(!useFill)}
+            className={`h-6 px-2.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer border
+              ${useFill ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}
+          >
+            {useFill ? 'Solid' : 'None'}
+          </button>
+        </div>
+
+        {useFill && (
+          <div>
+            <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Fill Color</label>
+            <div className="grid grid-cols-4 gap-1 mb-2">
+              {getActivePalettes().slice(0, 8).map((c) => (
+                <button key={c} onClick={() => handleFillColorChange(c)}
+                  className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                  style={{ backgroundColor: c, borderColor: fillColor === c ? '#d946ef' : 'transparent' }}
+                />
+              ))}
+            </div>
+            <div className="grid grid-cols-4 gap-1 mb-2">
+              {getActivePalettes().slice(8, 16).map((c) => (
+                <button key={c} onClick={() => handleFillColorChange(c)}
+                  className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                  style={{ backgroundColor: c, borderColor: fillColor === c ? '#d946ef' : 'transparent' }}
+                />
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="text-[8px] text-zinc-500">Custom</span>
+              <input type="color" value={fillColor} onChange={(e) => handleFillColorChange(e.target.value)}
+                className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Border/Line Color */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-2">Border Color</label>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {getActivePalettes().slice(0, 8).map((c) => (
+              <button key={c} onClick={() => handleBrushColorChange(c)}
+                className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
+              />
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {getActivePalettes().slice(8, 16).map((c) => (
+              <button key={c} onClick={() => handleBrushColorChange(c)}
+                className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[8px] text-zinc-500">Custom</span>
+            <input type="color" value={color} onChange={(e) => handleBrushColorChange(e.target.value)}
+              className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
+            />
+          </div>
+        </div>
+
+        {/* Border Width */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-2">Border Width</label>
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {STROKE_WIDTHS.slice(0, 3).map((w) => (
+              <button key={w} onClick={() => handleStrokeWidthChange(w)}
+                className={`h-7 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center
+                  ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-750'}`}
+              >
+                {w}px
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {STROKE_WIDTHS.slice(3, 6).map((w) => (
+              <button key={w} onClick={() => handleStrokeWidthChange(w)}
+                className={`h-7 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center
+                  ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-750'}`}
+              >
+                {w}px
+              </button>
+            ))}
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={24}
+            value={strokeWidth}
+            onChange={(e) => handleStrokeWidthChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+        </div>
+
+        {/* Opacity Control */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Opacity</label>
+          <input
+            type="range"
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={opacity}
+            onChange={(e) => handleOpacityChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{Math.round(opacity * 100)}%</p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderConnectorPanel = () => {
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Connector Settings</p>
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Connector Route</label>
+          <select
+            value={arrowType}
+            onChange={(e) => handleArrowTypeChange(e.target.value as any)}
+            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+          >
+            <option value="straight">Straight</option>
+            <option value="curved">Curved Curve</option>
+            <option value="elbow">Elbow Joint</option>
+            <option value="orthogonal">Orthogonal</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Start Head</label>
+          <select
+            value={arrowheadStart}
+            onChange={(e) => handleArrowheadStartChange(e.target.value as any)}
+            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+          >
+            <option value="none">None</option>
+            <option value="triangle">Triangle</option>
+            <option value="circle">Circle</option>
+            <option value="diamond">Diamond</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">End Head</label>
+          <select
+            value={arrowheadEnd}
+            onChange={(e) => handleArrowheadEndChange(e.target.value as any)}
+            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+          >
+            <option value="none">None</option>
+            <option value="triangle">Triangle</option>
+            <option value="circle">Circle</option>
+            <option value="diamond">Diamond</option>
+          </select>
+        </div>
+
+        {/* Line Color */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-2">Line Color</label>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {getActivePalettes().slice(0, 8).map((c) => (
+              <button key={c} onClick={() => handleBrushColorChange(c)}
+                className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
+              />
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {getActivePalettes().slice(8, 16).map((c) => (
+              <button key={c} onClick={() => handleBrushColorChange(c)}
+                className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[8px] text-zinc-500">Custom</span>
+            <input type="color" value={color} onChange={(e) => handleBrushColorChange(e.target.value)}
+              className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
+            />
+          </div>
+        </div>
+
+        {/* Line Thickness */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-2">Line Thickness</label>
+          <div className="grid grid-cols-3 gap-1 mb-2">
+            {STROKE_WIDTHS.slice(0, 3).map((w) => (
+              <button key={w} onClick={() => handleStrokeWidthChange(w)}
+                className={`h-7 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center
+                  ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-750'}`}
+              >
+                {w}px
+              </button>
+            ))}
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={20}
+            value={strokeWidth}
+            onChange={(e) => handleStrokeWidthChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+        </div>
+
+        {/* Opacity Control */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Opacity</label>
+          <input
+            type="range"
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={opacity}
+            onChange={(e) => handleOpacityChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{Math.round(opacity * 100)}%</p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTablePanel = () => {
+    if (!selectedTable) return null;
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Table Settings</p>
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className="text-[8px] text-zinc-500 font-bold block mb-1">Rows</label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={selectedTable.tableRows || 3}
+              onChange={(e) => handleTableRowsChange(Math.max(1, Math.min(20, Number(e.target.value))))}
+              className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-[8px] text-zinc-500 font-bold block mb-1">Cols</label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={selectedTable.tableCols || 3}
+              onChange={(e) => handleTableColsChange(Math.max(1, Math.min(20, Number(e.target.value))))}
+              className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+            />
+          </div>
+        </div>
+
+        {/* Table Customizations */}
+        <div className="space-y-2 pt-1">
+          <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Customization</p>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
+              <input
+                type="checkbox"
+                checked={selectedTable.tableHeaderRow || false}
+                onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableHeaderRow: e.target.checked }))}
+                className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+              />
+              <span>Header Row</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
+              <input
+                type="checkbox"
+                checked={selectedTable.tableHeaderCol || false}
+                onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableHeaderCol: e.target.checked }))}
+                className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+              />
+              <span>Header Col</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
+              <input
+                type="checkbox"
+                checked={selectedTable.tableHorizontalLines !== false}
+                onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableHorizontalLines: e.target.checked }))}
+                className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+              />
+              <span>Horiz Lines</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
+              <input
+                type="checkbox"
+                checked={selectedTable.tableVerticalLines !== false}
+                onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableVerticalLines: e.target.checked }))}
+                className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+              />
+              <span>Vert Lines</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Cell Content</label>
+          <div className="max-h-[220px] overflow-auto border border-zinc-850 rounded-lg p-1.5 space-y-1 bg-zinc-950 custom-scrollbar">
+            {Array.from({ length: selectedTable.tableRows || 3 }).map((_, rIdx) => (
+              <div key={rIdx} className="flex gap-1">
+                {Array.from({ length: selectedTable.tableCols || 3 }).map((_, cIdx) => (
+                  <input
+                    key={cIdx}
+                    type="text"
+                    value={(selectedTable.tableCells?.[rIdx]?.[cIdx]) || ''}
+                    onChange={(e) => handleTableCellEdit(rIdx, cIdx, e.target.value)}
+                    className="min-w-[55px] flex-1 text-[10px] px-1 py-0.5 bg-zinc-900 border border-zinc-800/80 rounded text-white focus:border-fuchsia-500 outline-none"
+                    placeholder={`R${rIdx+1}C${cIdx+1}`}
+                    title={`Row ${rIdx+1}, Column ${cIdx+1}`}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Fill shape & color */}
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[8px] text-zinc-500 font-bold uppercase">Fill Table</span>
+            <button
+              onClick={() => handleUseFillChange(!useFill)}
+              className={`h-6 px-2.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer border
+                ${useFill ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}
+            >
+              {useFill ? 'Solid' : 'None'}
+            </button>
+          </div>
+
+          {useFill && (
+            <div>
+              <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Fill Color</label>
+              <div className="grid grid-cols-4 gap-1 mb-2">
+                {getActivePalettes().slice(0, 8).map((c) => (
+                  <button key={c} onClick={() => handleFillColorChange(c)}
+                    className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                    style={{ backgroundColor: c, borderColor: fillColor === c ? '#d946ef' : 'transparent' }}
+                  />
+                ))}
+              </div>
+              <div className="grid grid-cols-4 gap-1 mb-2">
+                {getActivePalettes().slice(8, 16).map((c) => (
+                  <button key={c} onClick={() => handleFillColorChange(c)}
+                    className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                    style={{ backgroundColor: c, borderColor: fillColor === c ? '#d946ef' : 'transparent' }}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className="text-[8px] text-zinc-500">Custom</span>
+                <input type="color" value={fillColor} onChange={(e) => handleFillColorChange(e.target.value)}
+                  className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Border Color */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-2">Grid/Line Color</label>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {getActivePalettes().slice(0, 8).map((c) => (
+              <button key={c} onClick={() => handleBrushColorChange(c)}
+                className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
+              />
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {getActivePalettes().slice(8, 16).map((c) => (
+              <button key={c} onClick={() => handleBrushColorChange(c)}
+                className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
+                style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
+              />
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[8px] text-zinc-500">Custom</span>
+            <input type="color" value={color} onChange={(e) => handleBrushColorChange(e.target.value)}
+              className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
+            />
+          </div>
+        </div>
+
+        {/* Grid Line Width */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-2">Line Width</label>
+          <input
+            type="range"
+            min={1}
+            max={8}
+            value={strokeWidth}
+            onChange={(e) => handleStrokeWidthChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+        </div>
+
+        {/* Opacity Control */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Opacity</label>
+          <input
+            type="range"
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={opacity}
+            onChange={(e) => handleOpacityChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{Math.round(opacity * 100)}%</p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderImagePanel = () => {
+    return (
+      <div className="space-y-3 pb-3 border-b border-zinc-800/80">
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Image Settings</p>
+        
+        {/* Border color */}
+        <div>
+          <div className="flex justify-between items-center mb-1">
+            <label className="text-[8px] text-zinc-500 font-bold">Border Color</label>
+            {textBorderColor && (
+              <button
+                onClick={() => handleTextBorderColorChange('')}
+                className="text-[8px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer bg-transparent border-none outline-none p-0"
+              >
+                None
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={textBorderColor || '#ffffff'}
+              onChange={(e) => {
+                handleTextBorderColorChange(e.target.value);
+                if (textBorderWidth === 0) handleTextBorderWidthChange(1);
+              }}
+              className="w-8 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer shrink-0"
+            />
+            <span className="text-[10px] text-zinc-400 font-mono">
+              {textBorderColor ? textBorderColor.toUpperCase() : 'None'}
+            </span>
+          </div>
+        </div>
+
+        {/* Border width */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Border Width</label>
+          <input
+            type="range"
+            min={0}
+            max={20}
+            value={textBorderWidth}
+            onChange={(e) => handleTextBorderWidthChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{textBorderWidth}px</p>
+        </div>
+
+        {/* Border style */}
+        {textBorderWidth > 0 && (
+          <div>
+            <label className="text-[8px] text-zinc-500 font-bold block mb-1">Border Style</label>
+            <select
+              value={textBorderStyle}
+              onChange={(e) => handleTextBorderStyleChange(e.target.value as any)}
+              className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+            >
+              <option value="solid">Solid</option>
+              <option value="dashed">Dashed</option>
+              <option value="dotted">Dotted</option>
+            </select>
+          </div>
+        )}
+
+        {/* Corner Radius */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Corner Radius</label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={textBorderRadius}
+            onChange={(e) => handleTextBorderRadiusChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{textBorderRadius}px</p>
+        </div>
+
+        {/* Opacity Control */}
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1.5">Opacity</label>
+          <input
+            type="range"
+            min={0.1}
+            max={1.0}
+            step={0.05}
+            value={opacity}
+            onChange={(e) => handleOpacityChange(Number(e.target.value))}
+            className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+          />
+          <p className="text-[9px] text-zinc-400 text-center mt-1">{Math.round(opacity * 100)}%</p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderGlobalCanvasPanel = () => {
+    return (
+      <div className="space-y-3 pb-3">
+        {/* Whiteboard Sheets Layout Controls */}
+        <div className="space-y-3 pb-3 border-b border-zinc-850">
+          <div className="flex items-center justify-between">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Page Setup</p>
+            <button
+              onClick={() => handleSheetsModeToggle(!isSheetsMode)}
+              className={`px-2 py-1 rounded-lg text-[9px] font-bold cursor-pointer transition-all border ${
+                isSheetsMode
+                  ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40 shadow-xs'
+                  : 'bg-zinc-950 text-zinc-400 border-zinc-850'
+              }`}
+            >
+              {isSheetsMode ? 'Sheets Active' : 'Infinite Canvas'}
+            </button>
+          </div>
+
+          {isSheetsMode && (
+            <>
+              {/* Add Page Dropdown */}
+              <div className="space-y-1">
+                <label className="text-[8px] text-zinc-500 font-bold block">Add Page</label>
+                <div className="flex gap-1.5">
+                  <select
+                    value={selectedPreset}
+                    onChange={(e) => setSelectedPreset(e.target.value)}
+                    className="flex-1 py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none cursor-pointer"
+                  >
+                    <option value="A4 Portrait">A4 Portrait</option>
+                    <option value="A4 Landscape">A4 Landscape</option>
+                    <option value="Letter Portrait">Letter Portrait</option>
+                    <option value="Letter Landscape">Letter Landscape</option>
+                    <option value="Square">Square</option>
+                  </select>
+                  <button
+                    onClick={() => handleAddSheet(selectedPreset)}
+                    className="w-7 h-7 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0"
+                    title="Add Page"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <button
+                  onClick={handleDistributeStrokesToSheets}
+                  className="w-full py-1.5 px-2 bg-zinc-950 border border-fuchsia-500/30 text-fuchsia-400 hover:bg-fuchsia-500/15 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 mt-1.5"
+                  title="Distribute board elements into sheets automatically"
+                >
+                  <Layers className="w-3 h-3" />
+                  <span>Auto-Distribute Elements to Sheets</span>
+                </button>
+              </div>
+
+              {/* Pages List */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[8px] text-zinc-500 font-bold block">Pages List</label>
+                <div className="space-y-1 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
+                  {sheets.length === 0 ? (
+                    <p className="text-[9px] text-zinc-600 italic">No pages created.</p>
+                  ) : (
+                    sheets.map((sheet, idx) => (
+                      <div
+                        key={sheet.id}
+                        className={`flex items-center justify-between p-1.5 border rounded-lg hover:border-zinc-800 transition-all gap-1 ${
+                          activeSheetIndex === idx
+                            ? 'bg-fuchsia-500/10 border-fuchsia-500/40 shadow-xs'
+                            : 'bg-zinc-950/40 border-zinc-850'
+                        }`}
+                      >
+                        <button
+                          onClick={() => {
+                            setActiveSheetIndex(idx);
+                            handleFocusSheet(sheet);
+                          }}
+                          className={`flex-1 text-left text-[10px] font-semibold transition-all truncate cursor-pointer ${
+                            activeSheetIndex === idx ? 'text-fuchsia-400 font-bold' : 'text-zinc-300 hover:text-fuchsia-400'
+                          }`}
+                          title="Jump to Page"
+                        >
+                          {idx + 1}. {sheet.name || sheet.preset}
+                        </button>
+                        <div className="flex items-center">
+                          <button
+                            disabled={idx === 0}
+                            onClick={() => handleMoveSheet(idx, 'up')}
+                            className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-20 cursor-pointer"
+                            title="Move Up"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            disabled={idx === sheets.length - 1}
+                            onClick={() => handleMoveSheet(idx, 'down')}
+                            className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-20 cursor-pointer"
+                            title="Move Down"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5 rotate-180" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSheet(sheet.id)}
+                            className="p-0.5 text-zinc-500 hover:text-red-400 cursor-pointer"
+                            title="Delete Page"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Active Page Properties Section */}
+              {sheets[activeSheetIndex] && (
+                <div className="space-y-2.5 pt-2.5 border-t border-zinc-800/80">
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Active Page Settings</p>
+
+                  {/* Copy / Paste Page Style */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCopyStyle}
+                      className="flex-1 py-1 px-2 bg-zinc-950 border border-zinc-850 hover:bg-zinc-900 text-zinc-300 rounded-lg text-[9px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1"
+                      title="Copy this page's layout styling"
+                    >
+                      <Copy className="w-3 h-3 text-zinc-400" />
+                      <span>Copy Style</span>
+                    </button>
+                    <button
+                      onClick={handlePasteStyle}
+                      disabled={!copiedSheetStyle}
+                      className="flex-1 py-1 px-2 bg-zinc-950 border border-zinc-850 hover:bg-zinc-900 text-zinc-300 disabled:opacity-30 disabled:hover:bg-zinc-950 rounded-lg text-[9px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1"
+                      title="Paste copied styling to this page"
+                    >
+                      <Clipboard className="w-3 h-3 text-zinc-400" />
+                      <span>Paste Style</span>
+                    </button>
+                  </div>
+                  
+                  {/* Page Name/Label */}
+                  <div className="space-y-1">
+                    <label className="text-[8px] text-zinc-500 font-bold block">Page Name</label>
+                    <input
+                      type="text"
+                      value={sheets[activeSheetIndex].name || ''}
+                      onChange={(e) => handleUpdatePageProperty('name', e.target.value)}
+                      placeholder={`Page ${activeSheetIndex + 1}`}
+                      className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none"
+                    />
+                  </div>
+
+                  {/* Page-Specific Grid Type */}
+                  <div className="space-y-1">
+                    <label className="text-[8px] text-zinc-500 font-bold block">Page Grid</label>
+                    <div className="flex gap-1">
+                      {['default', 'grid', 'lines', 'none'].map((g) => {
+                        const activeVal = sheets[activeSheetIndex].gridType || 'default';
+                        return (
+                          <button
+                            key={g}
+                            onClick={() => handleUpdatePageProperty('gridType', g === 'default' ? undefined : g)}
+                            className={`flex-1 py-0.5 rounded text-[8px] font-bold border transition-all capitalize cursor-pointer ${
+                              activeVal === g
+                                ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
+                                : 'bg-zinc-950 border-zinc-850 text-zinc-400'
+                            }`}
+                          >
+                            {g}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Border Settings */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[8px] text-zinc-500 font-bold block">Show Page Border</label>
+                      <input
+                        type="checkbox"
+                        checked={sheets[activeSheetIndex].showBorder !== false}
+                        onChange={(e) => handleUpdatePageProperty('showBorder', e.target.checked)}
+                        className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                      />
+                    </div>
+                    
+                    {sheets[activeSheetIndex].showBorder !== false && (
+                      <div className="flex items-center justify-between gap-2 pl-2 border-l border-zinc-800">
+                        <label className="text-[8px] text-zinc-500 font-bold">Border Color</label>
+                        <div className="flex items-center gap-1.5">
+                          {/* Simple swatches for border color */}
+                          {['#cbd5e1', '#71717a', '#6366f1', '#ef4444', '#22c55e'].map((c) => (
+                            <button
+                              key={c}
+                              onClick={() => handleUpdatePageProperty('borderColor', c)}
+                              className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
+                                (sheets[activeSheetIndex].borderColor || '#cbd5e1') === c
+                                  ? 'ring-1 ring-fuchsia-400 border-white'
+                                  : 'border-zinc-700'
+                              }`}
+                              style={{ backgroundColor: c }}
+                              title={c}
+                            />
+                          ))}
+                          {/* Color picker input for custom colors */}
+                          <input
+                            type="color"
+                            value={sheets[activeSheetIndex].borderColor || '#cbd5e1'}
+                            onChange={(e) => handleUpdatePageProperty('borderColor', e.target.value)}
+                            className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Page Background Settings */}
+                  <div className="space-y-1.5">
+                    <label className="text-[8px] text-zinc-500 font-bold block">Page Background</label>
+                    <div className="flex items-center gap-1.5">
+                      {['#ffffff', '#fafafa', '#f4f4f5', '#fdfbf7', '#eff6ff', '#fef9c3'].map((bg) => (
+                        <button
+                          key={bg}
+                          onClick={() => handleUpdatePageProperty('sheetBg', bg)}
+                          className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
+                            (sheets[activeSheetIndex].sheetBg || '#ffffff') === bg
+                              ? 'ring-1 ring-fuchsia-400 border-white'
+                              : 'border-zinc-700'
+                          }`}
+                          style={{ backgroundColor: bg }}
+                          title={bg}
+                        />
+                      ))}
+                      <input
+                        type="color"
+                        value={sheets[activeSheetIndex].sheetBg || '#ffffff'}
+                        onChange={(e) => handleUpdatePageProperty('sheetBg', e.target.value)}
+                        className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                        title="Custom Background"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Grid Spacing & Color */}
+                  {(sheets[activeSheetIndex].gridType || gridType) !== 'none' && (
+                    <div className="space-y-2 pl-2 border-l border-zinc-800">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[8px] text-zinc-500 font-bold block">Grid Spacing</label>
+                          <span className="text-[8px] text-zinc-400 font-bold">
+                            {sheets[activeSheetIndex].gridSize || gridSize}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={10}
+                          max={60}
+                          step={2}
+                          value={sheets[activeSheetIndex].gridSize || gridSize}
+                          onChange={(e) => handleUpdatePageProperty('gridSize', parseInt(e.target.value))}
+                          className="w-full accent-fuchsia-500 h-1 bg-zinc-950 rounded-lg cursor-pointer appearance-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-zinc-500 font-bold block">Grid/Line Color</label>
+                        <div className="flex items-center gap-1.5">
+                          {['rgba(0, 0, 0, 0.08)', 'rgba(0, 0, 0, 0.15)', '#cbd5e1', '#94a3b8', '#6366f1'].map((c) => (
+                            <button
+                              key={c}
+                              onClick={() => handleUpdatePageProperty('gridColor', c)}
+                              className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
+                                (sheets[activeSheetIndex].gridColor || 'rgba(0, 0, 0, 0.08)') === c
+                                  ? 'ring-1 ring-fuchsia-400 border-white'
+                                  : 'border-zinc-700'
+                              }`}
+                              style={{ backgroundColor: c.startsWith('rgba') ? 'rgba(255, 255, 255, 0.15)' : c }}
+                              title={c}
+                            />
+                          ))}
+                          <input
+                            type="color"
+                            value={sheets[activeSheetIndex].gridColor && !sheets[activeSheetIndex].gridColor.startsWith('rgba') ? sheets[activeSheetIndex].gridColor : '#cbd5e1'}
+                            onChange={(e) => handleUpdatePageProperty('gridColor', e.target.value)}
+                            className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                            title="Custom Grid Color"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Inner Frame Settings */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[8px] text-zinc-500 font-bold block">Inner Frame</label>
+                      <input
+                        type="checkbox"
+                        checked={sheets[activeSheetIndex].innerFrameShow === true}
+                        onChange={(e) => handleUpdatePageProperty('innerFrameShow', e.target.checked)}
+                        className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                      />
+                    </div>
+
+                    {sheets[activeSheetIndex].innerFrameShow === true && (
+                      <div className="space-y-2 pl-2 border-l border-zinc-800">
+                        {/* Style */}
+                        <div className="space-y-1">
+                          <label className="text-[8px] text-zinc-500 font-bold block">Frame Style</label>
+                          <select
+                            value={sheets[activeSheetIndex].innerFrameStyle || 'single'}
+                            onChange={(e) => handleUpdatePageProperty('innerFrameStyle', e.target.value)}
+                            className="w-full py-0.5 px-1.5 bg-zinc-950 border border-zinc-850 rounded text-[9px] text-zinc-300 outline-none cursor-pointer"
+                          >
+                            <option value="single">Single</option>
+                            <option value="double">Double</option>
+                            <option value="dashed">Dashed</option>
+                            <option value="dotted">Dotted</option>
+                          </select>
+                        </div>
+
+                        {/* Color */}
+                        <div className="space-y-1">
+                          <label className="text-[8px] text-zinc-500 font-bold block">Frame Color</label>
+                          <div className="flex items-center gap-1.5">
+                            {['#cbd5e1', '#71717a', '#6366f1', '#ef4444', '#22c55e'].map((c) => (
+                              <button
+                                key={c}
+                                onClick={() => handleUpdatePageProperty('innerFrameColor', c)}
+                                className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
+                                  (sheets[activeSheetIndex].innerFrameColor || '#cbd5e1') === c
+                                    ? 'ring-1 ring-fuchsia-400 border-white'
+                                    : 'border-zinc-700'
+                                }`}
+                                style={{ backgroundColor: c }}
+                                title={c}
+                              />
+                            ))}
+                            <input
+                              type="color"
+                              value={sheets[activeSheetIndex].innerFrameColor || '#cbd5e1'}
+                              onChange={(e) => handleUpdatePageProperty('innerFrameColor', e.target.value)}
+                              className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Thickness */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[8px] text-zinc-500 font-bold block">Frame Thickness</label>
+                            <span className="text-[8px] text-zinc-400 font-bold">
+                              {sheets[activeSheetIndex].innerFrameWidth !== undefined ? sheets[activeSheetIndex].innerFrameWidth : 1}px
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={1}
+                            max={5}
+                            step={1}
+                            value={sheets[activeSheetIndex].innerFrameWidth !== undefined ? sheets[activeSheetIndex].innerFrameWidth : 1}
+                            onChange={(e) => handleUpdatePageProperty('innerFrameWidth', parseInt(e.target.value))}
+                            className="w-full accent-fuchsia-500 h-1 bg-zinc-950 rounded-lg cursor-pointer appearance-none"
+                          />
+                        </div>
+
+                        {/* Margin */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[8px] text-zinc-500 font-bold block">Frame Margin</label>
+                            <span className="text-[8px] text-zinc-400 font-bold">
+                              {sheets[activeSheetIndex].innerFrameMargin !== undefined ? sheets[activeSheetIndex].innerFrameMargin : 15}px
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={5}
+                            max={45}
+                            step={1}
+                            value={sheets[activeSheetIndex].innerFrameMargin !== undefined ? sheets[activeSheetIndex].innerFrameMargin : 15}
+                            onChange={(e) => handleUpdatePageProperty('innerFrameMargin', parseInt(e.target.value))}
+                            className="w-full accent-fuchsia-500 h-1 bg-zinc-950 rounded-lg cursor-pointer appearance-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Watermark Settings */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[8px] text-zinc-500 font-bold block">Show Watermark</label>
+                      <input
+                        type="checkbox"
+                        checked={sheets[activeSheetIndex].watermarkShow === true}
+                        onChange={(e) => handleUpdatePageProperty('watermarkShow', e.target.checked)}
+                        className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                      />
+                    </div>
+
+                    {sheets[activeSheetIndex].watermarkShow === true && (
+                      <div className="space-y-1 pl-2 border-l border-zinc-800">
+                        <label className="text-[8px] text-zinc-500 font-bold block">Watermark Text</label>
+                        <input
+                          type="text"
+                          value={sheets[activeSheetIndex].watermarkText !== undefined ? sheets[activeSheetIndex].watermarkText : `Ski.ma - ${label || 'Whiteboard'}`}
+                          onChange={(e) => handleUpdatePageProperty('watermarkText', e.target.value)}
+                          placeholder={`Ski.ma - ${label || 'Whiteboard'}`}
+                          className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Header / Footer Templates */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[8px] text-zinc-500 font-bold block">Show Page Numbers</label>
+                      <input
+                        type="checkbox"
+                        checked={sheets[activeSheetIndex].showPageNumber !== false}
+                        onChange={(e) => handleUpdatePageProperty('showPageNumber', e.target.checked)}
+                        className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-[8px] text-zinc-500 font-bold block">Show Header Date</label>
+                      <input
+                        type="checkbox"
+                        checked={sheets[activeSheetIndex].showDate !== false}
+                        onChange={(e) => handleUpdatePageProperty('showDate', e.target.checked)}
+                        className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+                      />
+                    </div>
+
+                    {sheets[activeSheetIndex].showDate !== false && (
+                      <div className="space-y-1 pl-2 border-l border-zinc-800">
+                        <label className="text-[8px] text-zinc-500 font-bold block">Custom Date</label>
+                        <input
+                          type="text"
+                          value={sheets[activeSheetIndex].date || ''}
+                          onChange={(e) => handleUpdatePageProperty('date', e.target.value)}
+                          placeholder={new Date().toLocaleDateString()}
+                          className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Grid Settings</p>
+        <div>
+          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Grid Styling</label>
+          <div className="flex gap-1">
+            {['grid', 'lines', 'none'].map((g) => (
+              <button key={g}
+                onClick={() => setGridType(g as any)}
+                className={`flex-1 py-1 rounded-lg text-[9px] font-bold transition-all border capitalize cursor-pointer
+                  ${gridType === g ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        {gridType !== 'none' && (
+          <>
+            <div className="flex items-center justify-between">
+              <label className="text-[8px] text-zinc-500 font-bold block">Snap To Grid</label>
+              <input
+                type="checkbox"
+                checked={snapToGrid}
+                onChange={(e) => setSnapToGrid(e.target.checked)}
+                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
+              />
+            </div>
+            <div>
+              <label className="text-[8px] text-zinc-500 font-bold block mb-1">Grid Size</label>
+              <input
+                type="range"
+                min={10}
+                max={60}
+                step={5}
+                value={gridSize}
+                onChange={(e) => setGridSize(Number(e.target.value))}
+                className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
+              />
+              <p className="text-[9px] text-zinc-400 text-center mt-1">{gridSize}px</p>
+            </div>
+          </>
+        )}
+
+        {/* Background color settings */}
+        <div className="pt-2 border-t border-zinc-850">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5">Background</p>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {BG_PRESETS.slice(0, 4).map((preset) => (
+              <button key={preset.value}
+                onClick={() => handleBgChange(preset.value)}
+                className="flex flex-col items-center p-1 rounded-lg hover:bg-zinc-800/80 cursor-pointer transition-all border border-transparent hover:border-zinc-850"
+                title={preset.label}
+              >
+                <div className="w-6 h-5 rounded border border-zinc-800" style={{ backgroundColor: preset.value }} />
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-1 mb-2">
+            {BG_PRESETS.slice(4, 8).map((preset) => (
+              <button key={preset.value}
+                onClick={() => handleBgChange(preset.value)}
+                className="flex flex-col items-center p-1 rounded-lg hover:bg-zinc-800/80 cursor-pointer transition-all border border-transparent hover:border-zinc-850"
+                title={preset.label}
+              >
+                <div className="w-6 h-5 rounded border border-zinc-800" style={{ backgroundColor: preset.value }} />
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[8px] text-zinc-500">Custom</span>
+            <input type="color" value={bgColor} onChange={(e) => handleBgChange(e.target.value)}
+              className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -6872,1197 +9116,22 @@ export function BoardCanvas({
 
               {/* Properties scrollable content */}
               <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4 p-4">
-            {/* Multi-Selection alignment/grouping panel */}
-            {selectedStrokeIds.length > 0 && (
-              <div className="space-y-3 pb-3 border-b border-zinc-800/80">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Actions ({selectedStrokeIds.length} selected)</p>
-                
-                {selectedStrokeIds.length >= 2 && (
-                  <>
-                    {/* Alignments */}
-                    <div className="grid grid-cols-4 gap-1">
-                      <button onClick={() => handleAlignStrokes('left')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Left">
-                        <AlignLeft className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => handleAlignStrokes('center-h')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Center X">
-                        <AlignCenter className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => handleAlignStrokes('right')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Right">
-                        <AlignRight className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => handleAlignStrokes('top')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Top">
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-4 gap-1">
-                      <button onClick={() => handleAlignStrokes('bottom')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Bottom">
-                        <ChevronUp className="w-3.5 h-3.5 rotate-180" />
-                      </button>
-                      <button onClick={() => handleAlignStrokes('center-v')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer" title="Align Center Y">
-                        <Move className="w-3.5 h-3.5 rotate-90" />
-                      </button>
-                      <button onClick={() => handleAlignStrokes('distribute-h')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer text-[10px] font-bold" title="Distribute Horizontally">
-                        D-H
-                      </button>
-                      <button onClick={() => handleAlignStrokes('distribute-v')} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer text-[10px] font-bold" title="Distribute Vertically">
-                        D-V
-                      </button>
-                    </div>
-
-                    {/* Grouping */}
-                    <div className="flex gap-1.5">
-                      <button onClick={handleGroupStrokes} className="flex-1 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[10px] font-bold text-zinc-300 hover:text-white cursor-pointer">
-                        Group
-                      </button>
-                      <button onClick={handleUngroupStrokes} className="flex-1 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[10px] font-bold text-zinc-300 hover:text-white cursor-pointer">
-                        Ungroup
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {/* Layering */}
-                <div className="grid grid-cols-4 gap-1">
-                  <button onClick={handleBringToFront} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-400 hover:text-white cursor-pointer" title="Bring to Front">
-                    Front
-                  </button>
-                  <button onClick={handleBringForward} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-400 hover:text-white cursor-pointer" title="Bring Forward">
-                    Fwd
-                  </button>
-                  <button onClick={handleSendBackward} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-400 hover:text-white cursor-pointer" title="Send Backward">
-                    Back
-                  </button>
-                  <button onClick={handleSendToBack} className="h-7 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-400 hover:text-white cursor-pointer" title="Send to Back">
-                    Base
-                  </button>
-                </div>
-
-                {/* Direct clipboard helpers */}
-                <div className="flex gap-1.5">
-                  <button onClick={handleCopyStrokes} className="flex-1 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-300 hover:text-white cursor-pointer flex items-center justify-center gap-1">
-                    <Copy className="w-2.5 h-2.5" /> Copy
-                  </button>
-                  <button onClick={handleDuplicateStrokesDirect} className="flex-1 py-1 rounded-lg bg-zinc-850 hover:bg-zinc-800 text-[9px] font-bold text-zinc-300 hover:text-white cursor-pointer flex items-center justify-center gap-1">
-                    <Layers className="w-2.5 h-2.5" /> Dupl
-                  </button>
-                </div>
-
-                {/* Geometry and Rotation steps */}
-                {(() => {
-                  const selectedBox = getCombinedBoundingBox(selectedStrokeIds);
-                  if (!selectedBox || selectedBox.w === undefined) return null;
-                  return (
-                    <div className="space-y-3 pt-3 border-t border-zinc-800/80">
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Geometry</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[8px] text-zinc-500 font-bold block mb-1">X Position</label>
-                          <input
-                            type="number"
-                            value={Math.round(selectedBox.minX)}
-                            onChange={(e) => handleGeometryChange('x', Number(e.target.value))}
-                            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Y Position</label>
-                          <input
-                            type="number"
-                            value={Math.round(selectedBox.minY)}
-                            onChange={(e) => handleGeometryChange('y', Number(e.target.value))}
-                            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Width</label>
-                          <input
-                            type="number"
-                            min={5}
-                            value={Math.round(selectedBox.w)}
-                            onChange={(e) => handleGeometryChange('w', Math.max(5, Number(e.target.value)))}
-                            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Height</label>
-                          <input
-                            type="number"
-                            min={5}
-                            value={Math.round(selectedBox.h)}
-                            onChange={(e) => handleGeometryChange('h', Math.max(5, Number(e.target.value)))}
-                            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[8px] text-zinc-500 font-bold block mb-1">Rotate</label>
-                        <div className="grid grid-cols-4 gap-1">
-                          <button
-                            onClick={() => handleNumericRotate(-90)}
-                            className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
-                            title="Rotate -90°"
-                          >
-                            -90°
-                          </button>
-                          <button
-                            onClick={() => handleNumericRotate(-15)}
-                            className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
-                            title="Rotate -15°"
-                          >
-                            -15°
-                          </button>
-                          <button
-                            onClick={() => handleNumericRotate(15)}
-                            className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
-                            title="Rotate +15°"
-                          >
-                            +15°
-                          </button>
-                          <button
-                            onClick={() => handleNumericRotate(90)}
-                            className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
-                            title="Rotate +90°"
-                          >
-                            +90°
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Opacity Control */}
-            <div>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Opacity</p>
-              <input
-                type="range"
-                min={0.1}
-                max={1.0}
-                step={0.05}
-                value={opacity}
-                onChange={(e) => handleOpacityChange(Number(e.target.value))}
-                className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
-              />
-              <p className="text-[9px] text-zinc-400 text-center mt-1">{Math.round(opacity * 100)}%</p>
-            </div>
-
-            {/* Stroke Width */}
-            <div>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Stroke Width</p>
-              <div className="grid grid-cols-3 gap-1 mb-2">
-                {STROKE_WIDTHS.slice(0, 3).map((w) => (
-                  <button key={w} onClick={() => handleStrokeWidthChange(w)}
-                    className={`h-7 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center
-                      ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-750'}`}
-                  >
-                    {w}px
-                  </button>
-                ))}
-              </div>
-              <div className="grid grid-cols-3 gap-1 mb-2">
-                {STROKE_WIDTHS.slice(3, 6).map((w) => (
-                  <button key={w} onClick={() => handleStrokeWidthChange(w)}
-                    className={`h-7 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center
-                      ${strokeWidth === w ? 'bg-fuchsia-500 text-white shadow-md' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-750'}`}
-                  >
-                    {w}px
-                  </button>
-                ))}
-              </div>
-              <input
-                type="range"
-                min={1}
-                max={48}
-                value={strokeWidth}
-                onChange={(e) => handleStrokeWidthChange(Number(e.target.value))}
-                className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
-              />
-            </div>
-
-            {/* Shape Border & Fill settings */}
-            {([...selectedStrokes.map((s) => s.tool), tool].some((t) => ['rect', 'circle', 'triangle', 'rounded-rect', 'ellipse', 'diamond', 'hexagon', 'flow-process', 'flow-decision', 'flow-data', 'flow-terminator', 'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document', 'table'].includes(t))) && (
-              <div className="space-y-3 pt-1 border-t border-zinc-800/80">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Fill Shape</span>
-                  <button
-                    onClick={() => handleUseFillChange(!useFill)}
-                    className={`h-6 px-2.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer border
-                      ${useFill ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-800 text-zinc-500'}`}
-                  >
-                    {useFill ? 'Solid' : 'None'}
-                  </button>
-                </div>
-
-                {useFill && (
-                  <div>
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5">Fill Color</p>
-                    <div className="grid grid-cols-4 gap-1 mb-2">
-                      {getActivePalettes().slice(0, 8).map((c) => (
-                        <button key={c} onClick={() => handleFillColorChange(c)}
-                          className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
-                          style={{ backgroundColor: c, borderColor: fillColor === c ? '#d946ef' : 'transparent' }}
-                        />
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-4 gap-1 mb-2">
-                      {getActivePalettes().slice(8, 16).map((c) => (
-                        <button key={c} onClick={() => handleFillColorChange(c)}
-                          className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
-                          style={{ backgroundColor: c, borderColor: fillColor === c ? '#d946ef' : 'transparent' }}
-                        />
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-[8px] text-zinc-500">Custom</span>
-                      <input type="color" value={fillColor} onChange={(e) => handleFillColorChange(e.target.value)}
-                        className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Colors Swatches (Border) */}
-            <div>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Border Color</p>
-              <div className="grid grid-cols-4 gap-1 mb-2">
-                {getActivePalettes().slice(0, 8).map((c) => (
-                  <button key={c} onClick={() => handleBrushColorChange(c)}
-                    className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
-                    style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
-                  />
-                ))}
-              </div>
-              <div className="grid grid-cols-4 gap-1 mb-2">
-                {getActivePalettes().slice(8, 16).map((c) => (
-                  <button key={c} onClick={() => handleBrushColorChange(c)}
-                    className="w-7 h-7 rounded-md border transition-all cursor-pointer shrink-0"
-                    style={{ backgroundColor: c, borderColor: color === c ? '#d946ef' : 'transparent' }}
-                  />
-                ))}
-              </div>
-              <div className="flex items-center gap-1.5 mt-1">
-                <span className="text-[8px] text-zinc-500">Custom</span>
-                <input type="color" value={color} onChange={(e) => handleBrushColorChange(e.target.value)}
-                  className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
-                />
+                {selectedStrokeIds.length > 0 && renderActionsPanel()}
+                {isPenOrHighlighterActive && renderPenPanel()}
+                {isEraserActive && renderEraserPanel()}
+                {isTextCapableActive && renderTypographyPanel()}
+                {isTextActive && renderTextContainerPanel()}
+                {isStickyActive && renderStickyPanel()}
+                {isShapeActive && renderShapePanel()}
+                {isConnectorActive && renderConnectorPanel()}
+                {isTableActive && renderTablePanel()}
+                {isImageActive && renderImagePanel()}
+                {isCanvasGlobalActive && renderGlobalCanvasPanel()}
               </div>
             </div>
-
-            {/* Text parameters (Text tool) */}
-            {(['text', 'sticky', 'table', 'rect', 'rounded-rect', 'circle', 'ellipse', 'triangle', 'diamond', 'hexagon', 'flow-process', 'flow-decision', 'flow-data', 'flow-terminator', 'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'].includes(tool) || selectedStrokes.some((s) => ['text', 'sticky', 'table', 'rect', 'rounded-rect', 'circle', 'ellipse', 'triangle', 'diamond', 'hexagon', 'flow-process', 'flow-decision', 'flow-data', 'flow-terminator', 'diag-cloud', 'diag-database', 'diag-cylinder', 'diag-document'].includes(s.tool))) && (
-              <div className="space-y-3 pt-3 border-t border-zinc-800/80">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Typography</p>
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Font Size</label>
-                  <input
-                    type="range"
-                    min={8}
-                    max={72}
-                    value={fontSize}
-                    onChange={(e) => handleFontSizeChange(Number(e.target.value))}
-                    className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
-                  />
-                  <p className="text-[9px] text-zinc-400 text-center mt-1">{fontSize}px</p>
-                </div>
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Font Family</label>
-                  <select
-                    value={fontFamily}
-                    onChange={(e) => handleFontFamilyChange(e.target.value)}
-                    className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                  >
-                    <option value="Inter, sans-serif">Inter (Sans)</option>
-                    <option value="Georgia, serif">Georgia (Serif)</option>
-                    <option value="monospace">Monospace</option>
-                    <option value="'Comic Sans MS', cursive">Comic Sans</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Text Style</label>
-                  <div className="flex gap-1 mb-2">
-                    <button
-                      onClick={() => handleFontWeightChange(fontWeight === 'bold' ? 'normal' : 'bold')}
-                      className={`flex-1 h-7 rounded-lg text-xs font-bold transition-all border cursor-pointer flex items-center justify-center
-                        ${fontWeight === 'bold' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
-                      title="Bold"
-                    >
-                      <Bold className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleTextStyleChange(textStyle === 'italic' ? 'normal' : 'italic')}
-                      className={`flex-1 h-7 rounded-lg text-xs transition-all border cursor-pointer flex items-center justify-center
-                        ${textStyle === 'italic' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
-                      title="Italic"
-                    >
-                      <Italic className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleTextDecorationChange(textDecoration === 'underline' ? 'none' : 'underline')}
-                      className={`flex-1 h-7 rounded-lg text-xs transition-all border cursor-pointer flex items-center justify-center
-                        ${textDecoration === 'underline' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
-                      title="Underline"
-                    >
-                      <Underline className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleTextDecorationChange(textDecoration === 'line-through' ? 'none' : 'line-through')}
-                      className={`flex-1 h-7 rounded-lg text-xs transition-all border cursor-pointer flex items-center justify-center
-                        ${textDecoration === 'line-through' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
-                      title="Strikethrough"
-                    >
-                      <Strikethrough className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Alignment</label>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => handleTextAlignChange('left')}
-                      className={`flex-1 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
-                        ${textAlign === 'left' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
-                      title="Align Left"
-                    >
-                      <AlignLeft className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleTextAlignChange('center')}
-                      className={`flex-1 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
-                        ${textAlign === 'center' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
-                      title="Align Center"
-                    >
-                      <AlignCenter className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleTextAlignChange('right')}
-                      className={`flex-1 h-7 rounded-lg flex items-center justify-center transition-all border cursor-pointer
-                        ${textAlign === 'right' ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
-                      title="Align Right"
-                    >
-                      <AlignRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Line Height</label>
-                  <input
-                    type="range"
-                    min={1.0}
-                    max={2.5}
-                    step={0.1}
-                    value={textLineHeight}
-                    onChange={(e) => handleTextLineHeightChange(Number(e.target.value))}
-                    className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
-                  />
-                  <p className="text-[9px] text-zinc-400 text-center mt-1">{textLineHeight}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Text Box Styling (Visible only when text tool is selected or has text selected) */}
-            {hasTextSelected && (
-              <div className="space-y-3 pt-3 border-t border-zinc-800/80">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Text Container</p>
-                
-                {/* Background color */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[8px] text-zinc-500 font-bold">Background Fill</label>
-                    {textBgColor && (
-                      <button
-                        onClick={() => handleTextBgColorChange('')}
-                        className="text-[8px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer bg-transparent border-none outline-none p-0"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="color"
-                      value={textBgColor || '#000000'}
-                      onChange={(e) => handleTextBgColorChange(e.target.value)}
-                      className="w-8 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer shrink-0"
-                    />
-                    <span className="text-[10px] text-zinc-400 font-mono">
-                      {textBgColor ? textBgColor.toUpperCase() : 'Transparent'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Border color */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[8px] text-zinc-500 font-bold">Border Color</label>
-                    {textBorderColor && (
-                      <button
-                        onClick={() => handleTextBorderColorChange('')}
-                        className="text-[8px] text-rose-400 hover:text-rose-300 font-bold cursor-pointer bg-transparent border-none outline-none p-0"
-                      >
-                        None
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="color"
-                      value={textBorderColor || '#ffffff'}
-                      onChange={(e) => {
-                        handleTextBorderColorChange(e.target.value);
-                        if (textBorderWidth === 0) handleTextBorderWidthChange(1);
-                      }}
-                      className="w-8 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer shrink-0"
-                    />
-                    <span className="text-[10px] text-zinc-400 font-mono">
-                      {textBorderColor ? textBorderColor.toUpperCase() : 'None'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Border width */}
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Border Width</label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    value={textBorderWidth}
-                    onChange={(e) => handleTextBorderWidthChange(Number(e.target.value))}
-                    className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
-                  />
-                  <p className="text-[9px] text-zinc-400 text-center mt-1">{textBorderWidth}px</p>
-                </div>
-
-                {/* Border style */}
-                {textBorderWidth > 0 && (
-                  <div>
-                    <label className="text-[8px] text-zinc-500 font-bold block mb-1">Border Style</label>
-                    <select
-                      value={textBorderStyle}
-                      onChange={(e) => handleTextBorderStyleChange(e.target.value as any)}
-                      className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                    >
-                      <option value="solid">Solid</option>
-                      <option value="dashed">Dashed</option>
-                      <option value="dotted">Dotted</option>
-                    </select>
-                  </div>
-                )}
-
-                {/* Padding */}
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Padding</label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={40}
-                    value={textPadding}
-                    onChange={(e) => handleTextPaddingChange(Number(e.target.value))}
-                    className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
-                  />
-                  <p className="text-[9px] text-zinc-400 text-center mt-1">{textPadding}px</p>
-                </div>
-
-                {/* Border Radius */}
-                {(textBgColor || textBorderColor) && (
-                  <div>
-                    <label className="text-[8px] text-zinc-500 font-bold block mb-1">Corner Radius</label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={30}
-                      value={textBorderRadius}
-                      onChange={(e) => handleTextBorderRadiusChange(Number(e.target.value))}
-                      className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
-                    />
-                    <p className="text-[9px] text-zinc-400 text-center mt-1">{textBorderRadius}px</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Connectors settings (Line/Arrow tools) */}
-            {['line', 'arrow'].includes(tool) && (
-              <div className="space-y-3 pt-3 border-t border-zinc-800/80">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Connector Settings</p>
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Connector Route</label>
-                  <select
-                    value={arrowType}
-                    onChange={(e) => handleArrowTypeChange(e.target.value as any)}
-                    className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                  >
-                    <option value="straight">Straight</option>
-                    <option value="curved">Curved Curve</option>
-                    <option value="elbow">Elbow Joint</option>
-                    <option value="orthogonal">Orthogonal</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Start Head</label>
-                  <select
-                    value={arrowheadStart}
-                    onChange={(e) => handleArrowheadStartChange(e.target.value as any)}
-                    className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                  >
-                    <option value="none">None</option>
-                    <option value="triangle">Triangle</option>
-                    <option value="circle">Circle</option>
-                    <option value="diamond">Diamond</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">End Head</label>
-                  <select
-                    value={arrowheadEnd}
-                    onChange={(e) => handleArrowheadEndChange(e.target.value as any)}
-                    className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                  >
-                    <option value="none">None</option>
-                    <option value="triangle">Triangle</option>
-                    <option value="circle">Circle</option>
-                    <option value="diamond">Diamond</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {/* Table settings */}
-            {selectedTable && (
-              <div className="space-y-3 pt-3 border-t border-zinc-800/80">
-                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Table Settings</p>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="text-[8px] text-zinc-500 font-bold block mb-1">Rows</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={selectedTable.tableRows || 3}
-                      onChange={(e) => handleTableRowsChange(Math.max(1, Math.min(20, Number(e.target.value))))}
-                      className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-[8px] text-zinc-500 font-bold block mb-1">Cols</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={selectedTable.tableCols || 3}
-                      onChange={(e) => handleTableColsChange(Math.max(1, Math.min(20, Number(e.target.value))))}
-                      className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* Table Customizations */}
-                <div className="space-y-2 pt-1">
-                  <p className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider block">Customization</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
-                      <input
-                        type="checkbox"
-                        checked={selectedTable.tableHeaderRow || false}
-                        onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableHeaderRow: e.target.checked }))}
-                        className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
-                      />
-                      <span>Header Row</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
-                      <input
-                        type="checkbox"
-                        checked={selectedTable.tableHeaderCol || false}
-                        onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableHeaderCol: e.target.checked }))}
-                        className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
-                      />
-                      <span>Header Col</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
-                      <input
-                        type="checkbox"
-                        checked={selectedTable.tableHorizontalLines !== false}
-                        onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableHorizontalLines: e.target.checked }))}
-                        className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
-                      />
-                      <span>Horiz Lines</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-300">
-                      <input
-                        type="checkbox"
-                        checked={selectedTable.tableVerticalLines !== false}
-                        onChange={(e) => updateSelectedStrokesProperty((s) => ({ ...s, tableVerticalLines: e.target.checked }))}
-                        className="rounded border-zinc-800 bg-zinc-950 text-fuchsia-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
-                      />
-                      <span>Vert Lines</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Cell Content</label>
-                  <div className="max-h-[220px] overflow-auto border border-zinc-850 rounded-lg p-1.5 space-y-1 bg-zinc-950 custom-scrollbar">
-                    {Array.from({ length: selectedTable.tableRows || 3 }).map((_, rIdx) => (
-                      <div key={rIdx} className="flex gap-1">
-                        {Array.from({ length: selectedTable.tableCols || 3 }).map((_, cIdx) => (
-                          <input
-                            key={cIdx}
-                            type="text"
-                            value={(selectedTable.tableCells?.[rIdx]?.[cIdx]) || ''}
-                            onChange={(e) => handleTableCellEdit(rIdx, cIdx, e.target.value)}
-                            className="min-w-[55px] flex-1 text-[10px] px-1 py-0.5 bg-zinc-900 border border-zinc-800/80 rounded text-white focus:border-fuchsia-500 outline-none"
-                            placeholder={`R${rIdx+1}C${cIdx+1}`}
-                            title={`Row ${rIdx+1}, Column ${cIdx+1}`}
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Canvas Global settings (visible only when no elements selected) */}
-            {selectedStrokeIds.length === 0 && (
-              <div className="space-y-3 pt-3 border-t border-zinc-800/80">
-                {/* Whiteboard Sheets Layout Controls */}
-                <div className="space-y-3 pb-3 border-b border-zinc-850">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Page Setup</p>
-                    <button
-                      onClick={() => handleSheetsModeToggle(!isSheetsMode)}
-                      className={`px-2 py-1 rounded-lg text-[9px] font-bold cursor-pointer transition-all border ${
-                        isSheetsMode
-                          ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40 shadow-xs'
-                          : 'bg-zinc-950 text-zinc-400 border-zinc-850'
-                      }`}
-                    >
-                      {isSheetsMode ? 'Sheets Active' : 'Infinite Canvas'}
-                    </button>
-                  </div>
-
-                  {isSheetsMode && (
-                    <>
-                      {/* Add Page Dropdown */}
-                      <div className="space-y-1">
-                        <label className="text-[8px] text-zinc-500 font-bold block">Add Page</label>
-                        <div className="flex gap-1.5">
-                          <select
-                            value={selectedPreset}
-                            onChange={(e) => setSelectedPreset(e.target.value)}
-                            className="flex-1 py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none cursor-pointer"
-                          >
-                            <option value="A4 Portrait">A4 Portrait</option>
-                            <option value="A4 Landscape">A4 Landscape</option>
-                            <option value="Letter Portrait">Letter Portrait</option>
-                            <option value="Letter Landscape">Letter Landscape</option>
-                            <option value="Square">Square</option>
-                          </select>
-                          <button
-                            onClick={() => handleAddSheet(selectedPreset)}
-                            className="w-7 h-7 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-lg cursor-pointer transition-all flex items-center justify-center shrink-0"
-                            title="Add Page"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <button
-                          onClick={handleDistributeStrokesToSheets}
-                          className="w-full py-1.5 px-2 bg-zinc-950 border border-fuchsia-500/30 text-fuchsia-400 hover:bg-fuchsia-500/15 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 mt-1.5"
-                          title="Distribute board elements into sheets automatically"
-                        >
-                          <Layers className="w-3 h-3" />
-                          <span>Auto-Distribute Elements to Sheets</span>
-                        </button>
-                      </div>
-
-                      {/* Pages List */}
-                      <div className="space-y-1 pt-1">
-                        <label className="text-[8px] text-zinc-500 font-bold block">Pages List</label>
-                        <div className="space-y-1 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
-                          {sheets.length === 0 ? (
-                            <p className="text-[9px] text-zinc-600 italic">No pages created.</p>
-                          ) : (
-                            sheets.map((sheet, idx) => (
-                              <div
-                                key={sheet.id}
-                                className={`flex items-center justify-between p-1.5 border rounded-lg hover:border-zinc-800 transition-all gap-1 ${
-                                  activeSheetIndex === idx
-                                    ? 'bg-fuchsia-500/10 border-fuchsia-500/40 shadow-xs'
-                                    : 'bg-zinc-950/40 border-zinc-850'
-                                }`}
-                              >
-                                <button
-                                  onClick={() => {
-                                    setActiveSheetIndex(idx);
-                                    handleFocusSheet(sheet);
-                                  }}
-                                  className={`flex-1 text-left text-[10px] font-semibold transition-all truncate cursor-pointer ${
-                                    activeSheetIndex === idx ? 'text-fuchsia-400 font-bold' : 'text-zinc-300 hover:text-fuchsia-400'
-                                  }`}
-                                  title="Jump to Page"
-                                >
-                                  {idx + 1}. {sheet.name || sheet.preset}
-                                </button>
-                                <div className="flex items-center">
-                                  <button
-                                    disabled={idx === 0}
-                                    onClick={() => handleMoveSheet(idx, 'up')}
-                                    className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-20 cursor-pointer"
-                                    title="Move Up"
-                                  >
-                                    <ChevronUp className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    disabled={idx === sheets.length - 1}
-                                    onClick={() => handleMoveSheet(idx, 'down')}
-                                    className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-20 cursor-pointer"
-                                    title="Move Down"
-                                  >
-                                    <ChevronUp className="w-3 h-3 rotate-180" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteSheet(sheet.id)}
-                                    className="p-0.5 text-zinc-500 hover:text-red-400 cursor-pointer"
-                                    title="Delete Page"
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Active Page Properties Section */}
-                      {sheets[activeSheetIndex] && (
-                        <div className="space-y-2.5 pt-2.5 border-t border-zinc-800/80">
-                          <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Active Page Settings</p>
-
-                          {/* Copy / Paste Page Style */}
-                          <div className="flex gap-2">
-                            <button
-                              onClick={handleCopyStyle}
-                              className="flex-1 py-1 px-2 bg-zinc-950 border border-zinc-850 hover:bg-zinc-900 text-zinc-300 rounded-lg text-[9px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1"
-                              title="Copy this page's layout styling"
-                            >
-                              <Copy className="w-3 h-3 text-zinc-400" />
-                              <span>Copy Style</span>
-                            </button>
-                            <button
-                              onClick={handlePasteStyle}
-                              disabled={!copiedSheetStyle}
-                              className="flex-1 py-1 px-2 bg-zinc-950 border border-zinc-850 hover:bg-zinc-900 text-zinc-300 disabled:opacity-30 disabled:hover:bg-zinc-950 rounded-lg text-[9px] font-bold cursor-pointer transition-all flex items-center justify-center gap-1"
-                              title="Paste copied styling to this page"
-                            >
-                              <Clipboard className="w-3 h-3 text-zinc-400" />
-                              <span>Paste Style</span>
-                            </button>
-                          </div>
-                          
-                          {/* Page Name/Label */}
-                          <div className="space-y-1">
-                            <label className="text-[8px] text-zinc-500 font-bold block">Page Name</label>
-                            <input
-                              type="text"
-                              value={sheets[activeSheetIndex].name || ''}
-                              onChange={(e) => handleUpdatePageProperty('name', e.target.value)}
-                              placeholder={`Page ${activeSheetIndex + 1}`}
-                              className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none"
-                            />
-                          </div>
-
-                          {/* Page-Specific Grid Type */}
-                          <div className="space-y-1">
-                            <label className="text-[8px] text-zinc-500 font-bold block">Page Grid</label>
-                            <div className="flex gap-1">
-                              {['default', 'grid', 'lines', 'none'].map((g) => {
-                                const activeVal = sheets[activeSheetIndex].gridType || 'default';
-                                return (
-                                  <button
-                                    key={g}
-                                    onClick={() => handleUpdatePageProperty('gridType', g === 'default' ? undefined : g)}
-                                    className={`flex-1 py-0.5 rounded text-[8px] font-bold border transition-all capitalize cursor-pointer ${
-                                      activeVal === g
-                                        ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40'
-                                        : 'bg-zinc-950 border-zinc-850 text-zinc-400'
-                                    }`}
-                                  >
-                                    {g}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Border Settings */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[8px] text-zinc-500 font-bold block">Show Page Border</label>
-                              <input
-                                type="checkbox"
-                                checked={sheets[activeSheetIndex].showBorder !== false}
-                                onChange={(e) => handleUpdatePageProperty('showBorder', e.target.checked)}
-                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
-                              />
-                            </div>
-                            
-                            {sheets[activeSheetIndex].showBorder !== false && (
-                              <div className="flex items-center justify-between gap-2 pl-2 border-l border-zinc-800">
-                                <label className="text-[8px] text-zinc-500 font-bold">Border Color</label>
-                                <div className="flex items-center gap-1.5">
-                                  {/* Simple swatches for border color */}
-                                  {['#cbd5e1', '#71717a', '#6366f1', '#ef4444', '#22c55e'].map((c) => (
-                                    <button
-                                      key={c}
-                                      onClick={() => handleUpdatePageProperty('borderColor', c)}
-                                      className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
-                                        (sheets[activeSheetIndex].borderColor || '#cbd5e1') === c
-                                          ? 'ring-1 ring-fuchsia-400 border-white'
-                                          : 'border-zinc-700'
-                                      }`}
-                                      style={{ backgroundColor: c }}
-                                      title={c}
-                                    />
-                                  ))}
-                                  {/* Color picker input for custom colors */}
-                                  <input
-                                    type="color"
-                                    value={sheets[activeSheetIndex].borderColor || '#cbd5e1'}
-                                    onChange={(e) => handleUpdatePageProperty('borderColor', e.target.value)}
-                                    className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Page Background Settings */}
-                          <div className="space-y-1.5">
-                            <label className="text-[8px] text-zinc-500 font-bold block">Page Background</label>
-                            <div className="flex items-center gap-1.5">
-                              {['#ffffff', '#fafafa', '#f4f4f5', '#fdfbf7', '#eff6ff', '#fef9c3'].map((bg) => (
-                                <button
-                                  key={bg}
-                                  onClick={() => handleUpdatePageProperty('sheetBg', bg)}
-                                  className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
-                                    (sheets[activeSheetIndex].sheetBg || '#ffffff') === bg
-                                      ? 'ring-1 ring-fuchsia-400 border-white'
-                                      : 'border-zinc-700'
-                                  }`}
-                                  style={{ backgroundColor: bg }}
-                                  title={bg}
-                                />
-                              ))}
-                              <input
-                                type="color"
-                                value={sheets[activeSheetIndex].sheetBg || '#ffffff'}
-                                onChange={(e) => handleUpdatePageProperty('sheetBg', e.target.value)}
-                                className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
-                                title="Custom Background"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Grid Spacing & Color */}
-                          {(sheets[activeSheetIndex].gridType || gridType) !== 'none' && (
-                            <div className="space-y-2 pl-2 border-l border-zinc-800">
-                              <div className="space-y-1">
-                                <div className="flex items-center justify-between">
-                                  <label className="text-[8px] text-zinc-500 font-bold block">Grid Spacing</label>
-                                  <span className="text-[8px] text-zinc-400 font-bold">
-                                    {sheets[activeSheetIndex].gridSize || gridSize}px
-                                  </span>
-                                </div>
-                                <input
-                                  type="range"
-                                  min={10}
-                                  max={60}
-                                  step={2}
-                                  value={sheets[activeSheetIndex].gridSize || gridSize}
-                                  onChange={(e) => handleUpdatePageProperty('gridSize', parseInt(e.target.value))}
-                                  className="w-full accent-fuchsia-500 h-1 bg-zinc-950 rounded-lg cursor-pointer appearance-none"
-                                />
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="text-[8px] text-zinc-500 font-bold block">Grid/Line Color</label>
-                                <div className="flex items-center gap-1.5">
-                                  {['rgba(0, 0, 0, 0.08)', 'rgba(0, 0, 0, 0.15)', '#cbd5e1', '#94a3b8', '#6366f1'].map((c) => (
-                                    <button
-                                      key={c}
-                                      onClick={() => handleUpdatePageProperty('gridColor', c)}
-                                      className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
-                                        (sheets[activeSheetIndex].gridColor || 'rgba(0, 0, 0, 0.08)') === c
-                                          ? 'ring-1 ring-fuchsia-400 border-white'
-                                          : 'border-zinc-700'
-                                      }`}
-                                      style={{ backgroundColor: c.startsWith('rgba') ? 'rgba(255, 255, 255, 0.15)' : c }}
-                                      title={c}
-                                    />
-                                  ))}
-                                  <input
-                                    type="color"
-                                    value={sheets[activeSheetIndex].gridColor && !sheets[activeSheetIndex].gridColor.startsWith('rgba') ? sheets[activeSheetIndex].gridColor : '#cbd5e1'}
-                                    onChange={(e) => handleUpdatePageProperty('gridColor', e.target.value)}
-                                    className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
-                                    title="Custom Grid Color"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Inner Frame Settings */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[8px] text-zinc-500 font-bold block">Inner Frame</label>
-                              <input
-                                type="checkbox"
-                                checked={sheets[activeSheetIndex].innerFrameShow === true}
-                                onChange={(e) => handleUpdatePageProperty('innerFrameShow', e.target.checked)}
-                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
-                              />
-                            </div>
-
-                            {sheets[activeSheetIndex].innerFrameShow === true && (
-                              <div className="space-y-2 pl-2 border-l border-zinc-800">
-                                {/* Style */}
-                                <div className="space-y-1">
-                                  <label className="text-[8px] text-zinc-500 font-bold block">Frame Style</label>
-                                  <select
-                                    value={sheets[activeSheetIndex].innerFrameStyle || 'single'}
-                                    onChange={(e) => handleUpdatePageProperty('innerFrameStyle', e.target.value)}
-                                    className="w-full py-0.5 px-1.5 bg-zinc-950 border border-zinc-850 rounded text-[9px] text-zinc-300 outline-none cursor-pointer"
-                                  >
-                                    <option value="single">Single</option>
-                                    <option value="double">Double</option>
-                                    <option value="dashed">Dashed</option>
-                                    <option value="dotted">Dotted</option>
-                                  </select>
-                                </div>
-
-                                {/* Color */}
-                                <div className="space-y-1">
-                                  <label className="text-[8px] text-zinc-500 font-bold block">Frame Color</label>
-                                  <div className="flex items-center gap-1.5">
-                                    {['#cbd5e1', '#71717a', '#6366f1', '#ef4444', '#22c55e'].map((c) => (
-                                      <button
-                                        key={c}
-                                        onClick={() => handleUpdatePageProperty('innerFrameColor', c)}
-                                        className={`w-3.5 h-3.5 rounded-full cursor-pointer border ${
-                                          (sheets[activeSheetIndex].innerFrameColor || '#cbd5e1') === c
-                                            ? 'ring-1 ring-fuchsia-400 border-white'
-                                            : 'border-zinc-700'
-                                        }`}
-                                        style={{ backgroundColor: c }}
-                                        title={c}
-                                      />
-                                    ))}
-                                    <input
-                                      type="color"
-                                      value={sheets[activeSheetIndex].innerFrameColor || '#cbd5e1'}
-                                      onChange={(e) => handleUpdatePageProperty('innerFrameColor', e.target.value)}
-                                      className="w-4 h-4 bg-transparent border-0 cursor-pointer p-0"
-                                    />
-                                  </div>
-                                </div>
-
-                                {/* Thickness */}
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <label className="text-[8px] text-zinc-500 font-bold block">Frame Thickness</label>
-                                    <span className="text-[8px] text-zinc-400 font-bold">
-                                      {sheets[activeSheetIndex].innerFrameWidth !== undefined ? sheets[activeSheetIndex].innerFrameWidth : 1}px
-                                    </span>
-                                  </div>
-                                  <input
-                                    type="range"
-                                    min={1}
-                                    max={5}
-                                    step={1}
-                                    value={sheets[activeSheetIndex].innerFrameWidth !== undefined ? sheets[activeSheetIndex].innerFrameWidth : 1}
-                                    onChange={(e) => handleUpdatePageProperty('innerFrameWidth', parseInt(e.target.value))}
-                                    className="w-full accent-fuchsia-500 h-1 bg-zinc-950 rounded-lg cursor-pointer appearance-none"
-                                  />
-                                </div>
-
-                                {/* Margin */}
-                                <div className="space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <label className="text-[8px] text-zinc-500 font-bold block">Frame Margin</label>
-                                    <span className="text-[8px] text-zinc-400 font-bold">
-                                      {sheets[activeSheetIndex].innerFrameMargin !== undefined ? sheets[activeSheetIndex].innerFrameMargin : 15}px
-                                    </span>
-                                  </div>
-                                  <input
-                                    type="range"
-                                    min={5}
-                                    max={45}
-                                    step={1}
-                                    value={sheets[activeSheetIndex].innerFrameMargin !== undefined ? sheets[activeSheetIndex].innerFrameMargin : 15}
-                                    onChange={(e) => handleUpdatePageProperty('innerFrameMargin', parseInt(e.target.value))}
-                                    className="w-full accent-fuchsia-500 h-1 bg-zinc-950 rounded-lg cursor-pointer appearance-none"
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Watermark Settings */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[8px] text-zinc-500 font-bold block">Show Watermark</label>
-                              <input
-                                type="checkbox"
-                                checked={sheets[activeSheetIndex].watermarkShow === true}
-                                onChange={(e) => handleUpdatePageProperty('watermarkShow', e.target.checked)}
-                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
-                              />
-                            </div>
-
-                            {sheets[activeSheetIndex].watermarkShow === true && (
-                              <div className="space-y-1 pl-2 border-l border-zinc-800">
-                                <label className="text-[8px] text-zinc-500 font-bold block">Watermark Text</label>
-                                <input
-                                  type="text"
-                                  value={sheets[activeSheetIndex].watermarkText !== undefined ? sheets[activeSheetIndex].watermarkText : `Ski.ma - ${label || 'Whiteboard'}`}
-                                  onChange={(e) => handleUpdatePageProperty('watermarkText', e.target.value)}
-                                  placeholder={`Ski.ma - ${label || 'Whiteboard'}`}
-                                  className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none"
-                                />
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Header / Footer Templates */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <label className="text-[8px] text-zinc-500 font-bold block">Show Page Numbers</label>
-                              <input
-                                type="checkbox"
-                                checked={sheets[activeSheetIndex].showPageNumber !== false}
-                                onChange={(e) => handleUpdatePageProperty('showPageNumber', e.target.checked)}
-                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                              <label className="text-[8px] text-zinc-500 font-bold block">Show Header Date</label>
-                              <input
-                                type="checkbox"
-                                checked={sheets[activeSheetIndex].showDate !== false}
-                                onChange={(e) => handleUpdatePageProperty('showDate', e.target.checked)}
-                                className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
-                              />
-                            </div>
-
-                            {sheets[activeSheetIndex].showDate !== false && (
-                              <div className="space-y-1 pl-2 border-l border-zinc-800">
-                                <label className="text-[8px] text-zinc-500 font-bold block">Custom Date</label>
-                                <input
-                                  type="text"
-                                  value={sheets[activeSheetIndex].date || ''}
-                                  onChange={(e) => handleUpdatePageProperty('date', e.target.value)}
-                                  placeholder={new Date().toLocaleDateString()}
-                                  className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-[10px] text-zinc-300 outline-none"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Grid Settings</p>
-                <div>
-                  <label className="text-[8px] text-zinc-500 font-bold block mb-1">Grid Styling</label>
-                  <div className="flex gap-1">
-                    {['grid', 'lines', 'none'].map((g) => (
-                      <button key={g}
-                        onClick={() => setGridType(g as any)}
-                        className={`flex-1 py-1 rounded-lg text-[9px] font-bold transition-all border capitalize cursor-pointer
-                          ${gridType === g ? 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/40' : 'bg-zinc-950 border-zinc-850 text-zinc-400'}`}
-                      >
-                        {g}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                
-                {gridType !== 'none' && (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <label className="text-[8px] text-zinc-500 font-bold block">Snap To Grid</label>
-                      <input
-                        type="checkbox"
-                        checked={snapToGrid}
-                        onChange={(e) => setSnapToGrid(e.target.checked)}
-                        className="w-3.5 h-3.5 accent-fuchsia-500 rounded bg-zinc-950 border border-zinc-800 cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[8px] text-zinc-500 font-bold block mb-1">Grid Size</label>
-                      <input
-                        type="range"
-                        min={10}
-                        max={60}
-                        step={5}
-                        value={gridSize}
-                        onChange={(e) => setGridSize(Number(e.target.value))}
-                        className="w-full h-1.5 rounded-full accent-fuchsia-500 cursor-pointer"
-                      />
-                      <p className="text-[9px] text-zinc-400 text-center mt-1">{gridSize}px</p>
-                    </div>
-                  </>
-                )}
-
-                {/* Background color settings */}
-                <div className="pt-2 border-t border-zinc-850">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-1.5">Background</p>
-                  <div className="grid grid-cols-4 gap-1 mb-2">
-                    {BG_PRESETS.slice(0, 4).map((preset) => (
-                      <button key={preset.value}
-                        onClick={() => handleBgChange(preset.value)}
-                        className="flex flex-col items-center p-1 rounded-lg hover:bg-zinc-800/80 cursor-pointer transition-all border border-transparent hover:border-zinc-850"
-                        title={preset.label}
-                      >
-                        <div className="w-6 h-5 rounded border border-zinc-800" style={{ backgroundColor: preset.value }} />
-                      </button>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-4 gap-1 mb-2">
-                    {BG_PRESETS.slice(4, 8).map((preset) => (
-                      <button key={preset.value}
-                        onClick={() => handleBgChange(preset.value)}
-                        className="flex flex-col items-center p-1 rounded-lg hover:bg-zinc-800/80 cursor-pointer transition-all border border-transparent hover:border-zinc-850"
-                        title={preset.label}
-                      >
-                        <div className="w-6 h-5 rounded border border-zinc-800" style={{ backgroundColor: preset.value }} />
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <span className="text-[8px] text-zinc-500">Custom</span>
-                    <input type="color" value={bgColor} onChange={(e) => handleBgChange(e.target.value)}
-                      className="flex-1 h-6 rounded-md border border-zinc-700 bg-transparent cursor-pointer"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+          )}
 
           </div>
-        </div>
-      )}
-    </div>
 
         {/* ═══ BOTTOM STATUS ═══ */}
         <div className="h-8 shrink-0 flex items-center justify-between px-4 border-t border-zinc-800/80 bg-zinc-900/90 text-[10px] text-zinc-500">

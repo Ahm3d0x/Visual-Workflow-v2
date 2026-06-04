@@ -50,6 +50,7 @@ export interface BoardStroke {
   textPadding?: number;
   textBorderRadius?: number;
   textLineHeight?: number;
+  angle?: number;
 }
 
 interface BoardNodeProps {
@@ -126,6 +127,56 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
 
       if (stroke.strokeDasharray) {
         ctx.setLineDash(stroke.strokeDasharray.split(',').map(Number).map(d => d * scale));
+      }
+
+      const hasRotation = stroke.angle !== undefined && stroke.angle !== 0;
+      if (hasRotation) {
+        let sMinX = Infinity, sMinY = Infinity, sMaxX = -Infinity, sMaxY = -Infinity;
+        if (stroke.tool === 'text') {
+          const p = stroke.points[0];
+          if (p) {
+            const fs = stroke.fontSize || 18;
+            const lines = (stroke.text || '').split('\n');
+            const lineHeight = stroke.textLineHeight || 1.4;
+            const padding = stroke.textPadding !== undefined ? stroke.textPadding : 8;
+            let maxLen = 0;
+            lines.forEach(line => {
+              if (line.length > maxLen) maxLen = line.length;
+            });
+            const estWidth = maxLen * fs * 0.6;
+            const totalHeight = lines.length * fs * lineHeight;
+            const boxW = estWidth + padding * 2;
+            const boxH = totalHeight + padding * 2;
+            sMinX = p.x;
+            sMinY = p.y;
+            sMaxX = p.x + boxW;
+            sMaxY = p.y + boxH;
+          }
+        } else if (stroke.tool === 'sticky' || stroke.tool === 'image') {
+          const p1 = stroke.points[0];
+          const p2 = stroke.points[1] || (stroke.tool === 'sticky' ? { x: p1.x + 160, y: p1.y + 160 } : { x: p1.x + 300, y: p1.y + 200 });
+          sMinX = Math.min(p1.x, p2.x);
+          sMinY = Math.min(p1.y, p2.y);
+          sMaxX = Math.max(p1.x, p2.x);
+          sMaxY = Math.max(p1.y, p2.y);
+        } else {
+          stroke.points.forEach((p) => {
+            sMinX = Math.min(sMinX, p.x);
+            sMinY = Math.min(sMinY, p.y);
+            sMaxX = Math.max(sMaxX, p.x);
+            sMaxY = Math.max(sMaxY, p.y);
+          });
+        }
+        
+        if (sMinX !== Infinity) {
+          const scx = (sMinX + sMaxX) / 2;
+          const scy = (sMinY + sMaxY) / 2;
+          const cxTrans = scx * scale + offsetX;
+          const cyTrans = scy * scale + offsetY;
+          ctx.translate(cxTrans, cyTrans);
+          ctx.rotate(stroke.angle || 0);
+          ctx.translate(-cxTrans, -cyTrans);
+        }
       }
 
       if (stroke.tool === 'pen' || stroke.tool === 'eraser' || stroke.tool === 'highlighter') {
