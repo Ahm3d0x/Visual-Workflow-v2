@@ -9,7 +9,8 @@ import {
   RotateCcw, PaintBucket, ChevronUp, Save, Users, Copy, Clipboard,
   Settings, Layers, StickyNote, Highlighter, Grid, AlignLeft, AlignCenter,
   AlignRight, Move, Check, FileDown, Plus, ChevronLeft, ChevronRight,
-  Image as ImageIcon, UserMinus, Bold, Italic, Underline, Strikethrough
+  Image as ImageIcon, UserMinus, Bold, Italic, Underline, Strikethrough,
+  Share2
 } from 'lucide-react';
 import { useEditorStore } from '@/stores/editorStore';
 import { playClickSound, playPopSound, playSweepSound } from '@/lib/audioSfx';
@@ -17,6 +18,8 @@ import { createClient } from '@/lib/supabase/client';
 import { type BoardStroke } from './BoardNode';
 import { useDialogStore } from '@/stores/dialogStore';
 import { jsPDF } from 'jspdf';
+import { ShareDialog } from '@/components/editor/ShareDialog';
+import { useParams } from 'next/navigation';
 
 /* ─────────────────────── Helper Functions ─────────────────────── */
 function generateUUID(): string {
@@ -163,7 +166,21 @@ export function BoardCanvas({
   // During drag/resize/rotate, accumulate delta in ref and only commit to state on pointerUp
   const dragDeltaRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
 
+  // Touch zoom/pan refs (tablet optimization)
+  const initialTouchDistanceRef = useRef<number | null>(null);
+  const initialTouchCenterRef = useRef<{ x: number; y: number } | null>(null);
+  const initialViewRef = useRef<ViewTransform | null>(null);
+  const isMultiTouchRef = useRef(false);
+
+  // Shift key press tracker for rendering selection overlays
+  const isShiftPressedRef = useRef(false);
+
+  // Router parameters
+  const params = useParams();
+  const locale = (params?.locale as string) || 'en';
+
   /* ── State ── */
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const [redrawTrigger, setRedrawTrigger] = useState(0);
   const [tool, setTool] = useState<Tool>('pen');
   const [color, setColor] = useState('#ffffff');
@@ -205,6 +222,10 @@ export function BoardCanvas({
   const [activeCellEdit, setActiveCellEdit] = useState<ActiveCellEdit | null>(null);
   
   const [view, setView] = useState<ViewTransform>({ scale: 1, offsetX: 0, offsetY: 0 });
+  const viewRef = useRef(view);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
   const minimapRef = useRef<HTMLCanvasElement>(null);
   const [showMinimap, setShowMinimap] = useState(true);
   const minimapSize = { width: 160, height: 110 };
@@ -227,6 +248,9 @@ export function BoardCanvas({
   const isSpacePressedRef = useRef(false);
 
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
+  const [hoveredHandle, setHoveredHandle] = useState<{ type: string; nodeIndex?: number } | null>(null);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const minimapOffscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const selectedStrokes = strokes.filter((s) => selectedStrokeIds.includes(s.id));
   const hasTextSelected = tool === 'text' || selectedStrokes.some((s) => s.tool === 'text');
   const selectedTable = selectedStrokes.length === 1 && selectedStrokes[0].tool === 'table' ? selectedStrokes[0] : null;
@@ -249,6 +273,10 @@ export function BoardCanvas({
   const mousePosRef = useRef({ x: 0, y: 0 });
   
   const userRole = useEditorStore((s) => s.userRole) || 'viewer';
+  const workspaceId = useEditorStore((s) => s.workspaceId);
+  const workflowId = useEditorStore((s) => s.workflowId);
+  const workflowName = useEditorStore((s) => s.workflowName) || 'Workflow';
+  const canShareLinks = useEditorStore((s) => s.canShareLinks);
   const [canDrawLocal, setCanDrawLocal] = useState<boolean>(true);
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
   const [showCollaboratorsMenu, setShowCollaboratorsMenu] = useState<boolean>(false);
@@ -332,6 +360,7 @@ export function BoardCanvas({
   const updateNode = useEditorStore((s) => s.updateNode);
   const supabase = createClient();
   const channelRef = useRef<any>(null);
+  const [activeChannel, setActiveChannel] = useState<any>(null);
 
   const onCloseRef = useRef(onClose);
   useEffect(() => {
@@ -645,8 +674,10 @@ export function BoardCanvas({
     });
 
     channelRef.current = ch;
+    setActiveChannel(ch);
     return () => {
       supabase.removeChannel(ch);
+      setActiveChannel(null);
     };
   }, [nodeId, supabase, currentUserId, userName, userColor, userRole]);
 
@@ -670,27 +701,7 @@ export function BoardCanvas({
     }
   }, []);
 
-  const handleKickUser = useCallback((targetId: string) => {
-    if (userRole !== 'owner') return;
-    if (channelRef.current?.state === 'joined') {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'kick_user',
-        payload: { userId: targetId }
-      });
-    }
-  }, [userRole]);
 
-  const handleToggleDrawing = useCallback((targetId: string, currentVal: boolean) => {
-    if (userRole !== 'owner') return;
-    if (channelRef.current?.state === 'joined') {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'toggle_drawing',
-        payload: { userId: targetId, canDraw: !currentVal }
-      });
-    }
-  }, [userRole]);
 
   const lastViewportBroadcastTimeRef = useRef(0);
   useEffect(() => {
@@ -1436,13 +1447,19 @@ export function BoardCanvas({
     if (selectedStrokeIds.length === 1) {
       const s = strokes.find((st) => st.id === selectedStrokeIds[0]);
       if (s && (s.tool === 'line' || s.tool === 'arrow')) {
-        const handleSize = 10 / view.scale;
-        const tolerance = 6 / view.scale;
+        const grabRadius = 24 / view.scale; // 24 screen pixels magnetic radius
+        let closestIndex = -1;
+        let minDist = Infinity;
         for (let i = 0; i < s.points.length; i++) {
           const p = s.points[i];
-          if (Math.hypot(x - p.x, y - p.y) <= (handleSize / 2 + tolerance)) {
-            return { type: 'node', nodeIndex: i };
+          const dist = Math.hypot(x - p.x, y - p.y);
+          if (dist < minDist) {
+            minDist = dist;
+            closestIndex = i;
           }
+        }
+        if (minDist <= grabRadius) {
+          return { type: 'node', nodeIndex: closestIndex };
         }
       }
     }
@@ -1450,8 +1467,6 @@ export function BoardCanvas({
     const box = getCombinedBoundingBox(selectedStrokeIds);
     if (box.minX === Infinity) return null;
 
-    const handleSize = 8 / view.scale;
-    const tolerance = 6 / view.scale;
     const rotateLineLen = 20 / view.scale;
 
     const handles = [
@@ -1466,10 +1481,20 @@ export function BoardCanvas({
       { x: box.minX + box.w / 2, y: box.minY - rotateLineLen, name: 'rotate' },
     ];
 
+    const grabRadius = 24 / view.scale; // 24 screen pixels magnetic radius
+    let closestHandle: typeof handles[0] | null = null;
+    let minDist = Infinity;
+
     for (const h of handles) {
-      if (Math.abs(x - h.x) <= (handleSize / 2 + tolerance) && Math.abs(y - h.y) <= (handleSize / 2 + tolerance)) {
-        return { type: h.name };
+      const dist = Math.hypot(x - h.x, y - h.y);
+      if (dist < minDist) {
+        minDist = dist;
+        closestHandle = h;
       }
+    }
+
+    if (closestHandle && minDist <= grabRadius) {
+      return { type: closestHandle.name };
     }
     return null;
   }, [selectedStrokeIds, strokes, getCombinedBoundingBox, view.scale]);
@@ -1495,6 +1520,33 @@ export function BoardCanvas({
     });
   }, [selectedStrokeIds, currentUserId, persistStrokes]);
 
+  const getSnappedCoords = useCallback((cx: number, cy: number, sheetObj: any) => {
+    let snapX = cx;
+    let snapY = cy;
+
+    if (sheetObj && sheetObj.innerFrameShow === true) {
+      const fMargin = sheetObj.innerFrameMargin !== undefined ? sheetObj.innerFrameMargin : 15;
+      const fx = sheetObj.x + fMargin;
+      const fy = sheetObj.y + fMargin;
+      const fxRight = sheetObj.x + sheetObj.width - fMargin;
+      const fyBottom = sheetObj.y + sheetObj.height - fMargin;
+      const threshold = 10; // Snap threshold in canvas pixels
+
+      if (Math.abs(cx - fx) < threshold) {
+        snapX = fx;
+      } else if (Math.abs(cx - fxRight) < threshold) {
+        snapX = fxRight;
+      }
+
+      if (Math.abs(cy - fy) < threshold) {
+        snapY = fy;
+      } else if (Math.abs(cy - fyBottom) < threshold) {
+        snapY = fyBottom;
+      }
+    }
+    return { x: snapX, y: snapY };
+  }, []);
+
   // Styling properties handlers
   const handleBrushColorChange = useCallback((newColor: string) => {
     setColor(newColor);
@@ -1504,6 +1556,103 @@ export function BoardCanvas({
       return [newColor, ...filtered].slice(0, 3);
     });
   }, [updateSelectedStrokesProperty]);
+
+  const handleGeometryChange = useCallback((property: 'x' | 'y' | 'w' | 'h', newVal: number) => {
+    if (selectedStrokeIds.length === 0) return;
+    const box = getCombinedBoundingBox(selectedStrokeIds);
+    if (!box || isNaN(newVal)) return;
+
+    setStrokes((prev) => {
+      const next = prev.map((s) => {
+        if (!selectedStrokeIds.includes(s.id)) return s;
+        let newPts = s.points.map((p) => {
+          if (property === 'x') {
+            const dx = newVal - box.minX;
+            return { x: p.x + dx, y: p.y };
+          } else if (property === 'y') {
+            const dy = newVal - box.minY;
+            return { x: p.x, y: p.y + dy };
+          } else if (property === 'w') {
+            if (box.w === 0) return p;
+            const scaleX = newVal / box.w;
+            return { x: box.minX + (p.x - box.minX) * scaleX, y: p.y };
+          } else if (property === 'h') {
+            if (box.h === 0) return p;
+            const scaleY = newVal / box.h;
+            return { x: p.x, y: box.minY + (p.y - box.minY) * scaleY };
+          }
+          return p;
+        });
+
+        const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+        if (isSheetsMode && activeSheet) {
+          newPts = newPts.map((p) => {
+            const px = Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x));
+            const py = Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y));
+            return getSnappedCoords(px, py, activeSheet);
+          });
+        }
+
+        const updated = { ...s, points: newPts };
+        if (channelRef.current?.state === 'joined') {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'stroke_add',
+            payload: { stroke: updated, userId: currentUserId }
+          });
+        }
+        return updated;
+      });
+      persistStrokes(next);
+      return next;
+    });
+  }, [selectedStrokeIds, getCombinedBoundingBox, isSheetsMode, sheets, activeSheetIndex, currentUserId, persistStrokes, getSnappedCoords]);
+
+  const handleNumericRotate = useCallback((degDelta: number) => {
+    if (selectedStrokeIds.length === 0) return;
+    const box = getCombinedBoundingBox(selectedStrokeIds);
+    if (!box) return;
+
+    const cx = box.minX + box.w / 2;
+    const cy = box.minY + box.h / 2;
+    const angle = (degDelta * Math.PI) / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+
+    setStrokes((prev) => {
+      const next = prev.map((s) => {
+        if (!selectedStrokeIds.includes(s.id)) return s;
+        let newPts = s.points.map((p) => {
+          const dx = p.x - cx;
+          const dy = p.y - cy;
+          return {
+            x: cx + dx * cos - dy * sin,
+            y: cy + dx * sin + dy * cos,
+          };
+        });
+
+        const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
+        if (isSheetsMode && activeSheet) {
+          newPts = newPts.map((p) => ({
+            x: Math.max(activeSheet.x, Math.min(activeSheet.x + activeSheet.width, p.x)),
+            y: Math.max(activeSheet.y, Math.min(activeSheet.y + activeSheet.height, p.y))
+          }));
+        }
+
+        const updated = { ...s, points: newPts };
+        if (channelRef.current?.state === 'joined') {
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'stroke_add',
+            payload: { stroke: updated, userId: currentUserId }
+          });
+        }
+        return updated;
+      });
+      persistStrokes(next);
+      return next;
+    });
+  }, [selectedStrokeIds, getCombinedBoundingBox, isSheetsMode, sheets, activeSheetIndex, currentUserId, persistStrokes]);
 
   const handleStrokeWidthChange = useCallback((newWidth: number) => {
     setStrokeWidth(newWidth);
@@ -2811,7 +2960,7 @@ export function BoardCanvas({
     ctx.save();
     ctx.scale(dpr, dpr);
 
-    // 1. Draw strokes first (so eraser with 'destination-out' only cuts drawings, not sheets/grid)
+    // 1. Draw strokes first (so eraser with 'destination-out' only cuts drawings, not sheets/grid/photos)
     ctx.save();
     ctx.translate(view.offsetX, view.offsetY);
     ctx.scale(view.scale, view.scale);
@@ -2825,19 +2974,71 @@ export function BoardCanvas({
 
     const activeSheet = sheets[activeSheetIndex] || sheets[0];
 
+    // Setup offscreen canvas for drawing strokes (so eraser destination-out doesn't delete images/sheets)
+    if (!offscreenCanvasRef.current) {
+      offscreenCanvasRef.current = document.createElement('canvas');
+    }
+    const offscreenCanvas = offscreenCanvasRef.current;
+    if (offscreenCanvas.width !== canvas.width || offscreenCanvas.height !== canvas.height) {
+      offscreenCanvas.width = canvas.width;
+      offscreenCanvas.height = canvas.height;
+    }
+    const offCtx = offscreenCanvas.getContext('2d');
+    if (offCtx) {
+      offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+      offCtx.save();
+      offCtx.scale(dpr, dpr);
+      offCtx.translate(view.offsetX, view.offsetY);
+      offCtx.scale(view.scale, view.scale);
+    }
+
+    let hasPendingDrawings = false;
+    const flushOffscreen = () => {
+      if (!hasPendingDrawings || !offCtx) return;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(offscreenCanvas, 0, 0);
+      ctx.restore();
+
+      offCtx.save();
+      offCtx.setTransform(1, 0, 0, 1, 0, 0);
+      offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+      offCtx.restore();
+
+      hasPendingDrawings = false;
+    };
+
     strokes.forEach((stroke) => {
       if (isSheetsMode && activeSheet && !isStrokeInSheet(stroke, activeSheet)) return;
       if (isStrokeInViewport(stroke, visibleRect)) {
-        drawStrokeWithConnector(ctx, stroke, selectedStrokeIds.includes(stroke.id));
+        if (stroke.tool === 'image') {
+          flushOffscreen();
+          drawStrokeWithConnector(ctx, stroke, selectedStrokeIds.includes(stroke.id));
+        } else if (offCtx) {
+          drawStrokeWithConnector(offCtx, stroke, selectedStrokeIds.includes(stroke.id));
+          hasPendingDrawings = true;
+        }
       }
     });
 
     Object.values(remoteDrawings).forEach((stroke) => {
       if (isSheetsMode && activeSheet && !isStrokeInSheet(stroke, activeSheet)) return;
       if (isStrokeInViewport(stroke, visibleRect)) {
-        drawStrokeWithConnector(ctx, stroke, false);
+        if (stroke.tool === 'image') {
+          flushOffscreen();
+          drawStrokeWithConnector(ctx, stroke, false);
+        } else if (offCtx) {
+          drawStrokeWithConnector(offCtx, stroke, false);
+          hasPendingDrawings = true;
+        }
       }
     });
+
+    flushOffscreen();
+
+    if (offCtx) {
+      offCtx.restore();
+    }
 
     // Selected bounding box
     if (selectedStrokeIds.length > 0 && tool === 'select') {
@@ -2855,45 +3056,135 @@ export function BoardCanvas({
         ctx.setLineDash([]);
         const handleSize = 8 / view.scale;
         const positions = [
-          { x: box.minX, y: box.minY },
-          { x: box.maxX, y: box.minY },
-          { x: box.minX, y: box.maxY },
-          { x: box.maxX, y: box.maxY },
-          { x: box.minX + box.w / 2, y: box.minY },
-          { x: box.minX + box.w / 2, y: box.maxY },
-          { x: box.minX, y: box.minY + box.h / 2 },
-          { x: box.maxX, y: box.minY + box.h / 2 },
+          { x: box.minX, y: box.minY, name: 'tl' },
+          { x: box.maxX, y: box.minY, name: 'tr' },
+          { x: box.minX, y: box.maxY, name: 'bl' },
+          { x: box.maxX, y: box.maxY, name: 'br' },
+          { x: box.minX + box.w / 2, y: box.minY, name: 't' },
+          { x: box.minX + box.w / 2, y: box.maxY, name: 'b' },
+          { x: box.minX, y: box.minY + box.h / 2, name: 'l' },
+          { x: box.maxX, y: box.minY + box.h / 2, name: 'r' },
         ];
         positions.forEach((pos) => {
+          const isHovered = hoveredHandle && hoveredHandle.type === pos.name;
+          const currentHandleSize = isHovered ? 14 / view.scale : handleSize;
+
+          ctx.save();
           ctx.beginPath();
-          ctx.rect(pos.x - handleSize / 2, pos.y - handleSize / 2, handleSize, handleSize);
+          ctx.rect(pos.x - currentHandleSize / 2, pos.y - currentHandleSize / 2, currentHandleSize, currentHandleSize);
+          if (isHovered) {
+            ctx.fillStyle = '#6366f1';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2 / view.scale;
+            ctx.shadowColor = 'rgba(99, 102, 241, 0.6)';
+            ctx.shadowBlur = 6;
+          } else {
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#6366f1';
+            ctx.lineWidth = 1.5 / view.scale;
+          }
           ctx.fill(); ctx.stroke();
+          ctx.restore();
         });
 
         // Rotation Handle
         const rotateLineLen = 20 / view.scale;
+        const isRotateHovered = hoveredHandle && hoveredHandle.type === 'rotate';
+        const rotateHandleSize = isRotateHovered ? 14 / view.scale : handleSize;
+
+        ctx.save();
         ctx.beginPath();
         ctx.moveTo(box.minX + box.w / 2, box.minY);
         ctx.lineTo(box.minX + box.w / 2, box.minY - rotateLineLen);
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 1.5 / view.scale;
         ctx.stroke();
+
         ctx.beginPath();
-        ctx.arc(box.minX + box.w / 2, box.minY - rotateLineLen, handleSize / 2, 0, Math.PI * 2);
+        ctx.arc(box.minX + box.w / 2, box.minY - rotateLineLen, rotateHandleSize / 2, 0, Math.PI * 2);
+        if (isRotateHovered) {
+          ctx.fillStyle = '#6366f1';
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2 / view.scale;
+          ctx.shadowColor = 'rgba(99, 102, 241, 0.6)';
+          ctx.shadowBlur = 6;
+        } else {
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = '#6366f1';
+          ctx.lineWidth = 1.5 / view.scale;
+        }
         ctx.fill(); ctx.stroke();
+        ctx.restore();
 
         // Draw individual connector nodes if editing a single line/arrow
         if (selectedStrokeIds.length === 1) {
           const singleStroke = strokes.find((s) => s.id === selectedStrokeIds[0]);
           if (singleStroke && (singleStroke.tool === 'line' || singleStroke.tool === 'arrow')) {
-            ctx.fillStyle = '#10b981'; // Green for node handles
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.5 / view.scale;
             const nodeSize = 8 / view.scale;
-            singleStroke.points.forEach((p) => {
+            ctx.save();
+            singleStroke.points.forEach((p, idx) => {
+              const isNodeHovered = hoveredHandle && hoveredHandle.type === 'node' && hoveredHandle.nodeIndex === idx;
+              const currentNodeSize = isNodeHovered ? 14 / view.scale : nodeSize;
+              
               ctx.beginPath();
-              ctx.arc(p.x, p.y, nodeSize / 2, 0, Math.PI * 2);
+              ctx.arc(p.x, p.y, currentNodeSize / 2, 0, Math.PI * 2);
+              if (isNodeHovered) {
+                ctx.fillStyle = '#10b981';
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2 / view.scale;
+                ctx.shadowColor = 'rgba(16, 185, 129, 0.6)';
+                ctx.shadowBlur = 6;
+              } else {
+                ctx.fillStyle = '#10b981';
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.5 / view.scale;
+              }
               ctx.fill(); ctx.stroke();
             });
+            ctx.restore();
           }
+        }
+
+        // Dynamic measurement badge when dragging, resizing, or rotating
+        const drag = dragStartRef.current;
+        if (drag && drag.mode !== 'none' && drag.mode !== 'pan') {
+          ctx.save();
+          ctx.fillStyle = 'rgba(9, 9, 11, 0.9)'; // zinc-950
+          ctx.strokeStyle = 'rgba(217, 70, 239, 0.4)'; // fuchsia-500
+          ctx.lineWidth = 1.5 / view.scale;
+          ctx.setLineDash([]);
+          
+          const tooltipW = 120 / view.scale;
+          const tooltipH = 26 / view.scale;
+          const tx = box.minX + box.w / 2 - tooltipW / 2;
+          const ty = box.maxY + 15 / view.scale;
+          
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(tx, ty, tooltipW, tooltipH, 6 / view.scale);
+          else ctx.rect(tx, ty, tooltipW, tooltipH);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `600 ${Math.max(10 / view.scale, 8)}px Inter, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          let text = `${Math.round(box.w)} × ${Math.round(box.h)} px`;
+          if (drag.mode === 'rotate') {
+            const cx = box.minX + box.w / 2;
+            const cy = box.minY + box.h / 2;
+            const angleStart = Math.atan2(drag.startY - cy, drag.startX - cx);
+            const angleCurrent = Math.atan2(pointerRef.current.y - cy, pointerRef.current.x - cx);
+            let angleDiff = angleCurrent - angleStart;
+            const angleDeg = (angleDiff * 180) / Math.PI;
+            const snappedDeg = Math.round(angleDeg / 15) * 15;
+            const finalDeg = (isShiftPressedRef.current || Math.abs(angleDeg - snappedDeg) < 3.5) ? snappedDeg : Math.round(angleDeg);
+            text = `Angle: ${finalDeg}°`;
+          }
+
+          ctx.fillText(text, tx + tooltipW / 2, ty + tooltipH / 2);
+          ctx.restore();
         }
 
         ctx.restore();
@@ -2995,7 +3286,7 @@ export function BoardCanvas({
 
     ctx.restore(); // restores inner translate/scale
     ctx.restore(); // restores outer scale(dpr)
-  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout, redrawTrigger, canvasSize]);
+  }, [bgColor, strokes, selectedStrokeIds, drawStrokeWithConnector, remoteDrawings, gridType, gridSize, view, regionSelectStart, regionSelectCurrent, getCombinedBoundingBox, isStrokeInViewport, tool, getStrokeBoundingBox, activeSheetIndex, isSheetsMode, sheets, isStrokeInSheet, drawSheetBackgroundAndLayout, redrawTrigger, canvasSize, hoveredHandle]);
 
   // Schedule canvas redraw via rAF instead of blocking synchronously
   useLayoutEffect(() => {
@@ -3014,35 +3305,11 @@ export function BoardCanvas({
     };
   }, [renderCanvasMain]);
 
-  const getSnappedCoords = useCallback((cx: number, cy: number, sheetObj: any) => {
-    let snapX = cx;
-    let snapY = cy;
-
-    if (sheetObj && sheetObj.innerFrameShow === true) {
-      const fMargin = sheetObj.innerFrameMargin !== undefined ? sheetObj.innerFrameMargin : 15;
-      const fx = sheetObj.x + fMargin;
-      const fy = sheetObj.y + fMargin;
-      const fxRight = sheetObj.x + sheetObj.width - fMargin;
-      const fyBottom = sheetObj.y + sheetObj.height - fMargin;
-      const threshold = 10; // Snap threshold in canvas pixels
-
-      if (Math.abs(cx - fx) < threshold) {
-        snapX = fx;
-      } else if (Math.abs(cx - fxRight) < threshold) {
-        snapX = fxRight;
-      }
-
-      if (Math.abs(cy - fy) < threshold) {
-        snapY = fy;
-      } else if (Math.abs(cy - fyBottom) < threshold) {
-        snapY = fyBottom;
-      }
-    }
-    return { x: snapX, y: snapY };
-  }, []);
 
   /* ─── Pointer Input Observers ─── */
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (isMultiTouchRef.current) return;
+
     // Close any floating windows/menus when clicking on the board canvas
     closeAllFloatingMenus();
 
@@ -3075,7 +3342,7 @@ export function BoardCanvas({
     const isSpacePan = e.button === 0 && isSpacePressedRef.current;
     
     const hit = [...strokes].reverse().find((s) => (!isSheetsMode || (activeSheet && isStrokeInSheet(s, activeSheet))) && hitTestStroke(s, x, y, s.tool === 'highlighter' ? 14 : 8));
-    const isSelectBgPan = tool === 'select' && e.button === 0 && !hit;
+    const isSelectBgPan = false; // Left-click drag on empty space does region selection instead of panning
 
     if (isMiddleClick || isSpacePan || isSelectBgPan) {
       if (isSelectBgPan) {
@@ -3208,6 +3475,7 @@ export function BoardCanvas({
   }, [tool, toCanvasCoords, strokes, selectedStrokeIds, hitTestStroke, hitTestSelectionHandle, getCombinedBoundingBox, snapToGrid, gridSize, view, color, fillColor, opacity, fontSize, fontFamily, fontWeight, textAlign, arrowType, arrowheadStart, arrowheadEnd, renderOverlay, closeAllFloatingMenus, textInput, isSheetsMode, sheets, activeSheetIndex, isStrokeInSheet]);
 
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (isMultiTouchRef.current) return;
     let { x, y } = toCanvasCoords(e.clientX, e.clientY);
     const drag = dragStartRef.current;
     const activeSheet = isSheetsMode ? (sheets[activeSheetIndex] || sheets[0]) : null;
@@ -3219,6 +3487,23 @@ export function BoardCanvas({
       const snapped = getSnappedCoords(x, y, activeSheet);
       x = snapped.x;
       y = snapped.y;
+    }
+
+    if (!pointerRef.current.down && tool === 'select') {
+      const handle = hitTestSelectionHandle(x, y);
+      setHoveredHandle((prev) => {
+        const handleId = handle ? `${handle.type}-${handle.nodeIndex ?? ''}` : '';
+        const prevId = prev ? `${prev.type}-${prev.nodeIndex ?? ''}` : '';
+        if (handleId !== prevId) {
+          return handle;
+        }
+        return prev;
+      });
+    } else if (pointerRef.current.down) {
+      setHoveredHandle((prev) => {
+        if (prev !== null) return null;
+        return prev;
+      });
     }
 
     if (drag.mode === 'drag-node' && selectedStrokeIds.length === 1) {
@@ -3251,7 +3536,7 @@ export function BoardCanvas({
 
       // Throttle broadcast
       const now = Date.now();
-      if (now - lastBroadcastTimeRef.current > 40) {
+      if (now - lastBroadcastTimeRef.current > 16) {
         lastBroadcastTimeRef.current = now;
         if (channelRef.current?.state === 'joined') {
           const updated = strokes.find((s) => s.id === selectedStrokeIds[0]);
@@ -3307,7 +3592,7 @@ export function BoardCanvas({
       }));
 
       const now = Date.now();
-      if (now - lastBroadcastTimeRef.current > 40) {
+      if (now - lastBroadcastTimeRef.current > 16) {
         lastBroadcastTimeRef.current = now;
         if (channelRef.current?.state === 'joined') {
           selectedStrokeIds.forEach((id) => {
@@ -3412,9 +3697,10 @@ export function BoardCanvas({
       const angleCurrent = Math.atan2(y - cy, x - cx);
       let angle = angleCurrent - angleStart;
 
-      if (snapToGrid) {
-        const angleDeg = (angle * 180) / Math.PI;
-        angle = ((Math.round(angleDeg / 15) * 15) * Math.PI) / 180;
+      const angleDeg = (angle * 180) / Math.PI;
+      const snappedDeg = Math.round(angleDeg / 15) * 15;
+      if (e.shiftKey || Math.abs(angleDeg - snappedDeg) < 3.5 || snapToGrid) {
+        angle = (snappedDeg * Math.PI) / 180;
       }
 
       const cos = Math.cos(angle);
@@ -3528,7 +3814,7 @@ export function BoardCanvas({
 
       // Throttle broadcast
       const now = Date.now();
-      if (now - lastBroadcastTimeRef.current > 40) {
+      if (now - lastBroadcastTimeRef.current > 16) {
         lastBroadcastTimeRef.current = now;
         if (channelRef.current?.state === 'joined') {
           channelRef.current.send({
@@ -3560,7 +3846,7 @@ export function BoardCanvas({
     } else {
       // Broadcast simple cursor move
       const now = Date.now();
-      if (now - lastBroadcastTimeRef.current > 45) {
+      if (now - lastBroadcastTimeRef.current > 16) {
         lastBroadcastTimeRef.current = now;
         if (channelRef.current?.state === 'joined') {
           channelRef.current.send({
@@ -3571,9 +3857,11 @@ export function BoardCanvas({
         }
       }
     }
-  }, [tool, selectedStrokeIds, snapToGrid, gridSize, toCanvasCoords, renderOverlay, getCombinedBoundingBox, currentUserId, userName, userColor, color, strokeWidth, useFill, fillColor, opacity, arrowType, arrowheadStart, arrowheadEnd, isSheetsMode, sheets, activeSheetIndex]);
+  }, [tool, selectedStrokeIds, snapToGrid, gridSize, toCanvasCoords, renderOverlay, getCombinedBoundingBox, currentUserId, userName, userColor, color, strokeWidth, useFill, fillColor, opacity, arrowType, arrowheadStart, arrowheadEnd, isSheetsMode, sheets, activeSheetIndex, strokes, getSnappedCoords, hitTestSelectionHandle]);
 
   const onPointerUp = useCallback(() => {
+    setHoveredHandle(null);
+    if (isMultiTouchRef.current) return;
     const drag = dragStartRef.current;
     
     if (drag.mode === 'region-select' && regionSelectStart && regionSelectCurrent) {
@@ -4759,6 +5047,9 @@ export function BoardCanvas({
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        isShiftPressedRef.current = true;
+      }
       if (e.code === 'Space' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
         e.preventDefault();
         setIsSpacePressed(true);
@@ -4767,20 +5058,113 @@ export function BoardCanvas({
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        isShiftPressedRef.current = false;
+      }
       if (e.code === 'Space') {
         setIsSpacePressed(false);
         isSpacePressedRef.current = false;
       }
     };
 
+    // Touch handlers for tablet multi-touch gestures (zoom & pan)
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        isMultiTouchRef.current = true;
+        
+        // Cancel single-finger drawing or selection marquee
+        pointerRef.current = { ...pointerRef.current, down: false };
+        setPointer((p) => ({ ...p, down: false }));
+        dragStartRef.current = { mode: 'none', startX: 0, startY: 0, originalStrokes: {} };
+        currentPenRef.current = [];
+        setCurrentPen([]);
+        setRegionSelectStart(null);
+        setRegionSelectCurrent(null);
+        
+        const overlay = overlayRef.current;
+        if (overlay) {
+          const ctx = overlay.getContext('2d');
+          if (ctx) ctx.clearRect(0, 0, overlay.width, overlay.height);
+        }
+
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        initialTouchDistanceRef.current = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        initialTouchCenterRef.current = {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2
+        };
+        initialViewRef.current = { ...viewRef.current };
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length >= 2 && initialTouchDistanceRef.current && initialTouchCenterRef.current && initialViewRef.current) {
+        e.preventDefault();
+        
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentDistance = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const currentCenter = {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2
+        };
+
+        const distanceRatio = currentDistance / initialTouchDistanceRef.current;
+        const initialCenter = initialTouchCenterRef.current;
+        const initV = initialViewRef.current;
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+
+        let newScale = initV.scale * distanceRatio;
+        newScale = Math.max(0.1, Math.min(8, newScale));
+
+        const initRefX = initialCenter.x - rect.left;
+        const initRefY = initialCenter.y - rect.top;
+
+        const mouseX = (initRefX - initV.offsetX) / initV.scale;
+        const mouseY = (initRefY - initV.offsetY) / initV.scale;
+
+        const panX = currentCenter.x - initialCenter.x;
+        const panY = currentCenter.y - initialCenter.y;
+
+        setView({
+          scale: newScale,
+          offsetX: initRefX + panX - mouseX * newScale,
+          offsetY: initRefY + panY - mouseY * newScale,
+        });
+      }
+    };
+
+    const onTouchEnd = () => {
+      if (initialTouchDistanceRef.current) {
+        initialTouchDistanceRef.current = null;
+        initialTouchCenterRef.current = null;
+        initialViewRef.current = null;
+        setTimeout(() => {
+          isMultiTouchRef.current = false;
+        }, 100);
+      }
+    };
+
     wrap.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    wrap.addEventListener('touchstart', onTouchStart, { passive: false });
+    wrap.addEventListener('touchmove', onTouchMove, { passive: false });
+    wrap.addEventListener('touchend', onTouchEnd);
+    wrap.addEventListener('touchcancel', onTouchEnd);
 
     return () => {
       wrap.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      wrap.removeEventListener('touchstart', onTouchStart);
+      wrap.removeEventListener('touchmove', onTouchMove);
+      wrap.removeEventListener('touchend', onTouchEnd);
+      wrap.removeEventListener('touchcancel', onTouchEnd);
     };
   }, [zoomAt]);
 
@@ -5263,29 +5647,54 @@ export function BoardCanvas({
       ctx.strokeRect(activeSheet.x, activeSheet.y, activeSheet.width, activeSheet.height);
     }
 
+    // Setup offscreen canvas for minimap
+    if (!minimapOffscreenCanvasRef.current) {
+      minimapOffscreenCanvasRef.current = document.createElement('canvas');
+    }
+    const offCanvas = minimapOffscreenCanvasRef.current;
+    if (offCanvas.width !== canvas.width || offCanvas.height !== canvas.height) {
+      offCanvas.width = canvas.width;
+      offCanvas.height = canvas.height;
+    }
+    const offCtx = offCanvas.getContext('2d');
+    if (offCtx) {
+      offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+      offCtx.save();
+      offCtx.translate(startX, startY);
+      offCtx.scale(mapScale, mapScale);
+      offCtx.translate(-minX, -minY);
+    }
+
+    let hasPendingDrawings = false;
+    const flushMinimapOffscreen = () => {
+      if (!hasPendingDrawings || !offCtx) return;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(offCanvas, 0, 0);
+      ctx.restore();
+
+      offCtx.save();
+      offCtx.setTransform(1, 0, 0, 1, 0, 0);
+      offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+      offCtx.restore();
+
+      hasPendingDrawings = false;
+    };
+
     // 3. Draw simplified strokes
     strokes.forEach((s) => {
       if (!s.points || s.points.length === 0) return;
       if (isSheetsMode && activeSheet && !isStrokeInSheet(s, activeSheet)) return;
 
-      ctx.save();
-      ctx.strokeStyle = s.color || '#ffffff';
-      ctx.lineWidth = Math.max(1, (s.width || 2) * 0.5) / mapScale;
-      ctx.fillStyle = s.fillColor || s.color || 'rgba(255,255,255,0.1)';
-      ctx.globalAlpha = 0.6;
+      if (s.tool === 'image') {
+        flushMinimapOffscreen();
 
-      if (s.tool === 'pen' || s.tool === 'highlighter' || s.tool === 'eraser') {
-        ctx.beginPath();
-        s.points.forEach((p, idx) => {
-          if (idx === 0) ctx.moveTo(p.x, p.y);
-          else ctx.lineTo(p.x, p.y);
-        });
-        ctx.stroke();
-      } else if (s.tool === 'text') {
-        const p = s.points[0];
-        ctx.fillStyle = s.color || '#ffffff';
-        ctx.fillRect(p.x, p.y - 12, (s.text?.length || 5) * 6, 12);
-      } else if (s.tool === 'image') {
+        ctx.save();
+        ctx.strokeStyle = s.color || '#ffffff';
+        ctx.lineWidth = Math.max(1, (s.width || 2) * 0.5) / mapScale;
+        ctx.fillStyle = s.fillColor || s.color || 'rgba(255,255,255,0.1)';
+        ctx.globalAlpha = 0.6;
+
         const p0 = s.points[0];
         const pN = s.points[s.points.length - 1];
         const px = Math.min(p0.x, pN.x);
@@ -5308,25 +5717,56 @@ export function BoardCanvas({
           ctx.fillRect(px, py, pw, ph);
           ctx.strokeRect(px, py, pw, ph);
         }
-      } else if (s.points.length >= 2) {
-        const p0 = s.points[0];
-        const pN = s.points[s.points.length - 1];
-        const px = Math.min(p0.x, pN.x);
-        const py = Math.min(p0.y, pN.y);
-        const pw = Math.abs(pN.x - p0.x);
-        const ph = Math.abs(pN.y - p0.y);
-        
-        ctx.beginPath();
-        if (s.tool === 'circle' || s.tool === 'ellipse') {
-          ctx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
-        } else {
-          ctx.rect(px, py, pw, ph);
+        ctx.restore();
+      } else if (offCtx) {
+        offCtx.save();
+        offCtx.strokeStyle = s.color || '#ffffff';
+        offCtx.lineWidth = Math.max(1, (s.width || 2) * 0.5) / mapScale;
+        offCtx.fillStyle = s.fillColor || s.color || 'rgba(255,255,255,0.1)';
+        offCtx.globalAlpha = 0.6;
+
+        if (s.tool === 'pen' || s.tool === 'highlighter' || s.tool === 'eraser') {
+          if (s.tool === 'eraser') {
+            offCtx.globalCompositeOperation = 'destination-out';
+            offCtx.lineWidth = Math.max(1, (s.width || 2) * 3) / mapScale;
+          }
+          offCtx.beginPath();
+          s.points.forEach((p, idx) => {
+            if (idx === 0) offCtx.moveTo(p.x, p.y);
+            else offCtx.lineTo(p.x, p.y);
+          });
+          offCtx.stroke();
+        } else if (s.tool === 'text') {
+          const p = s.points[0];
+          offCtx.fillStyle = s.color || '#ffffff';
+          offCtx.fillRect(p.x, p.y - 12, (s.text?.length || 5) * 6, 12);
+        } else if (s.points.length >= 2) {
+          const p0 = s.points[0];
+          const pN = s.points[s.points.length - 1];
+          const px = Math.min(p0.x, pN.x);
+          const py = Math.min(p0.y, pN.y);
+          const pw = Math.abs(pN.x - p0.x);
+          const ph = Math.abs(pN.y - p0.y);
+          
+          offCtx.beginPath();
+          if (s.tool === 'circle' || s.tool === 'ellipse') {
+            offCtx.ellipse(px + pw / 2, py + ph / 2, pw / 2, ph / 2, 0, 0, Math.PI * 2);
+          } else {
+            offCtx.rect(px, py, pw, ph);
+          }
+          if (s.fill || s.tool === 'sticky') offCtx.fill();
+          offCtx.stroke();
         }
-        if (s.fill || s.tool === 'sticky') ctx.fill();
-        ctx.stroke();
+        offCtx.restore();
+        hasPendingDrawings = true;
       }
-      ctx.restore();
     });
+
+    flushMinimapOffscreen();
+
+    if (offCtx) {
+      offCtx.restore();
+    }
 
     // 4. Draw current viewport rectangle
     ctx.restore(); // Restore to normal canvas coordinate space (no map scale)
@@ -5457,7 +5897,36 @@ export function BoardCanvas({
     image: 'crosshair',
   };
 
-  const currentCursor = isPanning ? 'grabbing' : isSpacePressed ? 'grab' : cursorStyle[tool];
+  const getCursorForHandle = (handleName: string): string => {
+    switch (handleName) {
+      case 'tl':
+      case 'br':
+        return 'nwse-resize';
+      case 'tr':
+      case 'bl':
+        return 'nesw-resize';
+      case 't':
+      case 'b':
+        return 'ns-resize';
+      case 'l':
+      case 'r':
+        return 'ew-resize';
+      case 'rotate':
+        return 'grab';
+      case 'node':
+        return 'move';
+      default:
+        return 'default';
+    }
+  };
+
+  const currentCursor = isPanning
+    ? 'grabbing'
+    : isSpacePressed
+    ? 'grab'
+    : (tool === 'select' && hoveredHandle)
+    ? getCursorForHandle(hoveredHandle.type)
+    : cursorStyle[tool];
 
   const toolsList: { id: Tool; icon: React.ReactNode; label: string; key: string }[] = [
     { id: 'select', icon: <MousePointer2 className="w-4 h-4" />, label: 'Select', key: 'V' },
@@ -5692,6 +6161,16 @@ export function BoardCanvas({
 
           {/* Right: Collaborators + Close */}
           <div className="flex items-center gap-2">
+            {workspaceId && workflowId && (
+              <button
+                onClick={() => setShowShareDialog(true)}
+                className="h-8 px-2.5 rounded-lg flex items-center gap-1.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs cursor-pointer shadow-md shadow-sky-600/20 transition-all shrink-0 mr-1"
+                title="Share Whiteboard"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share</span>
+              </button>
+            )}
             <button
               onClick={() => setShowProperties((prev) => !prev)}
               className={`h-8 w-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer ${
@@ -5747,7 +6226,6 @@ export function BoardCanvas({
                               <span className="text-[9px] text-zinc-500 uppercase font-mono leading-none mt-0.5">{col.role || 'collaborator'}</span>
                             </div>
                           </div>
-                          
                           <div className="flex items-center gap-1 shrink-0">
                             {/* Follow Button */}
                             <button
@@ -5767,7 +6245,16 @@ export function BoardCanvas({
                               <>
                                 {/* Perm toggle */}
                                 <button
-                                  onClick={() => handleToggleDrawing(uid, canDraw)}
+                                   onClick={() => {
+                                     if (userRole !== 'owner') return;
+                                     if (activeChannel?.state === 'joined') {
+                                       activeChannel.send({
+                                         type: 'broadcast',
+                                         event: 'toggle_drawing',
+                                         payload: { userId: uid, canDraw: !canDraw }
+                                       });
+                                     }
+                                   }}
                                   className={`h-7 w-7 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
                                     canDraw 
                                       ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' 
@@ -5780,7 +6267,16 @@ export function BoardCanvas({
                                 
                                 {/* Kick Button */}
                                 <button
-                                  onClick={() => handleKickUser(uid)}
+                                  onClick={() => {
+                                    if (userRole !== 'owner') return;
+                                    if (activeChannel?.state === 'joined') {
+                                      activeChannel.send({
+                                        type: 'broadcast',
+                                        event: 'kick_user',
+                                        payload: { userId: uid }
+                                      });
+                                    }
+                                  }}
                                   className="h-7 w-7 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 flex items-center justify-center transition-all cursor-pointer"
                                   title="Kick user from board"
                                 >
@@ -6086,23 +6582,33 @@ export function BoardCanvas({
             />
 
             {/* Collaborator cursors */}
-            {collaboratorList.map(([uid, col]) => (
-              <div
-                key={uid}
-                className="absolute pointer-events-none z-30 transition-all duration-75"
-                style={{ left: col.x * view.scale + view.offsetX, top: col.y * view.scale + view.offsetY }}
-              >
-                <div className="w-4 h-4 relative">
-                  <MousePointer2 className="w-4 h-4 absolute" style={{ color: col.color, filter: 'drop-shadow(0 0 4px currentColor)' }} />
-                </div>
+            {collaboratorList.map(([uid, col]) => {
+              const xPos = col.x * view.scale + view.offsetX;
+              const yPos = col.y * view.scale + view.offsetY;
+              return (
                 <div
-                  className="mt-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold whitespace-nowrap shadow-lg"
-                  style={{ backgroundColor: col.color, color: '#000' }}
+                  key={uid}
+                  className="absolute pointer-events-none z-30"
+                  style={{
+                    left: 0,
+                    top: 0,
+                    transform: `translate3d(${xPos}px, ${yPos}px, 0)`,
+                    transition: 'transform 80ms cubic-bezier(0.1, 0.8, 0.25, 1)',
+                    willChange: 'transform'
+                  }}
                 >
-                  {col.name}
+                  <div className="w-4 h-4 relative">
+                    <MousePointer2 className="w-4 h-4 absolute" style={{ color: col.color, filter: 'drop-shadow(0 0 4px currentColor)' }} />
+                  </div>
+                  <div
+                    className="mt-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold whitespace-nowrap shadow-lg"
+                    style={{ backgroundColor: col.color, color: '#000' }}
+                  >
+                    {col.name}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Text/Sticky input area - scales with scale and pan */}
             {textInput.active && (() => {
@@ -6440,6 +6946,90 @@ export function BoardCanvas({
                     <Layers className="w-2.5 h-2.5" /> Dupl
                   </button>
                 </div>
+
+                {/* Geometry and Rotation steps */}
+                {(() => {
+                  const selectedBox = getCombinedBoundingBox(selectedStrokeIds);
+                  if (!selectedBox || selectedBox.w === undefined) return null;
+                  return (
+                    <div className="space-y-3 pt-3 border-t border-zinc-800/80">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Geometry</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[8px] text-zinc-500 font-bold block mb-1">X Position</label>
+                          <input
+                            type="number"
+                            value={Math.round(selectedBox.minX)}
+                            onChange={(e) => handleGeometryChange('x', Number(e.target.value))}
+                            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Y Position</label>
+                          <input
+                            type="number"
+                            value={Math.round(selectedBox.minY)}
+                            onChange={(e) => handleGeometryChange('y', Number(e.target.value))}
+                            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Width</label>
+                          <input
+                            type="number"
+                            min={5}
+                            value={Math.round(selectedBox.w)}
+                            onChange={(e) => handleGeometryChange('w', Math.max(5, Number(e.target.value)))}
+                            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[8px] text-zinc-500 font-bold block mb-1">Height</label>
+                          <input
+                            type="number"
+                            min={5}
+                            value={Math.round(selectedBox.h)}
+                            onChange={(e) => handleGeometryChange('h', Math.max(5, Number(e.target.value)))}
+                            className="w-full py-1 px-1.5 bg-zinc-950 border border-zinc-850 rounded-lg text-xs text-zinc-300 outline-none"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[8px] text-zinc-500 font-bold block mb-1">Rotate</label>
+                        <div className="grid grid-cols-4 gap-1">
+                          <button
+                            onClick={() => handleNumericRotate(-90)}
+                            className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
+                            title="Rotate -90°"
+                          >
+                            -90°
+                          </button>
+                          <button
+                            onClick={() => handleNumericRotate(-15)}
+                            className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
+                            title="Rotate -15°"
+                          >
+                            -15°
+                          </button>
+                          <button
+                            onClick={() => handleNumericRotate(15)}
+                            className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
+                            title="Rotate +15°"
+                          >
+                            +15°
+                          </button>
+                          <button
+                            onClick={() => handleNumericRotate(90)}
+                            className="py-1 px-1 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 rounded-lg text-[10px] text-zinc-300 font-medium cursor-pointer transition-all flex items-center justify-center"
+                            title="Rotate +90°"
+                          >
+                            +90°
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -7770,6 +8360,17 @@ export function BoardCanvas({
               </>
             )}
           </div>
+        )}
+        {showShareDialog && workspaceId && workflowId && (
+          <ShareDialog
+            locale={locale}
+            workflowId={workflowId}
+            workspaceId={workspaceId}
+            workflowName={workflowName}
+            userRole={userRole}
+            canShareLinks={canShareLinks}
+            onClose={() => setShowShareDialog(false)}
+          />
         )}
       </div>
     </div>

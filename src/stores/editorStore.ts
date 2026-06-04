@@ -129,6 +129,16 @@ export interface EditorState {
   // User Role
   userRole: string | null;
   setUserRole: (role: string | null) => void;
+
+  // Workflow sharing metadata
+  workspaceId: string | null;
+  setWorkspaceId: (id: string | null) => void;
+  workflowId: string | null;
+  setWorkflowId: (id: string | null) => void;
+  workflowName: string | null;
+  setWorkflowName: (name: string | null) => void;
+  canShareLinks: boolean;
+  setCanShareLinks: (canShare: boolean) => void;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -162,6 +172,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setPendingConnection: (pendingConnection) => set({ pendingConnection }),
   userRole: null,
   setUserRole: (userRole) => set({ userRole }),
+  workspaceId: null,
+  setWorkspaceId: (workspaceId) => set({ workspaceId }),
+  workflowId: null,
+  setWorkflowId: (workflowId) => set({ workflowId }),
+  workflowName: null,
+  setWorkflowName: (workflowName) => set({ workflowName }),
+  canShareLinks: false,
+  setCanShareLinks: (canShareLinks) => set({ canShareLinks }),
 
   setNodes: (nodes) => set({ nodes }),
   setEdges: (edges) => set({ edges }),

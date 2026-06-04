@@ -35,6 +35,9 @@ export function WhiteboardClient({
     isSheetsMode: !!initialBoardData?.isSheetsMode,
   });
 
+  const isSavingRef = useRef(false);
+  const pendingSaveDataRef = useRef<typeof initialBoardData | null>(null);
+
   const handleSave = useCallback(
     async (updates: {
       boardStrokes?: BoardStroke[];
@@ -47,17 +50,36 @@ export function WhiteboardClient({
         ...updates,
       };
       boardDataRef.current = merged;
+      pendingSaveDataRef.current = merged;
 
-      const { error } = await (supabase
-        .from('workflows') as any)
-        .update({
-          board_data: merged,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', whiteboardId);
+      if (isSavingRef.current) {
+        return;
+      }
 
-      if (error) {
-        console.error('Failed to save whiteboard data:', error.message);
+      isSavingRef.current = true;
+      try {
+        while (pendingSaveDataRef.current !== null) {
+          const dataToSave = pendingSaveDataRef.current;
+          pendingSaveDataRef.current = null;
+
+          const { error } = await (supabase
+            .from('workflows') as unknown as {
+              update: (values: Record<string, unknown>) => {
+                eq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
+              };
+            })
+            .update({
+              board_data: dataToSave,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', whiteboardId);
+
+          if (error) {
+            console.error('Failed to save whiteboard data:', error.message);
+          }
+        }
+      } finally {
+        isSavingRef.current = false;
       }
     },
     [supabase, whiteboardId]

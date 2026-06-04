@@ -103,6 +103,10 @@ function EditorInner({
     togglePanel,
     preferences,
     setUserRole,
+    setWorkspaceId,
+    setWorkflowId,
+    setWorkflowName,
+    setCanShareLinks,
   } = useEditorStore();
 
   // Dynamically map edge types and animations based on user settings
@@ -222,10 +226,14 @@ function EditorInner({
     };
   }, [userId, userRole, supabase]);
 
-  // Sync workspace role to global editor store
+  // Sync workspace role & workflow metadata to global editor store
   useEffect(() => {
     setUserRole(userRole);
-  }, [userRole, setUserRole]);
+    setWorkspaceId(workflow.workspace_id);
+    setWorkflowId(workflow.id);
+    setWorkflowName(workflow.name);
+    setCanShareLinks(canShareLinks);
+  }, [userRole, workflow.workspace_id, workflow.id, workflow.name, canShareLinks, setUserRole, setWorkspaceId, setWorkflowId, setWorkflowName, setCanShareLinks]);
 
   // Sync and fetch all comments from Supabase on workflow mount
   useEffect(() => {
