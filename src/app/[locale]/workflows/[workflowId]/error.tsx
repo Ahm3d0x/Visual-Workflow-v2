@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { RotateCcw, AlertTriangle } from 'lucide-react';
+import { recoverFromChunkLoadError } from '@/lib/chunkLoadRecovery';
 
 /**
  * Next.js route-level error boundary for the workflow editor.
@@ -17,6 +18,7 @@ export default function WorkflowEditorError({
 }) {
   useEffect(() => {
     console.error('[WorkflowEditor] Unhandled error:', error);
+    recoverFromChunkLoadError(error);
   }, [error]);
 
   return (

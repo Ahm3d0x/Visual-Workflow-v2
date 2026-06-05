@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { recoverFromChunkLoadError } from '@/lib/chunkLoadRecovery';
 
 /**
  * Global error boundary — last resort for any unhandled error
@@ -16,6 +17,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error('[GlobalError] Unhandled error:', error);
+    recoverFromChunkLoadError(error);
   }, [error]);
 
   return (

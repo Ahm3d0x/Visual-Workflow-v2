@@ -3,6 +3,7 @@ import { getMessages } from 'next-intl/server';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { Inter, Tajawal } from 'next/font/google';
 import { DialogAndNotificationContainer } from '@/components/ui/DialogAndNotificationContainer';
+import { ChunkLoadRecovery } from '@/components/ChunkLoadRecovery';
 import '../globals.css';
 
 const inter = Inter({
@@ -38,6 +39,7 @@ export default async function LocaleLayout({
       <body className="min-h-screen bg-background text-foreground antialiased" suppressHydrationWarning>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <NextIntlClientProvider messages={messages}>
+            <ChunkLoadRecovery />
             {children}
             <DialogAndNotificationContainer locale={locale} />
           </NextIntlClientProvider>
