@@ -64,7 +64,7 @@ function parsePageRange(rangeStr: string, maxPages: number): number[] {
   return Array.from(pages).sort((a, b) => a - b);
 }
 
-const EXPORT_PIXEL_RATIO = 3;
+const EXPORT_PIXEL_RATIO = 2.0;
 const EXPORT_MAX_CANVAS_SIDE = 16384;
 
 function getExportScale(width: number, height: number): number {
@@ -104,6 +104,69 @@ function isInputTarget(el: Element | null): boolean {
     el.closest('[contenteditable="true"]') !== null
   );
 }
+
+/* ─────────────────────── Point Simplification (Ramer-Douglas-Peucker) ─────────────────────── */
+function getSqSegDist(p: { x: number; y: number }, p1: { x: number; y: number }, p2: { x: number; y: number }) {
+  let x = p1.x;
+  let y = p1.y;
+  let dx = p2.x - x;
+  let dy = p2.y - y;
+
+  if (dx !== 0 || dy !== 0) {
+    const t = ((p.x - x) * dx + (p.y - y) * dy) / (dx * dx + dy * dy);
+
+    if (t > 1) {
+      x = p2.x;
+      y = p2.y;
+    } else if (t > 0) {
+      x += dx * t;
+      y += dy * t;
+    }
+  }
+
+  dx = p.x - x;
+  dy = p.y - y;
+
+  return dx * dx + dy * dy;
+}
+
+function simplifyDPStep(
+  points: { x: number; y: number }[],
+  first: number,
+  last: number,
+  sqTolerance: number,
+  simplified: { x: number; y: number }[]
+) {
+  let maxSqDist = sqTolerance;
+  let index = -1;
+
+  for (let i = first + 1; i < last; i++) {
+    const sqDist = getSqSegDist(points[i], points[first], points[last]);
+
+    if (sqDist > maxSqDist) {
+      index = i;
+      maxSqDist = sqDist;
+    }
+  }
+
+  if (index !== -1) {
+    simplifyDPStep(points, first, index, sqTolerance, simplified);
+    simplified.push(points[index]);
+    simplifyDPStep(points, index, last, sqTolerance, simplified);
+  }
+}
+
+function simplifyPoints(points: { x: number; y: number }[], tolerance = 1.2): { x: number; y: number }[] {
+  if (points.length <= 2) return points;
+
+  const sqTolerance = tolerance * tolerance;
+  const simplified: { x: number; y: number }[] = [points[0]];
+  simplifyDPStep(points, 0, points.length - 1, sqTolerance, simplified);
+  simplified.push(points[points.length - 1]);
+
+  return simplified;
+}
+
 
 /* ─────────────────────── Types ─────────────────────── */
 type Tool = 'select' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'triangle' | 'text' | 'sticky' |
@@ -4627,7 +4690,9 @@ export function BoardCanvas({
     const newStroke: BoardStroke = {
       id: generateUUID(),
       tool: currentStrokeTool as BoardStroke['tool'],
-      points: currentPenRef.current,
+      points: (currentStrokeTool === 'pen' || currentStrokeTool === 'highlighter' || currentStrokeTool === 'eraser' || currentStrokeTool === 'line')
+        ? simplifyPoints(currentPenRef.current, 1.2)
+        : currentPenRef.current,
       color,
       width: strokeWidth,
       fill: useFill,
@@ -5498,7 +5563,8 @@ export function BoardCanvas({
         const doc = new jsPDF({
           orientation: first.width > first.height ? 'landscape' : 'portrait',
           unit: 'px',
-          format: [first.width, first.height]
+          format: [first.width, first.height],
+          compress: true
         });
 
         for (let idx = 0; idx < pagesToExport.length; idx++) {
@@ -5519,8 +5585,8 @@ export function BoardCanvas({
 
             drawExportStrokes(ctx, sheet.width, sheet.height, -sheet.x, -sheet.y, (stroke) => isStrokeInSheet(stroke, sheet));
 
-            const imgData = offscreen.toDataURL('image/png');
-            doc.addImage(imgData, 'PNG', 0, 0, sheet.width, sheet.height);
+            const imgData = offscreen.toDataURL('image/jpeg', 0.85);
+            doc.addImage(imgData, 'JPEG', 0, 0, sheet.width, sheet.height, undefined, 'FAST');
           }
         }
         doc.save(`board-sheets-${nodeId.slice(0, 6)}.pdf`);
@@ -5540,13 +5606,14 @@ export function BoardCanvas({
 
           drawExportStrokes(ctx, cropW, cropH, -cropX, -cropY, () => true);
 
-          const imgData = offscreen.toDataURL('image/png');
+          const imgData = offscreen.toDataURL('image/jpeg', 0.85);
           const doc = new jsPDF({
             orientation: cropW > cropH ? 'landscape' : 'portrait',
             unit: 'px',
-            format: [cropW, cropH]
+            format: [cropW, cropH],
+            compress: true
           });
-          doc.addImage(imgData, 'PNG', 0, 0, cropW, cropH);
+          doc.addImage(imgData, 'JPEG', 0, 0, cropW, cropH, undefined, 'FAST');
           doc.save(`board-${nodeId.slice(0, 6)}.pdf`);
         }
       }

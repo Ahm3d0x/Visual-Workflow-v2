@@ -15,7 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { toPng } from 'html-to-image';
+import { toPng, toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { useTheme } from 'next-themes';
 import { getNodesBounds } from '@xyflow/react';
@@ -160,10 +160,11 @@ export function EditorToolbar({
       const computedStyle = getComputedStyle(document.documentElement);
       const canvasBg = computedStyle.getPropertyValue('--canvas-bg').trim() || (resolvedTheme === 'dark' ? '#0f172a' : '#f8fafc');
 
-      const dataUrl = await toPng(viewportElement, {
+      const dataUrl = await toJpeg(viewportElement, {
         backgroundColor: canvasBg,
         width: bounds.width + 200,
         height: bounds.height + 200,
+        quality: 0.85,
         style: {
           transform: `translate(${-bounds.x + 100}px, ${-bounds.y + 100}px) scale(1)`,
         },
@@ -173,9 +174,10 @@ export function EditorToolbar({
         orientation: bounds.width > bounds.height ? 'landscape' : 'portrait',
         unit: 'px',
         format: [bounds.width + 200, bounds.height + 200],
+        compress: true,
       });
 
-      pdf.addImage(dataUrl, 'PNG', 0, 0, bounds.width + 200, bounds.height + 200);
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, bounds.width + 200, bounds.height + 200, undefined, 'FAST');
       pdf.save(`${name.replace(/\s+/g, '_')}_report.pdf`);
     } catch (err) {
       useDialogStore.getState().showNotification((isRtl ? 'فشل تصدير ملف PDF: ' : 'Failed to export PDF: ') + (err as Error).message, 'error');
