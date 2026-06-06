@@ -2736,6 +2736,46 @@ export function BoardCanvas({
     }
   }, [drawConnector, drawStroke]);
 
+  const drawExportStrokes = useCallback((
+    targetCtx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    offsetX: number,
+    offsetY: number,
+    shouldIncludeStroke: (stroke: BoardStroke) => boolean
+  ) => {
+    const layerSurface = createExportCanvas(width, height);
+    if (!layerSurface) return;
+
+    const { canvas: layerCanvas, ctx: layerCtx } = layerSurface;
+    let hasPendingLayerStrokes = false;
+
+    const clearLayer = () => {
+      layerCtx.save();
+      layerCtx.setTransform(1, 0, 0, 1, 0, 0);
+      layerCtx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
+      layerCtx.restore();
+    };
+
+    const flushLayer = () => {
+      if (!hasPendingLayerStrokes) return;
+      targetCtx.drawImage(layerCanvas, 0, 0, width, height);
+      clearLayer();
+      hasPendingLayerStrokes = false;
+    };
+
+    strokes.forEach((stroke) => {
+      if (!shouldIncludeStroke(stroke)) return;
+      layerCtx.save();
+      layerCtx.translate(offsetX, offsetY);
+      drawStrokeWithConnector(layerCtx, stroke, false);
+      layerCtx.restore();
+      hasPendingLayerStrokes = true;
+    });
+
+    flushLayer();
+  }, [drawStrokeWithConnector, strokes]);
+
   /* ─── Overlay canvas (preview during drawing) ─── */
   const renderOverlay = useCallback((pts: { x: number; y: number }[]) => {
     const overlay = overlayRef.current;
@@ -5350,24 +5390,7 @@ export function BoardCanvas({
             // Draw the background grid, border, headers, and footers templates
             drawSheetBackgroundAndLayout(ctx, sheet, sheetIdx, sheets.length, false);
 
-            // Draw images directly to offscreen canvas first
-            ctx.save();
-            ctx.translate(-sheet.x, -sheet.y);
-            strokes.forEach((stroke) => {
-              if (stroke.tool === 'image' && isStrokeInSheet(stroke, sheet)) {
-                drawStrokeWithConnector(ctx, stroke, false);
-              }
-            });
-            ctx.restore();
-
-            ctx.save();
-            ctx.translate(-sheet.x, -sheet.y);
-            strokes.forEach((stroke) => {
-              if (stroke.tool !== 'image' && isStrokeInSheet(stroke, sheet)) {
-                drawStrokeWithConnector(ctx, stroke, false);
-              }
-            });
-            ctx.restore();
+            drawExportStrokes(ctx, sheet.width, sheet.height, -sheet.x, -sheet.y, (stroke) => isStrokeInSheet(stroke, sheet));
 
             const imgData = offscreen.toDataURL('image/png');
             doc.addImage(imgData, 'PNG', 0, 0, sheet.width, sheet.height);
@@ -5388,24 +5411,7 @@ export function BoardCanvas({
           ctx.fillStyle = bgColor;
           ctx.fillRect(0, 0, cropW, cropH);
 
-          // Draw images directly to offscreen canvas first
-          ctx.save();
-          ctx.translate(-cropX, -cropY);
-          strokes.forEach((stroke) => {
-            if (stroke.tool === 'image') {
-              drawStrokeWithConnector(ctx, stroke, false);
-            }
-          });
-          ctx.restore();
-
-          ctx.save();
-          ctx.translate(-cropX, -cropY);
-          strokes.forEach((stroke) => {
-            if (stroke.tool !== 'image') {
-              drawStrokeWithConnector(ctx, stroke, false);
-            }
-          });
-          ctx.restore();
+          drawExportStrokes(ctx, cropW, cropH, -cropX, -cropY, () => true);
 
           const imgData = offscreen.toDataURL('image/png');
           const doc = new jsPDF({
@@ -5450,24 +5456,7 @@ export function BoardCanvas({
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, cropW, cropH);
 
-      // Draw images directly to offscreen canvas first
-      ctx.save();
-      ctx.translate(-cropX, -cropY);
-      strokes.forEach((stroke) => {
-        if (stroke.tool === 'image') {
-          drawStroke(ctx, stroke, false);
-        }
-      });
-      ctx.restore();
-
-      ctx.save();
-      ctx.translate(-cropX, -cropY);
-      strokes.forEach((stroke) => {
-        if (stroke.tool !== 'image') {
-          drawStroke(ctx, stroke, false);
-        }
-      });
-      ctx.restore();
+      drawExportStrokes(ctx, cropW, cropH, -cropX, -cropY, () => true);
 
       const link = document.createElement('a');
       link.download = `board-${nodeId.slice(0, 6)}.png`;
@@ -5478,7 +5467,7 @@ export function BoardCanvas({
       console.error("Failed to export PNG:", err);
       useDialogStore.getState().showNotification('Failed to export PNG: Canvas contains cross-origin images or security restrictions apply.', 'error', 4000);
     }
-  }, [strokes, bgColor, nodeId, getCombinedBoundingBox, drawStroke]);
+  }, [strokes, bgColor, nodeId, getCombinedBoundingBox, drawExportStrokes]);
 
   /* ─── Shared zoom logic ─── */
   const zoomAt = useCallback((factor: number, clientX?: number, clientY?: number) => {
