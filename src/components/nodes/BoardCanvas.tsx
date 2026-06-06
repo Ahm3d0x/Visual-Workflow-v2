@@ -92,6 +92,19 @@ function createExportCanvas(width: number, height: number) {
   return { canvas, ctx, scale };
 }
 
+function isInputTarget(el: Element | null): boolean {
+  if (!el) return false;
+  const tagName = el.tagName.toUpperCase();
+  return (
+    tagName === 'INPUT' ||
+    tagName === 'TEXTAREA' ||
+    tagName === 'SELECT' ||
+    el.hasAttribute('contenteditable') ||
+    (el as HTMLElement).isContentEditable ||
+    el.closest('[contenteditable="true"]') !== null
+  );
+}
+
 /* ─────────────────────── Types ─────────────────────── */
 type Tool = 'select' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'triangle' | 'text' | 'sticky' |
              'rounded-rect' | 'ellipse' | 'diamond' | 'hexagon' |
@@ -5648,7 +5661,10 @@ export function BoardCanvas({
       if (e.key === 'Shift') {
         isShiftPressedRef.current = true;
       }
-      if (e.code === 'Space' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      if (e.code === 'Space') {
+        if (isInputTarget(document.activeElement) || useDialogStore.getState().dialog) {
+          return;
+        }
         e.preventDefault();
         setIsSpacePressed(true);
         isSpacePressedRef.current = true;
@@ -5766,44 +5782,13 @@ export function BoardCanvas({
     };
   }, [zoomAt]);
 
-  // Keyboard shortcuts for Undo / Redo (Ctrl+Z and Ctrl+Shift+Z / Ctrl+Y)
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      const isEditingText =
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA' ||
-        (document.activeElement as HTMLElement)?.isContentEditable;
-
-      if (isEditingText) return;
-
-      const key = e.key.toLowerCase();
-      if (e.ctrlKey || e.metaKey) {
-        if (e.shiftKey && key === 'z') {
-          e.preventDefault();
-          handleRedo();
-        } else if (!e.shiftKey && key === 'z') {
-          e.preventDefault();
-          handleUndo();
-        } else if (key === 'y') {
-          e.preventDefault();
-          handleRedo();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleGlobalKeyDown);
-    };
-  }, [handleUndo, handleRedo]);
-
   const handleZoomIn = () => {
     zoomAt(1.25);
   };
   const handleZoomOut = () => {
     zoomAt(0.8);
   };
-  const handleZoomReset = () => {
+  const handleZoomReset = useCallback(() => {
     if (isSheetsModeRef.current) {
       const activeSheet = sheetsRef.current[activeSheetIndexRef.current] || sheetsRef.current[0];
       if (activeSheet) {
@@ -5812,15 +5797,13 @@ export function BoardCanvas({
       return;
     }
     setView({ scale: 1, offsetX: 0, offsetY: 0 });
-  };
+  }, [handleFocusSheet]);
 
   /* ─── Keyboard shortcuts ─── */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (textInput.active) return;
-      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.hasAttribute('contenteditable')) {
-        return;
-      }
+      if (textInput.active || activeCellEdit || useDialogStore.getState().dialog) return;
+      if (isInputTarget(document.activeElement)) return;
 
       // Keyboard Page Switcher in Sheets Mode
       if (isSheetsModeRef.current && selectedStrokeIds.length === 0) {
@@ -5841,8 +5824,47 @@ export function BoardCanvas({
       }
 
       if (e.key === 'Escape') {
-        if (selectedStrokeIds.length > 0) { setSelectedStrokeIds([]); return; }
-        handleCloseConfirm();
+        e.preventDefault();
+        if (showShareDialog) {
+          setShowShareDialog(false);
+          return;
+        }
+        if (contextMenu) {
+          setContextMenu(null);
+          return;
+        }
+        if (showPalette) {
+          setShowPalette(false);
+          return;
+        }
+        if (showBgPicker) {
+          setShowBgPicker(false);
+          return;
+        }
+        if (showLineMenu) {
+          setShowLineMenu(false);
+          return;
+        }
+        if (showShapesMenu) {
+          setShowShapesMenu(false);
+          return;
+        }
+        if (showExportMenu) {
+          setShowExportMenu(false);
+          return;
+        }
+        if (showZoomMenu) {
+          setShowZoomMenu(false);
+          return;
+        }
+        if (selectedStrokeIds.length > 0) {
+          setSelectedStrokeIds([]);
+          return;
+        }
+        if (!isStandalone) {
+          handleCloseConfirm();
+        }
+        return;
       }
 
       if (e.ctrlKey || e.metaKey) {
@@ -5873,6 +5895,22 @@ export function BoardCanvas({
         if (e.key === 'x' || e.key === 'X') {
           if (selectedStrokeIds.length > 0) { e.preventDefault(); handleCutStrokes(); }
         }
+        if (e.key === 'a' || e.key === 'A') {
+          e.preventDefault();
+          if (isSheetsModeRef.current) {
+            const activeSheet = sheetsRef.current[activeSheetIndexRef.current] || sheetsRef.current[0];
+            if (activeSheet) {
+              const sheetStrokes = strokes.filter(s => isStrokeInSheet(s, activeSheet));
+              setSelectedStrokeIds(sheetStrokes.map(s => s.id));
+            }
+          } else {
+            setSelectedStrokeIds(strokes.map(s => s.id));
+          }
+        }
+        if (e.key === '0') {
+          e.preventDefault();
+          handleZoomReset();
+        }
         if (e.key === '=' || e.key === '+' || e.key === 'NumpadAdd') {
           e.preventDefault();
           zoomAt(1.25, mousePosRef.current.x, mousePosRef.current.y);
@@ -5902,12 +5940,26 @@ export function BoardCanvas({
         if (e.key === 'ArrowDown') dy = step;
 
         setUndoStack((prev) => [...prev, strokes]);
-        setStrokes((prev) => prev.map((s) => {
+        const nextStrokes = strokes.map((s) => {
           if (!selectedStrokeIds.includes(s.id)) return s;
           const newPts = s.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
           return { ...s, points: newPts };
-        }));
-        persistStrokes(strokes);
+        });
+        setStrokes(nextStrokes);
+        persistStrokes(nextStrokes);
+
+        if (channelRef.current?.state === 'joined') {
+          selectedStrokeIds.forEach((id) => {
+            const updated = nextStrokes.find(s => s.id === id);
+            if (updated) {
+              channelRef.current!.send({
+                type: 'broadcast',
+                event: 'stroke_update',
+                payload: { stroke: updated, userId: currentUserId }
+              });
+            }
+          });
+        }
       }
 
       // Tool shortcuts
@@ -5915,17 +5967,15 @@ export function BoardCanvas({
         'p': 'pen', 'h': 'highlighter', 'e': 'eraser', 'l': 'line', 'r': 'rect', 'c': 'circle',
         'y': 'triangle', 'a': 'arrow', 't': 'text', 's': 'select', 'v': 'select', 'n': 'sticky',
       };
-      if (canDrawLocal && !e.ctrlKey && !e.metaKey && toolMap[e.key.toLowerCase()]) {
+      if (canDrawLocal && !e.ctrlKey && !e.metaKey && !e.altKey && toolMap[e.key.toLowerCase()]) {
         setTool(toolMap[e.key.toLowerCase()]);
       }
     };
 
     const onPaste = (e: ClipboardEvent) => {
       if (!canDrawLocal) return;
-      if (textInput.active) return;
-      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.hasAttribute('contenteditable')) {
-        return;
-      }
+      if (textInput.active || activeCellEdit || useDialogStore.getState().dialog) return;
+      if (isInputTarget(document.activeElement)) return;
       const clipboardData = e.clipboardData;
       if (!clipboardData) return;
 
@@ -6081,7 +6131,63 @@ export function BoardCanvas({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('paste', onPaste);
     };
-  }, [textInput.active, selectedStrokeIds, strokes, handleUndo, handleRedo, handleDeleteSelected, handleCopyStrokes, handlePasteStrokes, handleDuplicateStrokesDirect, handleCutStrokes, persistStrokes, handleCloseConfirm, copiedStrokes, insertImage, canDrawLocal, zoomAt, view, color, strokeWidth, fontSize, opacity, fontFamily, fontWeight, textAlign, textStyle, textDecoration, textBgColor, textBorderColor, textBorderWidth, textBorderStyle, textPadding, textBorderRadius, textLineHeight, currentUserId]);
+  }, [
+    textInput.active,
+    activeCellEdit,
+    selectedStrokeIds,
+    strokes,
+    handleUndo,
+    handleRedo,
+    handleDeleteSelected,
+    handleCopyStrokes,
+    handlePasteStrokes,
+    handleDuplicateStrokesDirect,
+    handleCutStrokes,
+    persistStrokes,
+    handleCloseConfirm,
+    copiedStrokes,
+    insertImage,
+    canDrawLocal,
+    zoomAt,
+    view,
+    color,
+    strokeWidth,
+    fontSize,
+    opacity,
+    fontFamily,
+    fontWeight,
+    textAlign,
+    textStyle,
+    textDecoration,
+    textBgColor,
+    textBorderColor,
+    textBorderWidth,
+    textBorderStyle,
+    textPadding,
+    textBorderRadius,
+    textLineHeight,
+    currentUserId,
+    showShareDialog,
+    setShowShareDialog,
+    contextMenu,
+    setContextMenu,
+    showPalette,
+    setShowPalette,
+    showBgPicker,
+    setShowBgPicker,
+    showLineMenu,
+    setShowLineMenu,
+    showShapesMenu,
+    setShowShapesMenu,
+    showExportMenu,
+    setShowExportMenu,
+    showZoomMenu,
+    setShowZoomMenu,
+    isStandalone,
+    handleZoomReset,
+    setSelectedStrokeIds,
+    isStrokeInSheet
+  ]);
 
   /* ─── Double click to edit shape ─── */
   const onDoubleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
