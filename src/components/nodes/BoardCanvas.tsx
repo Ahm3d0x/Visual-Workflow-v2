@@ -2766,11 +2766,19 @@ export function BoardCanvas({
 
     strokes.forEach((stroke) => {
       if (!shouldIncludeStroke(stroke)) return;
-      layerCtx.save();
-      layerCtx.translate(offsetX, offsetY);
-      drawStrokeWithConnector(layerCtx, stroke, false);
-      layerCtx.restore();
-      hasPendingLayerStrokes = true;
+      if (stroke.tool === 'image') {
+        flushLayer();
+        targetCtx.save();
+        targetCtx.translate(offsetX, offsetY);
+        drawStrokeWithConnector(targetCtx, stroke, false);
+        targetCtx.restore();
+      } else {
+        layerCtx.save();
+        layerCtx.translate(offsetX, offsetY);
+        drawStrokeWithConnector(layerCtx, stroke, false);
+        layerCtx.restore();
+        hasPendingLayerStrokes = true;
+      }
     });
 
     flushLayer();
