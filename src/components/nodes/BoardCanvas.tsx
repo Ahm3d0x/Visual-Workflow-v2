@@ -64,6 +64,34 @@ function parsePageRange(rangeStr: string, maxPages: number): number[] {
   return Array.from(pages).sort((a, b) => a - b);
 }
 
+const EXPORT_PIXEL_RATIO = 3;
+const EXPORT_MAX_CANVAS_SIDE = 16384;
+
+function getExportScale(width: number, height: number): number {
+  const safeWidth = Math.max(1, width);
+  const safeHeight = Math.max(1, height);
+  return Math.max(1, Math.min(
+    EXPORT_PIXEL_RATIO,
+    EXPORT_MAX_CANVAS_SIDE / safeWidth,
+    EXPORT_MAX_CANVAS_SIDE / safeHeight
+  ));
+}
+
+function createExportCanvas(width: number, height: number) {
+  const scale = getExportScale(width, height);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(width * scale);
+  canvas.height = Math.ceil(height * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.scale(scale, scale);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  return { canvas, ctx, scale };
+}
+
 /* ─────────────────────── Types ─────────────────────── */
 type Tool = 'select' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle' | 'triangle' | 'text' | 'sticky' |
              'rounded-rect' | 'ellipse' | 'diamond' | 'hexagon' |
@@ -5313,11 +5341,9 @@ export function BoardCanvas({
             doc.addPage([sheet.width, sheet.height], sheet.width > sheet.height ? 'l' : 'p');
           }
 
-          const offscreen = document.createElement('canvas');
-          offscreen.width = sheet.width;
-          offscreen.height = sheet.height;
-          const ctx = offscreen.getContext('2d');
-          if (ctx) {
+          const exportSurface = createExportCanvas(sheet.width, sheet.height);
+          if (exportSurface) {
+            const { canvas: offscreen, ctx } = exportSurface;
             ctx.fillStyle = sheet.sheetBg || '#ffffff';
             ctx.fillRect(0, 0, sheet.width, sheet.height);
 
@@ -5334,24 +5360,14 @@ export function BoardCanvas({
             });
             ctx.restore();
 
-            // Create temporary transparent canvas for other strokes
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = sheet.width;
-            tempCanvas.height = sheet.height;
-            const tempCtx = tempCanvas.getContext('2d');
-            if (tempCtx) {
-              tempCtx.save();
-              tempCtx.translate(-sheet.x, -sheet.y);
-              strokes.forEach((stroke) => {
-                if (stroke.tool !== 'image' && isStrokeInSheet(stroke, sheet)) {
-                  drawStrokeWithConnector(tempCtx, stroke, false);
-                }
-              });
-              tempCtx.restore();
-
-              // Draw temp canvas onto offscreen canvas
-              ctx.drawImage(tempCanvas, 0, 0);
-            }
+            ctx.save();
+            ctx.translate(-sheet.x, -sheet.y);
+            strokes.forEach((stroke) => {
+              if (stroke.tool !== 'image' && isStrokeInSheet(stroke, sheet)) {
+                drawStrokeWithConnector(ctx, stroke, false);
+              }
+            });
+            ctx.restore();
 
             const imgData = offscreen.toDataURL('image/png');
             doc.addImage(imgData, 'PNG', 0, 0, sheet.width, sheet.height);
@@ -5366,11 +5382,9 @@ export function BoardCanvas({
         const cropW = box.minX === Infinity ? canvasSize.w : box.w + padding * 2;
         const cropH = box.minY === Infinity ? canvasSize.h : box.h + padding * 2;
 
-        const offscreen = document.createElement('canvas');
-        offscreen.width = cropW;
-        offscreen.height = cropH;
-        const ctx = offscreen.getContext('2d');
-        if (ctx) {
+        const exportSurface = createExportCanvas(cropW, cropH);
+        if (exportSurface) {
+          const { canvas: offscreen, ctx } = exportSurface;
           ctx.fillStyle = bgColor;
           ctx.fillRect(0, 0, cropW, cropH);
 
@@ -5384,24 +5398,14 @@ export function BoardCanvas({
           });
           ctx.restore();
 
-          // Create temporary transparent canvas for other strokes
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = cropW;
-          tempCanvas.height = cropH;
-          const tempCtx = tempCanvas.getContext('2d');
-          if (tempCtx) {
-            tempCtx.save();
-            tempCtx.translate(-cropX, -cropY);
-            strokes.forEach((stroke) => {
-              if (stroke.tool !== 'image') {
-                drawStrokeWithConnector(tempCtx, stroke, false);
-              }
-            });
-            tempCtx.restore();
-
-            // Draw temp canvas onto offscreen canvas
-            ctx.drawImage(tempCanvas, 0, 0);
-          }
+          ctx.save();
+          ctx.translate(-cropX, -cropY);
+          strokes.forEach((stroke) => {
+            if (stroke.tool !== 'image') {
+              drawStrokeWithConnector(ctx, stroke, false);
+            }
+          });
+          ctx.restore();
 
           const imgData = offscreen.toDataURL('image/png');
           const doc = new jsPDF({
@@ -5438,11 +5442,10 @@ export function BoardCanvas({
       const cropW = box.w + padding * 2;
       const cropH = box.h + padding * 2;
 
-      const offscreen = document.createElement('canvas');
-      offscreen.width = cropW;
-      offscreen.height = cropH;
-      const ctx = offscreen.getContext('2d');
-      if (!ctx) return;
+      const exportSurface = createExportCanvas(cropW, cropH);
+      if (!exportSurface) return;
+
+      const { canvas: offscreen, ctx } = exportSurface;
 
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, cropW, cropH);
@@ -5457,24 +5460,14 @@ export function BoardCanvas({
       });
       ctx.restore();
 
-      // Create temporary transparent canvas for other strokes
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = cropW;
-      tempCanvas.height = cropH;
-      const tempCtx = tempCanvas.getContext('2d');
-      if (tempCtx) {
-        tempCtx.save();
-        tempCtx.translate(-cropX, -cropY);
-        strokes.forEach((stroke) => {
-          if (stroke.tool !== 'image') {
-            drawStroke(tempCtx, stroke, false);
-          }
-        });
-        tempCtx.restore();
-
-        // Draw temp canvas onto offscreen canvas
-        ctx.drawImage(tempCanvas, 0, 0);
-      }
+      ctx.save();
+      ctx.translate(-cropX, -cropY);
+      strokes.forEach((stroke) => {
+        if (stroke.tool !== 'image') {
+          drawStroke(ctx, stroke, false);
+        }
+      });
+      ctx.restore();
 
       const link = document.createElement('a');
       link.download = `board-${nodeId.slice(0, 6)}.png`;
