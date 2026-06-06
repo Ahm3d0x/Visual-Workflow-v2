@@ -85,6 +85,7 @@ export default async function WhiteboardEditorPage({
       name={whiteboard.name}
       initialBoardData={(whiteboard.board_data as any) || {}}
       workspaceId={whiteboard.workspace_id}
+      userRole={userRole}
     />
   );
 }

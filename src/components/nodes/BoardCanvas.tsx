@@ -163,9 +163,17 @@ interface BoardCanvasProps {
   initialBg?: string;
   initialSheets?: any[];
   initialIsSheetsMode?: boolean;
+  initialReadOnlyForOthers?: boolean;
   onClose: () => void;
-  onSave?: (data: { boardStrokes?: BoardStroke[]; boardBg?: string; boardSheets?: unknown[]; isSheetsMode?: boolean }) => void;
+  onSave?: (data: {
+    boardStrokes?: BoardStroke[];
+    boardBg?: string;
+    boardSheets?: unknown[];
+    isSheetsMode?: boolean;
+    readOnlyForOthers?: boolean;
+  }) => void;
   isStandalone?: boolean;
+  userRole?: string;
 }
 
 export function BoardCanvas({
@@ -175,9 +183,11 @@ export function BoardCanvas({
   initialBg,
   initialSheets,
   initialIsSheetsMode,
+  initialReadOnlyForOthers = false,
   onClose,
   onSave,
-  isStandalone = false
+  isStandalone = false,
+  userRole,
 }: BoardCanvasProps) {
   /* ── Refs ── */
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -357,12 +367,31 @@ export function BoardCanvas({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; canvasX: number; canvasY: number; strokeId?: string; strokeTool?: string } | null>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
   
-  const userRole = useEditorStore((s) => s.userRole) || 'viewer';
+  const storeUserRole = useEditorStore((s) => s.userRole) || 'viewer';
+  const roleToUse = userRole || storeUserRole;
+
+  const [isSessionLoading, setIsSessionLoading] = useState<boolean>(true);
+  const [isCollaborationEnabled, setIsCollaborationEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('wb_collab_enabled') !== 'false';
+    }
+    return true;
+  });
+  const [allowOthersToEdit, setAllowOthersToEdit] = useState<boolean>(!initialReadOnlyForOthers);
+
   const workspaceId = useEditorStore((s) => s.workspaceId);
   const workflowId = useEditorStore((s) => s.workflowId);
   const workflowName = useEditorStore((s) => s.workflowName) || 'Workflow';
   const canShareLinks = useEditorStore((s) => s.canShareLinks);
   const [canDrawLocal, setCanDrawLocal] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (initialReadOnlyForOthers && roleToUse !== 'owner' && roleToUse !== 'admin') {
+      setCanDrawLocal(false);
+    } else {
+      setCanDrawLocal(true);
+    }
+  }, [initialReadOnlyForOthers, roleToUse]);
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
   const [showCollaboratorsMenu, setShowCollaboratorsMenu] = useState<boolean>(false);
   const followingUserIdRef = useRef<string | null>(null);
@@ -554,27 +583,53 @@ export function BoardCanvas({
 
   // Load active user session metadata
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      const uid = data?.session?.user?.id;
-      if (uid) {
-        setCurrentUserId(uid);
-        supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', uid)
-          .single()
-          .then(({ data: profile }) => {
+    let active = true;
+    async function loadSession() {
+      try {
+        const { data } = await supabase.auth.getSession();
+        if (!active) return;
+        const uid = data?.session?.user?.id;
+        if (uid) {
+          setCurrentUserId(uid);
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('id', uid)
+              .single();
+            if (!active) return;
             const p = profile as any;
             if (p?.full_name) {
               setUserName(p.full_name);
             }
-          });
+          } catch (e) {
+            console.error('Failed to load profile:', e);
+          }
+        } else {
+          // Guest user fallback with unique guest ID
+          const guestId = 'guest_' + Math.random().toString(36).slice(2, 9);
+          setCurrentUserId(guestId);
+          setUserName(`Guest_${guestId.slice(-4)}`);
+        }
+      } catch (err) {
+        console.error('Failed to get session:', err);
+      } finally {
+        if (active) setIsSessionLoading(false);
       }
-    });
+    }
+    loadSession();
+    return () => {
+      active = false;
+    };
   }, [supabase]);
 
-  /* ─── Realtime collaboration sub-channel ─── */
   useEffect(() => {
+    if (isSessionLoading || !isCollaborationEnabled) {
+      setCollaborators({});
+      setRemoteDrawings({});
+      return;
+    }
+
     const ch = supabase.channel(`board:${nodeId}`, {
       config: { broadcast: { self: false } }
     });
@@ -640,6 +695,31 @@ export function BoardCanvas({
       }
     });
 
+    ch.on('broadcast', { event: 'toggle_read_only' }, ({ payload }) => {
+      if (roleToUse !== 'owner' && roleToUse !== 'admin') {
+        const canDraw = !payload?.readOnlyForOthers;
+        setCanDrawLocal(canDraw);
+        if (!canDraw) {
+          useDialogStore.getState().showNotification(
+            locale === 'ar'
+              ? 'تم تعطيل صلاحيات الرسم والتعديل من قبل مالك اللوحة'
+              : 'Drawing and editing permissions have been disabled by the board owner',
+            'warning',
+            4000
+          );
+          setTool('select');
+        } else {
+          useDialogStore.getState().showNotification(
+            locale === 'ar'
+              ? 'تم تفعيل صلاحيات الرسم والتعديل من قبل مالك اللوحة'
+              : 'Drawing and editing permissions have been enabled by the board owner',
+            'success',
+            3000
+          );
+        }
+      }
+    });
+
     ch.on('broadcast', { event: 'kick_user' }, ({ payload }) => {
       if (payload?.userId === currentUserId) {
         useDialogStore.getState().showNotification('You have been kicked from the board by the owner', 'error', 5000);
@@ -648,7 +728,7 @@ export function BoardCanvas({
     });
 
     ch.on('broadcast', { event: 'pointer_sync' }, ({ payload }) => {
-      if (!payload?.userId) return;
+      if (!payload?.userId || payload.userId === currentUserId) return;
       setCollaborators((prev) => {
         const existing = prev[payload.userId] || { name: 'Collaborator', color: '#ec4899' };
         return {
@@ -676,7 +756,7 @@ export function BoardCanvas({
     });
 
     ch.on('broadcast', { event: 'cursor' }, ({ payload }) => {
-      if (payload?.userId) {
+      if (payload?.userId && payload.userId !== currentUserId) {
         setCollaborators((prev) => {
           const existing = prev[payload.userId] || { name: 'Collaborator', color: '#ec4899' };
           return {
@@ -692,7 +772,7 @@ export function BoardCanvas({
     });
 
     ch.on('broadcast', { event: 'stroke_draw' }, ({ payload }) => {
-      if (!payload?.userId || !payload?.stroke) return;
+      if (!payload?.userId || payload.userId === currentUserId || !payload?.stroke) return;
       setRemoteDrawings((prev) => ({
         ...prev,
         [payload.userId]: payload.stroke,
@@ -700,7 +780,7 @@ export function BoardCanvas({
     });
 
     ch.on('broadcast', { event: 'stroke_draw_end' }, ({ payload }) => {
-      if (!payload?.userId) return;
+      if (!payload?.userId || payload.userId === currentUserId) return;
       setRemoteDrawings((prev) => {
         const next = { ...prev };
         delete next[payload.userId];
@@ -709,7 +789,7 @@ export function BoardCanvas({
     });
 
     ch.on('broadcast', { event: 'stroke_add' }, ({ payload }) => {
-      if (!payload?.stroke) return;
+      if (!payload?.stroke || payload.userId === currentUserId) return;
       if (payload.userId) {
         setRemoteDrawings((prev) => {
           const next = { ...prev };
@@ -731,7 +811,7 @@ export function BoardCanvas({
     });
 
     ch.on('broadcast', { event: 'stroke_delete' }, ({ payload }) => {
-      if (!payload?.id) return;
+      if (!payload?.id || payload.userId === currentUserId) return;
       setStrokes((prev) => prev.filter((s) => s.id !== payload.id));
     });
 
@@ -757,7 +837,7 @@ export function BoardCanvas({
           userId: currentUserId,
           name: userName,
           color: userColor,
-          role: userRole,
+          role: roleToUse,
           canDraw: canDrawLocalRef.current,
         });
       }
@@ -769,7 +849,7 @@ export function BoardCanvas({
       supabase.removeChannel(ch);
       setActiveChannel(null);
     };
-  }, [nodeId, supabase, currentUserId, userName, userColor, userRole]);
+  }, [nodeId, supabase, currentUserId, userName, userColor, roleToUse, isSessionLoading, isCollaborationEnabled, locale]);
 
   // Sync presence state when credentials or drawing rights change
   useEffect(() => {
@@ -779,19 +859,17 @@ export function BoardCanvas({
         userId: currentUserId,
         name: userName,
         color: userColor,
-        role: userRole,
+        role: roleToUse,
         canDraw: canDrawLocal,
       });
     }
-  }, [canDrawLocal, currentUserId, userName, userColor, userRole]);
+  }, [canDrawLocal, currentUserId, userName, userColor, roleToUse]);
 
   const stopFollowing = useCallback(() => {
     if (followingUserIdRef.current) {
       setFollowingUserId(null);
     }
   }, []);
-
-
 
   const lastViewportBroadcastTimeRef = useRef(0);
   useEffect(() => {
@@ -810,8 +888,9 @@ export function BoardCanvas({
 
   /* ─── Persist strokes to node data (debounced) ─── */
   const persistStrokesRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const persistStrokes = useCallback((newStrokes: BoardStroke[], newBg?: string) => {
+  const persistStrokes = useCallback((newStrokes: BoardStroke[], newBg?: string, customReadOnlyForOthers?: boolean) => {
     if (persistStrokesRef.current) clearTimeout(persistStrokesRef.current);
+    const roVal = customReadOnlyForOthers !== undefined ? customReadOnlyForOthers : !allowOthersToEdit;
     persistStrokesRef.current = setTimeout(() => {
       setIsSyncing(true);
       if (onSave) {
@@ -820,6 +899,7 @@ export function BoardCanvas({
           boardBg: newBg || bgColor,
           boardSheets: sheetsRef.current,
           isSheetsMode: isSheetsModeRef.current,
+          readOnlyForOthers: roVal,
         });
       } else {
         updateNode(nodeId, {
@@ -827,11 +907,37 @@ export function BoardCanvas({
           boardBg: newBg || bgColor,
           boardSheets: sheetsRef.current,
           isSheetsMode: isSheetsModeRef.current,
+          readOnlyForOthers: roVal,
         });
       }
       setTimeout(() => setIsSyncing(false), 600);
     }, 800);
-  }, [nodeId, updateNode, bgColor, onSave]);
+  }, [nodeId, updateNode, bgColor, onSave, allowOthersToEdit]);
+
+  const toggleCollaboration = useCallback(() => {
+    setIsCollaborationEnabled((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('wb_collab_enabled', String(next));
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAllowOthersToEdit = useCallback(() => {
+    setAllowOthersToEdit((prev) => {
+      const next = !prev;
+      if (activeChannel?.state === 'joined') {
+        activeChannel.send({
+          type: 'broadcast',
+          event: 'toggle_read_only',
+          payload: { readOnlyForOthers: !next }
+        });
+      }
+      persistStrokes(strokes, undefined, !next);
+      return next;
+    });
+  }, [activeChannel, persistStrokes, strokes]);
 
 
 
@@ -8575,6 +8681,49 @@ export function BoardCanvas({
                       );
                     })
                   )}
+
+                  {/* Collaboration settings */}
+                  <div className="border-t border-zinc-800/60 mt-1.5 pt-2 px-2 pb-1 flex flex-col gap-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                        {locale === 'ar' ? 'المزامنة الفورية' : 'Live Multiplayer'}
+                      </span>
+                      <button
+                        onClick={toggleCollaboration}
+                        className={`h-5 w-9 rounded-full relative transition-all duration-200 cursor-pointer ${
+                          isCollaborationEnabled ? 'bg-sky-500' : 'bg-zinc-800'
+                        }`}
+                        title={locale === 'ar' ? 'تفعيل/تعطيل المزامنة الفورية' : 'Enable/Disable live multiplayer'}
+                      >
+                        <div className={`w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition-all duration-200 ${
+                          locale === 'ar'
+                            ? (isCollaborationEnabled ? 'right-5' : 'right-1')
+                            : (isCollaborationEnabled ? 'left-5' : 'left-1')
+                        }`} />
+                      </button>
+                    </div>
+
+                    {(roleToUse === 'owner' || roleToUse === 'admin') && (
+                      <div className="flex items-center justify-between gap-3 border-t border-zinc-900/60 pt-2">
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                          {locale === 'ar' ? 'السماح للآخرين بالتعديل' : 'Allow Others to Edit'}
+                        </span>
+                        <button
+                          onClick={toggleAllowOthersToEdit}
+                          className={`h-5 w-9 rounded-full relative transition-all duration-200 cursor-pointer ${
+                            allowOthersToEdit ? 'bg-sky-500' : 'bg-zinc-800'
+                          }`}
+                          title={locale === 'ar' ? 'السماح للمتعاونين بالرسم والكتابة' : 'Allow collaborators to draw and write'}
+                        >
+                          <div className={`w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition-all duration-200 ${
+                            locale === 'ar'
+                              ? (allowOthersToEdit ? 'right-5' : 'right-1')
+                              : (allowOthersToEdit ? 'left-5' : 'left-1')
+                          }`} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -9478,7 +9627,7 @@ export function BoardCanvas({
             workflowId={workflowId}
             workspaceId={workspaceId}
             workflowName={workflowName}
-            userRole={userRole}
+            userRole={roleToUse}
             canShareLinks={canShareLinks}
             onClose={() => setShowShareDialog(false)}
           />

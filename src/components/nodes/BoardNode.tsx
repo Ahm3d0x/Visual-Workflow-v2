@@ -540,6 +540,8 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
     drawMiniPreview();
   }, [drawMiniPreview]);
 
+  const userRole = useEditorStore((s) => s.userRole) || 'viewer';
+
   return (
     <>
       {/* ReactFlow Handles */}
@@ -658,7 +660,9 @@ export function BoardNode({ id, data, selected }: BoardNodeProps) {
             initialBg={data.boardBg as string | undefined}
             initialSheets={data.boardSheets as any[] | undefined}
             initialIsSheetsMode={data.isSheetsMode as boolean | undefined}
+            initialReadOnlyForOthers={data.readOnlyForOthers as boolean | undefined}
             onClose={() => setIsOpen(false)}
+            userRole={userRole}
           />
         </ErrorBoundary>,
         document.body

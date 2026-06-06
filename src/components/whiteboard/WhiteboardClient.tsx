@@ -15,8 +15,10 @@ interface WhiteboardClientProps {
     boardBg?: string;
     boardSheets?: unknown[];
     isSheetsMode?: boolean;
+    readOnlyForOthers?: boolean;
   };
   workspaceId: string;
+  userRole?: string;
 }
 
 export function WhiteboardClient({
@@ -24,6 +26,7 @@ export function WhiteboardClient({
   name,
   initialBoardData,
   workspaceId,
+  userRole,
 }: WhiteboardClientProps) {
   const router = useRouter();
   const supabase = createClient();
@@ -33,6 +36,7 @@ export function WhiteboardClient({
     boardBg: initialBoardData?.boardBg || '#ffffff',
     boardSheets: initialBoardData?.boardSheets || [],
     isSheetsMode: !!initialBoardData?.isSheetsMode,
+    readOnlyForOthers: !!initialBoardData?.readOnlyForOthers,
   });
 
   const isSavingRef = useRef(false);
@@ -44,6 +48,7 @@ export function WhiteboardClient({
       boardBg?: string;
       boardSheets?: unknown[];
       isSheetsMode?: boolean;
+      readOnlyForOthers?: boolean;
     }) => {
       const merged = {
         ...boardDataRef.current,
@@ -102,9 +107,11 @@ export function WhiteboardClient({
           initialBg={initialBoardData?.boardBg}
           initialSheets={initialBoardData?.boardSheets}
           initialIsSheetsMode={initialBoardData?.isSheetsMode}
+          initialReadOnlyForOthers={initialBoardData?.readOnlyForOthers}
           onClose={handleClose}
           onSave={handleSave}
           isStandalone={true}
+          userRole={userRole}
         />
       </ErrorBoundary>
     </div>
