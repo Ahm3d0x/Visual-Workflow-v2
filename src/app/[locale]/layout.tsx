@@ -60,5 +60,10 @@ export async function generateMetadata({
     description: isAr
       ? 'صمم وأتمت مسارات العمل الذكية بصرياً مع Skima.'
       : 'Design and automate agentic workflows visually with Skima.',
+    icons: {
+      icon: '/logo.png',
+      shortcut: '/logo.png',
+      apple: '/logo.png',
+    },
   };
 }

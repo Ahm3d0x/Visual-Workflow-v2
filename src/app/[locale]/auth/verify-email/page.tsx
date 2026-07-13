@@ -5,7 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Workflow, MailOpen } from 'lucide-react';
+import { MailOpen } from 'lucide-react';
+import { AppLogo } from '@/components/AppLogo';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageToggle } from '@/components/LanguageToggle';
@@ -24,12 +25,7 @@ export default function VerifyEmailPage({
     <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-canvas text-foreground transition-colors duration-300 relative">
       {/* Toggles in header */}
       <div className="absolute top-6 right-6 left-6 flex justify-between items-center z-50">
-        <div className="flex items-center gap-3">
-          <Workflow className="w-6 h-6 text-accent" />
-          <span className="font-bold hidden sm:inline-block bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
-            Visual Workflow SaaS
-          </span>
-        </div>
+        <AppLogo variant="full" size={30} href={`/${locale}`} />
         <div className="flex items-center gap-3">
           <LanguageToggle currentLocale={locale} />
           <ThemeToggle />

@@ -6,12 +6,13 @@ import { useTranslations } from 'next-intl';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as zod from 'zod';
-import { signUp, signInWithGoogle } from '@/actions/auth.actions';
+import { signUp } from '@/actions/auth.actions';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Workflow, Loader2, Sparkles } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { AppLogo } from '@/components/AppLogo';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageToggle } from '@/components/LanguageToggle';
@@ -30,7 +31,7 @@ export default function SignUpPage({
   const t = useTranslations('auth');
   const tCommon = useTranslations('common');
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
+
   const [serverError, setServerError] = useState<string | null>(null);
 
   // Form Validation Schema with password matching
@@ -76,31 +77,13 @@ export default function SignUpPage({
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    setServerError(null);
-    const result = await signInWithGoogle(locale, redirectTo);
-    
-    if (result?.error) {
-      setServerError(result.error);
-      setGoogleLoading(false);
-    } else if (result?.url) {
-      if (typeof window !== 'undefined') {
-        window.location.assign(result.url);
-      }
-    }
-  };
+
 
   return (
     <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-canvas text-foreground transition-colors duration-300 relative">
       {/* Toggles in header */}
       <div className="absolute top-6 right-6 left-6 flex justify-between items-center z-50">
-        <div className="flex items-center gap-3">
-          <Workflow className="w-6 h-6 text-accent" />
-          <span className="font-bold hidden sm:inline-block bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">
-            Visual Workflow SaaS
-          </span>
-        </div>
+        <AppLogo variant="full" size={30} href={`/${locale}`} />
         <div className="flex items-center gap-3">
           <LanguageToggle currentLocale={locale} />
           <ThemeToggle />
@@ -223,28 +206,7 @@ export default function SignUpPage({
               </p>
             </form>
 
-            <div className="relative py-2">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-border"></div>
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-3 text-muted-foreground font-light">or</span>
-              </div>
-            </div>
 
-            <Button
-              onClick={handleGoogleSignIn}
-              variant="outline"
-              disabled={googleLoading}
-              className="w-full border-border hover:bg-muted font-medium py-6 rounded-xl transition-all duration-300 cursor-pointer flex items-center justify-center gap-3"
-            >
-              {googleLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin text-accent" />
-              ) : (
-                <Sparkles className="w-5 h-5 text-accent animate-pulse" />
-              )}
-              <span>{t('google_login')}</span>
-            </Button>
 
             <div className="text-center text-sm font-light text-muted-foreground mt-4">
               Already have an account?{' '}

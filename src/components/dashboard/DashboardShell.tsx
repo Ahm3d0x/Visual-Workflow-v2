@@ -16,7 +16,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  Workflow,
   Home,
   GitBranch,
   Settings,
@@ -50,6 +49,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { LanguageToggle } from '@/components/LanguageToggle';
+import { AppLogo } from '@/components/AppLogo';
 
 interface DashboardShellProps {
   children: React.ReactNode;
@@ -191,16 +191,12 @@ export function DashboardShell({ children, locale, profile, workspaces }: Dashbo
       >
         {/* Sidebar Header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="bg-linear-to-br from-primary to-accent p-2 rounded-xl flex items-center justify-center shrink-0 shadow-md shadow-primary/15">
-              <Workflow className="w-5 h-5 text-white" />
-            </div>
-            {(!collapsed || mobileOpen) && (
-              <span className="font-extrabold text-base tracking-tight truncate">
-                <span className="bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">ski</span><span className="text-foreground">.ma</span>
-              </span>
-            )}
-          </div>
+          {/* Logo — collapses to icon-only */}
+          {collapsed && !mobileOpen ? (
+            <AppLogo variant="icon" size={32} href={`/${locale}/dashboard`} />
+          ) : (
+            <AppLogo variant="full" size={30} href={`/${locale}/dashboard`} />
+          )}
           {/* Mobile Close Button */}
           {mobileOpen && (
             <Button

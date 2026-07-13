@@ -82,5 +82,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Match all pathnames except static files, APIs, and public share links
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|share/|sitemap.xml|robots.txt).*)'],
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|share/|sitemap.xml|robots.txt|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|otf|mp4|pdf)).*)'],
 };

@@ -7,7 +7,7 @@ import { Button } from '../../components/ui/button';
 import { 
   ArrowRight, 
   Sparkles, 
-  Workflow, 
+  Workflow,
   Database, 
   CreditCard, 
   Languages, 
@@ -19,6 +19,7 @@ import {
   Users,
   ChevronRight
 } from 'lucide-react';
+import { AppLogo } from '../../components/AppLogo';
 import Link from 'next/link';
 
 export default async function LandingPage({
@@ -45,16 +46,7 @@ export default async function LandingPage({
       <header className="sticky top-0 z-50 backdrop-blur-xl bg-background/60 border-b border-border/60 transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="bg-linear-to-br from-primary to-accent p-2 rounded-xl shadow-lg shadow-primary/25 flex items-center justify-center">
-                <Workflow className="w-5 h-5 text-white" />
-              </div>
-            </div>
-            <span className="font-sans font-extrabold text-xl tracking-tight">
-              <span className="bg-linear-to-r from-primary via-accent to-purple-500 bg-clip-text text-transparent">ski</span><span className="text-foreground">.ma</span>
-            </span>
-          </div>
+          <AppLogo variant="full" size={32} href={`/${locale}`} />
 
           <div className="flex items-center gap-3">
             <LanguageToggle currentLocale={locale} />
@@ -467,14 +459,7 @@ export default async function LandingPage({
       {/* Footer */}
       <footer className="border-t border-border/50 bg-zinc-950 py-10 text-sm text-muted-foreground transition-colors duration-300 w-full">
         <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <div className="bg-linear-to-br from-primary to-accent p-1.5 rounded-lg flex items-center justify-center">
-              <Workflow className="w-3.5 h-3.5 text-white" />
-            </div>
-            <span className="font-extrabold text-sm tracking-tight">
-              <span className="bg-linear-to-r from-primary to-accent bg-clip-text text-transparent">ski</span><span className="text-zinc-400">.ma</span>
-            </span>
-          </div>
+          <AppLogo variant="full" size={26} href={`/${locale}`} />
 
           <div className="flex flex-wrap items-center justify-center gap-6 text-xs font-semibold">
             <Link href={`/${locale}/help`} className="hover:text-zinc-200 hover:no-underline transition-colors duration-150">
