@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
-import { getAdminStats, getAdminUsers, getAdminSubscriptions, getAdminPendingNodes } from '@/actions/admin.actions';
+import { getAdminStats, getAdminUsers, getAdminSubscriptions, getAdminPendingNodes, getPricingSettings } from '@/actions/admin.actions';
 import { AdminDashboardClient } from '@/components/admin/AdminDashboardClient';
 
 export default async function AdminPage({
@@ -15,7 +15,7 @@ export default async function AdminPage({
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
   if (authError || !user) {
-    redirect(`/${locale}/auth/sign-in`);
+    redirect(`/${locale}/auth/sign-up`);
   }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -31,11 +31,12 @@ export default async function AdminPage({
   }
 
   // 2. Fetch admin dashboard data in parallel
-  const [statsRes, usersRes, subsRes, pendingNodesRes] = await Promise.all([
+  const [statsRes, usersRes, subsRes, pendingNodesRes, pricingRes] = await Promise.all([
     getAdminStats(),
     getAdminUsers(),
     getAdminSubscriptions(),
-    getAdminPendingNodes()
+    getAdminPendingNodes(),
+    getPricingSettings()
   ]);
 
   const defaultStats = {
@@ -54,6 +55,7 @@ export default async function AdminPage({
       initialUsers={usersRes.success ? usersRes.data! : []}
       initialSubscriptions={subsRes.success ? subsRes.data! : []}
       initialPendingNodes={pendingNodesRes.success ? pendingNodesRes.data! : []}
+      initialPricingSettings={pricingRes.success ? pricingRes.data! : []}
     />
   );
 }

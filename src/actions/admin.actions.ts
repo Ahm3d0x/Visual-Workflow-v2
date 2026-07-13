@@ -3,7 +3,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
-import type { PlanType } from '@/lib/planLimits';
+import { type PlanType, DEFAULT_PRICING } from '@/lib/planLimits';
 
 // Helper to verify admin privileges and return authorized Supabase client as any
 async function verifyAdmin(): Promise<any> {
@@ -45,17 +45,24 @@ export async function getAdminStats() {
       (supabase.from('marketplace_nodes') as any).select('*', { count: 'exact', head: true }).eq('status', 'under_review')
     ]);
 
-    // Compute estimated MRR (Warrior: $12, Elite: $29, Champion: $79, Legend: $199)
+    // Fetch pricing settings to compute estimated MRR dynamically
+    const pricingRes = await getPricingSettings();
+    const pricingMap: Record<string, number> = {};
+    if (pricingRes.success && pricingRes.data) {
+      pricingRes.data.forEach((p: any) => {
+        pricingMap[p.plan] = Number(p.price_monthly);
+      });
+    }
+
+    // Compute estimated MRR in EGP
     let estimatedMrr = 0;
     let activeSubscriptionsCount = 0;
 
     (subs || []).forEach((sub: any) => {
       if (sub.status === 'active' || sub.status === 'trialing') {
         activeSubscriptionsCount++;
-        if (sub.plan === 'warrior') estimatedMrr += 12;
-        else if (sub.plan === 'elite') estimatedMrr += 29;
-        else if (sub.plan === 'champion') estimatedMrr += 79;
-        else if (sub.plan === 'legend') estimatedMrr += 199;
+        const planPrice = pricingMap[sub.plan] || (DEFAULT_PRICING[sub.plan as keyof typeof DEFAULT_PRICING]?.price_monthly || 0);
+        estimatedMrr += planPrice;
       }
     });
 
@@ -308,3 +315,75 @@ export async function updateWorkspacePlan(workspaceId: string, plan: PlanType) {
     return { error: err instanceof Error ? err.message : 'Failed to manually adjust plan limits' };
   }
 }
+
+
+
+// 8. Fetch pricing settings (publicly accessible)
+export async function getPricingSettings() {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await (supabase
+      .from('pricing_settings') as any)
+      .select('*');
+
+    if (error || !data || data.length === 0) {
+      return { 
+        success: true, 
+        data: Object.entries(DEFAULT_PRICING).map(([plan, pricing]) => ({
+          plan: plan as PlanType,
+          price_monthly: pricing.price_monthly,
+          price_annual: pricing.price_annual,
+          stripe_monthly_price_id: pricing.stripe_monthly_price_id,
+          stripe_annual_price_id: pricing.stripe_annual_price_id
+        }))
+      };
+    }
+
+    return { success: true, data };
+  } catch {
+    return { 
+      success: true, 
+      data: Object.entries(DEFAULT_PRICING).map(([plan, pricing]) => ({
+        plan: plan as PlanType,
+        price_monthly: pricing.price_monthly,
+        price_annual: pricing.price_annual,
+        stripe_monthly_price_id: pricing.stripe_monthly_price_id,
+        stripe_annual_price_id: pricing.stripe_annual_price_id
+      }))
+    };
+  }
+}
+
+// 9. Update pricing settings for a plan (admin-only)
+export async function updatePricingSettings(
+  plan: PlanType,
+  pricingData: {
+    price_monthly: number;
+    price_annual: number;
+    stripe_monthly_price_id: string;
+    stripe_annual_price_id: string;
+  }
+) {
+  try {
+    const supabase = await verifyAdmin();
+
+    const { error } = await (supabase
+      .from('pricing_settings') as any)
+      .upsert({
+        plan,
+        price_monthly: pricingData.price_monthly,
+        price_annual: pricingData.price_annual,
+        stripe_monthly_price_id: pricingData.stripe_monthly_price_id,
+        stripe_annual_price_id: pricingData.stripe_annual_price_id,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'plan' });
+
+    if (error) throw error;
+
+    revalidatePath('/', 'layout');
+    return { success: true };
+  } catch (err: unknown) {
+    return { error: err instanceof Error ? err.message : 'Failed to update pricing settings' };
+  }
+}
+

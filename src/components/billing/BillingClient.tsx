@@ -10,6 +10,14 @@ import { Progress } from '@/components/ui/progress';
 import { createCheckoutSession, createPortalSession } from '@/actions/billing.actions';
 import { PLAN_LIMITS, PlanType } from '@/lib/planLimits';
 
+interface PricingSetting {
+  plan: PlanType;
+  price_monthly: number;
+  price_annual: number;
+  stripe_monthly_price_id: string | null;
+  stripe_annual_price_id: string | null;
+}
+
 interface BillingClientProps {
   locale: string;
   workspace: {
@@ -25,33 +33,34 @@ interface BillingClientProps {
     favorites: { current: number; limit: number };
     aiCredits: { current: number; limit: number };
   };
+  pricingSettings: PricingSetting[];
 }
 
-const STRIPE_PRICES: Record<PlanType, { monthly: string; annual: string; priceMonthly: number; priceAnnual: number }> = {
+const STRIPE_PRICES_FALLBACK: Record<PlanType, { monthly: string; annual: string; priceMonthly: number; priceAnnual: number }> = {
   free: { monthly: '', annual: '', priceMonthly: 0, priceAnnual: 0 },
   warrior: {
     monthly: process.env.NEXT_PUBLIC_STRIPE_WARRIOR_MONTHLY_PRICE_ID || 'price_warrior_monthly',
     annual: process.env.NEXT_PUBLIC_STRIPE_WARRIOR_ANNUAL_PRICE_ID || 'price_warrior_annual',
-    priceMonthly: 12,
-    priceAnnual: 99,
+    priceMonthly: 600,
+    priceAnnual: 5000,
   },
   elite: {
     monthly: process.env.NEXT_PUBLIC_STRIPE_ELITE_MONTHLY_PRICE_ID || 'price_elite_monthly',
     annual: process.env.NEXT_PUBLIC_STRIPE_ELITE_ANNUAL_PRICE_ID || 'price_elite_annual',
-    priceMonthly: 29,
-    priceAnnual: 249,
+    priceMonthly: 1500,
+    priceAnnual: 12500,
   },
   champion: {
     monthly: process.env.NEXT_PUBLIC_STRIPE_CHAMPION_MONTHLY_PRICE_ID || 'price_champion_monthly',
     annual: process.env.NEXT_PUBLIC_STRIPE_CHAMPION_ANNUAL_PRICE_ID || 'price_champion_annual',
-    priceMonthly: 79,
-    priceAnnual: 669,
+    priceMonthly: 4000,
+    priceAnnual: 33500,
   },
   legend: {
     monthly: process.env.NEXT_PUBLIC_STRIPE_LEGEND_MONTHLY_PRICE_ID || 'price_legend_monthly',
     annual: process.env.NEXT_PUBLIC_STRIPE_LEGEND_ANNUAL_PRICE_ID || 'price_legend_annual',
-    priceMonthly: 199,
-    priceAnnual: 1699,
+    priceMonthly: 10000,
+    priceAnnual: 85000,
   },
 };
 
@@ -60,6 +69,7 @@ export function BillingClient({
   workspace,
   subscription,
   usage,
+  pricingSettings,
 }: BillingClientProps) {
   const isRtl = locale === 'ar';
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
@@ -134,9 +144,11 @@ export function BillingClient({
     setError(null);
     setActionLoadingPlan(plan);
 
+    const dbPlan = pricingSettings.find(p => p.plan === plan);
+    const fallback = STRIPE_PRICES_FALLBACK[plan];
     const priceId = billingCycle === 'monthly' 
-      ? STRIPE_PRICES[plan].monthly 
-      : STRIPE_PRICES[plan].annual;
+      ? (dbPlan?.stripe_monthly_price_id || fallback.monthly)
+      : (dbPlan?.stripe_annual_price_id || fallback.annual);
 
     startTransition(async () => {
       const res = await createCheckoutSession(workspace.id, priceId, locale);
@@ -326,8 +338,11 @@ export function BillingClient({
           const config = planVisuals[plan];
           const PlanIcon = config.icon;
 
-          const prices = STRIPE_PRICES[plan];
-          const displayPrice = billingCycle === 'monthly' ? prices.priceMonthly : prices.priceAnnual;
+          const dbPlan = pricingSettings.find(p => p.plan === plan);
+          const fallback = STRIPE_PRICES_FALLBACK[plan];
+          const displayPrice = billingCycle === 'monthly' 
+            ? (dbPlan ? dbPlan.price_monthly : fallback.priceMonthly)
+            : (dbPlan ? dbPlan.price_annual : fallback.priceAnnual);
           const cycleLabel = billingCycle === 'monthly' ? t.monthShort : t.yearShort;
 
           return (
@@ -360,14 +375,16 @@ export function BillingClient({
                 <div className="pt-2 border-b border-border/40 pb-4">
                   {plan === 'free' ? (
                     <h2 className="text-3xl font-extrabold font-sans text-foreground">
-                      $0
+                      {isRtl ? '٠ جنيه' : '0 EGP'}
                     </h2>
                   ) : (
-                    <div className="flex items-baseline gap-0.5">
-                      <span className="text-xs font-extrabold text-foreground/75">$</span>
+                    <div className="flex items-baseline gap-1">
                       <h2 className="text-3xl font-extrabold font-sans text-foreground tracking-tight leading-none">
-                        {displayPrice}
+                        {displayPrice.toLocaleString()}
                       </h2>
+                      <span className="text-xs font-bold text-foreground/75">
+                        {isRtl ? 'جنيه' : 'EGP'}
+                      </span>
                       <span className="text-[10px] text-muted-foreground/60 font-light pl-0.5">{cycleLabel}</span>
                     </div>
                   )}

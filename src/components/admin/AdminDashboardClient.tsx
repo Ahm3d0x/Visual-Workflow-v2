@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { 
   Users, Building2, Store, DollarSign, Check, X, 
   Search, Shield, CreditCard, Clock, 
-  ArrowUpDown, PlayCircle, Layers, Activity
+  ArrowUpDown, PlayCircle, Layers, Activity, Save, Settings, RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,9 +20,19 @@ import {
   getAdminStats,
   getAdminUsers,
   getAdminSubscriptions,
-  getAdminPendingNodes
+  getAdminPendingNodes,
+  getPricingSettings,
+  updatePricingSettings
 } from '@/actions/admin.actions';
-import type { PlanType } from '@/lib/planLimits';
+import { type PlanType, DEFAULT_PRICING } from '@/lib/planLimits';
+
+interface PricingSetting {
+  plan: PlanType;
+  price_monthly: number;
+  price_annual: number;
+  stripe_monthly_price_id: string | null;
+  stripe_annual_price_id: string | null;
+}
 
 interface AdminDashboardClientProps {
   locale: string;
@@ -44,6 +54,7 @@ interface AdminDashboardClientProps {
   }>;
   initialSubscriptions: Array<any>;
   initialPendingNodes: Array<any>;
+  initialPricingSettings: Array<PricingSetting>;
 }
 
 export function AdminDashboardClient({
@@ -52,17 +63,19 @@ export function AdminDashboardClient({
   initialUsers,
   initialSubscriptions,
   initialPendingNodes,
+  initialPricingSettings,
 }: AdminDashboardClientProps) {
   const isRtl = locale === 'ar';
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'subscriptions' | 'nodes'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'subscriptions' | 'nodes' | 'pricing'>('overview');
 
   // Interactive UI Datasets
   const [stats, setStats] = useState(initialStats);
   const [users, setUsers] = useState(initialUsers);
   const [subscriptions, setSubscriptions] = useState(initialSubscriptions);
   const [pendingNodes, setPendingNodes] = useState(initialPendingNodes);
+  const [pricingSettings, setPricingSettings] = useState<PricingSetting[]>(initialPricingSettings);
 
   // Search Filters
   const [userSearch, setUserSearch] = useState('');
@@ -70,6 +83,19 @@ export function AdminDashboardClient({
 
   // Loading States for Actions
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+
+  // Pricing Form State
+  const [pricingForm, setPricingForm] = useState<Record<string, { price_monthly: string; price_annual: string; stripe_monthly_price_id: string; stripe_annual_price_id: string }>>(
+    initialPricingSettings.reduce((acc, curr) => {
+      acc[curr.plan] = {
+        price_monthly: String(curr.price_monthly),
+        price_annual: String(curr.price_annual),
+        stripe_monthly_price_id: curr.stripe_monthly_price_id || '',
+        stripe_annual_price_id: curr.stripe_annual_price_id || '',
+      };
+      return acc;
+    }, {} as any)
+  );
 
   // Localized dictionary
   const t = {
@@ -82,6 +108,7 @@ export function AdminDashboardClient({
       users: isRtl ? 'الحسابات والمستخدمين' : 'Accounts & Users',
       subscriptions: isRtl ? 'الاشتراكات والخطط' : 'Subscriptions & Limits',
       nodes: isRtl ? 'مراجعة الماركت بليس' : 'Marketplace Reviews',
+      pricing: isRtl ? 'إدارة التسعير' : 'Pricing Settings',
     },
     stats: {
       totalUsers: isRtl ? 'إجمالي الأعضاء' : 'Total Registered Users',
@@ -125,16 +152,85 @@ export function AdminDashboardClient({
 
   // Helper to trigger refetch of datasets
   const refetchAllData = async () => {
-    const [statsRes, usersRes, subsRes, pendingNodesRes] = await Promise.all([
+    const [statsRes, usersRes, subsRes, pendingNodesRes, pricingRes] = await Promise.all([
       getAdminStats(),
       getAdminUsers(),
       getAdminSubscriptions(),
-      getAdminPendingNodes()
+      getAdminPendingNodes(),
+      getPricingSettings()
     ]);
     if (statsRes.success) setStats(statsRes.data!);
     if (usersRes.success) setUsers(usersRes.data!);
     if (subsRes.success) setSubscriptions(subsRes.data!);
     if (pendingNodesRes.success) setPendingNodes(pendingNodesRes.data!);
+    if (pricingRes.success && pricingRes.data) {
+      setPricingSettings(pricingRes.data);
+      setPricingForm(
+        pricingRes.data.reduce((acc: any, curr: any) => {
+          acc[curr.plan] = {
+            price_monthly: String(curr.price_monthly),
+            price_annual: String(curr.price_annual),
+            stripe_monthly_price_id: curr.stripe_monthly_price_id || '',
+            stripe_annual_price_id: curr.stripe_annual_price_id || '',
+          };
+          return acc;
+        }, {} as any)
+      );
+    }
+  };
+
+  const handlePricingFormChange = (plan: PlanType, field: string, value: string) => {
+    setPricingForm((prev) => ({
+      ...prev,
+      [plan]: {
+        ...prev[plan],
+        [field]: value
+      }
+    }));
+  };
+
+  const handleSavePricing = async (plan: PlanType) => {
+    const form = pricingForm[plan];
+    if (!form) return;
+
+    const price_monthly = Number(form.price_monthly);
+    const price_annual = Number(form.price_annual);
+
+    if (isNaN(price_monthly) || isNaN(price_annual) || price_monthly < 0 || price_annual < 0) {
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ في المدخلات' : 'Invalid Input',
+        isRtl ? 'يرجى إدخال أرقام صحيحة وغير سالبة للأسعار.' : 'Please enter valid non-negative numbers for pricing.',
+        isRtl ? 'حسناً' : 'OK'
+      );
+      return;
+    }
+
+    const actionId = `pricing-${plan}`;
+    setLoadingAction(actionId);
+
+    const res = await updatePricingSettings(plan, {
+      price_monthly,
+      price_annual,
+      stripe_monthly_price_id: form.stripe_monthly_price_id,
+      stripe_annual_price_id: form.stripe_annual_price_id
+    });
+
+    setLoadingAction(null);
+
+    if (res.error) {
+      useDialogStore.getState().showAlert(
+        isRtl ? 'خطأ في حفظ الأسعار' : 'Error Saving Pricing',
+        res.error,
+        isRtl ? 'حسناً' : 'OK'
+      );
+    } else {
+      await refetchAllData();
+      useDialogStore.getState().showAlert(
+        isRtl ? 'تم الحفظ بنجاح' : 'Pricing Settings Saved',
+        isRtl ? `تم تحديث أسعار خطة ${plan} بنجاح.` : `Pricing settings for plan ${plan} updated successfully.`,
+        isRtl ? 'موافق' : 'Done'
+      );
+    }
   };
 
   // Toggle Admin status action handler
@@ -325,7 +421,7 @@ export function AdminDashboardClient({
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-extrabold tracking-tight text-emerald-600 dark:text-emerald-400">
-                  ${stats.estimatedMrr.toLocaleString()}
+                  {isRtl ? `${stats.estimatedMrr.toLocaleString()} ج.م` : `${stats.estimatedMrr.toLocaleString()} EGP`}
                 </div>
                 <p className="text-[10px] text-muted-foreground/60 mt-1 font-light">
                   {isRtl ? 'حساب تقديري بناء على الاشتراكات النشطة حالياً' : 'Sum of monthly price valuations of active tiers.'}
@@ -556,11 +652,16 @@ export function AdminDashboardClient({
                                 onChange={(e) => handlePlanChange(sub.workspace_id, e.target.value as PlanType)}
                                 className="bg-background text-foreground border border-border rounded-xl px-2.5 py-1.5 text-xs font-bold focus:outline-hidden cursor-pointer w-36 hover:bg-muted"
                               >
-                                <option value="free">{isRtl ? 'Free (المجانية)' : 'Free Tier'}</option>
-                                <option value="warrior">Warrior ($12)</option>
-                                <option value="elite">Elite ($29)</option>
-                                <option value="champion">Champion ($79)</option>
-                                <option value="legend">Legend ($199)</option>
+                                <option value="free">{isRtl ? 'المجانية (Free)' : 'Free Tier'}</option>
+                                {(Object.keys(DEFAULT_PRICING) as PlanType[]).map((pPlan) => {
+                                  const dbPlan = pricingSettings.find(p => p.plan === pPlan);
+                                  const price = dbPlan ? dbPlan.price_monthly : DEFAULT_PRICING[pPlan as keyof typeof DEFAULT_PRICING].price_monthly;
+                                  return (
+                                    <option key={pPlan} value={pPlan}>
+                                      {pPlan.charAt(0).toUpperCase() + pPlan.slice(1)} ({price} {isRtl ? 'ج.م' : 'EGP'})
+                                    </option>
+                                  );
+                                })}
                               </select>
                             )}
                           </div>
@@ -679,6 +780,111 @@ export function AdminDashboardClient({
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB 5: PRICING SETTINGS */}
+      {activeTab === 'pricing' && (
+        <div className="space-y-6 animate-fadeIn">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {(Object.keys(DEFAULT_PRICING) as PlanType[]).map((plan) => {
+              const form = pricingForm[plan] || { price_monthly: '0', price_annual: '0', stripe_monthly_price_id: '', stripe_annual_price_id: '' };
+              const activeLoading = loadingAction === `pricing-${plan}`;
+
+              return (
+                <Card key={plan} className="bg-background/45 backdrop-blur-md border border-border overflow-hidden">
+                  <CardHeader className="pb-3 border-b border-border/40 bg-muted/10">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-accent/15 text-accent p-1.5 rounded-lg shrink-0 border border-accent/20">
+                        <Settings className="w-4 h-4" />
+                      </div>
+                      <CardTitle className="text-sm font-extrabold capitalize">
+                        {plan} Plan Settings
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="py-4 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Monthly Price */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {isRtl ? 'السعر الشهري (ج.م)' : 'Monthly Price (EGP)'}
+                        </label>
+                        <Input
+                          type="number"
+                          value={form.price_monthly}
+                          onChange={(e) => handlePricingFormChange(plan, 'price_monthly', e.target.value)}
+                          className="rounded-xl border-border bg-background/50 h-9 font-mono text-xs"
+                          min="0"
+                        />
+                      </div>
+
+                      {/* Annual Price */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {isRtl ? 'السعر السنوي (ج.م)' : 'Annual Price (EGP)'}
+                        </label>
+                        <Input
+                          type="number"
+                          value={form.price_annual}
+                          onChange={(e) => handlePricingFormChange(plan, 'price_annual', e.target.value)}
+                          className="rounded-xl border-border bg-background/50 h-9 font-mono text-xs"
+                          min="0"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 pt-2 border-t border-border/40">
+                      {/* Stripe Monthly ID */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {isRtl ? 'معرف سعر Stripe الشهري' : 'Stripe Monthly Price ID'}
+                        </label>
+                        <Input
+                          type="text"
+                          value={form.stripe_monthly_price_id}
+                          onChange={(e) => handlePricingFormChange(plan, 'stripe_monthly_price_id', e.target.value)}
+                          placeholder="price_..."
+                          className="rounded-xl border-border bg-background/50 h-9 font-mono text-xs"
+                        />
+                      </div>
+
+                      {/* Stripe Annual ID */}
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {isRtl ? 'معرف سعر Stripe السنوي' : 'Stripe Annual Price ID'}
+                        </label>
+                        <Input
+                          type="text"
+                          value={form.stripe_annual_price_id}
+                          onChange={(e) => handlePricingFormChange(plan, 'stripe_annual_price_id', e.target.value)}
+                          placeholder="price_..."
+                          className="rounded-xl border-border bg-background/50 h-9 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+
+                  {/* Save Footer */}
+                  <div className="border-t border-border/40 p-4 bg-muted/20 flex justify-end">
+                    <Button
+                      onClick={() => handleSavePricing(plan)}
+                      disabled={activeLoading}
+                      className="bg-primary hover:bg-primary/95 text-primary-foreground font-bold text-xs h-9 rounded-xl px-4 cursor-pointer flex items-center gap-1.5"
+                    >
+                      {activeLoading ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Save className="w-3.5 h-3.5" />
+                      )}
+                      <span>{isRtl ? 'حفظ التغييرات' : 'Save Pricing'}</span>
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

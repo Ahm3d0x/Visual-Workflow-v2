@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { getWorkspaceSubscription, getUsageMetrics } from '@/actions/billing.actions';
+import { getPricingSettings } from '@/actions/admin.actions';
 import { BillingClient } from '@/components/billing/BillingClient';
 import { PlanType } from '@/lib/planLimits';
 import { provisionWorkspaceIfNeeded } from '@/lib/supabase/provision';
@@ -84,9 +85,15 @@ export default async function BillingPage({
     );
   }
 
-  // 3. Fetch subscription details and usage counts
-  const { subscription } = await getWorkspaceSubscription(activeWorkspace.id);
-  const metrics = await getUsageMetrics(activeWorkspace.id, user.id);
+  // 3. Fetch subscription details, usage counts, and pricing settings in parallel
+  const [subRes, metricsRes, pricingRes] = await Promise.all([
+    getWorkspaceSubscription(activeWorkspace.id),
+    getUsageMetrics(activeWorkspace.id, user.id),
+    getPricingSettings()
+  ]);
+
+  const { subscription } = subRes;
+  const metrics = metricsRes;
 
   const defaultUsage = {
     workflows: { current: 0, limit: 3 },
@@ -117,6 +124,7 @@ export default async function BillingPage({
       }}
       subscription={subscription as { status?: string; [key: string]: unknown } | null}
       usage={usage}
+      pricingSettings={pricingRes.success ? pricingRes.data! : []}
     />
   );
 }

@@ -57,9 +57,9 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // getSession reads from the JWT cookie — no network call, instant
-  const { data: { session } } = await supabase.auth.getSession();
-  const isLoggedIn = !!session?.user;
+  // getUser validates the session token and refreshes it if needed
+  const { data: { user } } = await supabase.auth.getUser();
+  const isLoggedIn = !!user;
 
   if (isProtected && !isLoggedIn) {
     const redirectUrl = new URL(`/${locale}/auth/sign-in`, request.url);

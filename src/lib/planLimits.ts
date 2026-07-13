@@ -284,3 +284,11 @@ export async function checkPlanLimit(
     plan,
   };
 }
+
+export const DEFAULT_PRICING = {
+  warrior: { price_monthly: 600, price_annual: 5000, stripe_monthly_price_id: 'price_warrior_monthly', stripe_annual_price_id: 'price_warrior_annual' },
+  elite: { price_monthly: 1500, price_annual: 12500, stripe_monthly_price_id: 'price_elite_monthly', stripe_annual_price_id: 'price_elite_annual' },
+  champion: { price_monthly: 4000, price_annual: 33500, stripe_monthly_price_id: 'price_champion_monthly', stripe_annual_price_id: 'price_champion_annual' },
+  legend: { price_monthly: 10000, price_annual: 85000, stripe_monthly_price_id: 'price_legend_monthly', stripe_annual_price_id: 'price_legend_annual' }
+};
+
