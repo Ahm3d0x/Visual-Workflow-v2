@@ -14,6 +14,7 @@ export const nodeTypes = {
   note: CustomNode,
   group: CustomNode,
   delay: CustomNode,
+  connector: CustomNode,
   // Logic (kept in registry for existing workflows)
   if_else: CustomNode,
   switch: CustomNode,
@@ -29,6 +30,7 @@ export const nodeTypes = {
   transform: CustomNode,
   filter: CustomNode,
   mapper: CustomNode,
+  table_lookup: CustomNode,
   // Integration (kept in registry for existing workflows)
   api_request: CustomNode,
   webhook: CustomNode,
@@ -38,11 +40,13 @@ export const nodeTypes = {
   database: CustomNode,
   file_upload: CustomNode,
   google_sheets: CustomNode,
+  crm: CustomNode,
   // Human
   form_step: CustomNode,
   approval: CustomNode,
   user_task: CustomNode,
   checklist: CustomNode,
+  attachment: CustomNode,
   signature: CustomNode,
   // AI (kept in registry for existing workflows)
   ai_generate: CustomNode,
@@ -51,6 +55,7 @@ export const nodeTypes = {
   ai_summarize: CustomNode,
   ai_route: CustomNode,
   ai_validator: CustomNode,
+  ai_assistant: CustomNode,
   // Marketplace installed nodes use 'custom_template' type
 };
 
