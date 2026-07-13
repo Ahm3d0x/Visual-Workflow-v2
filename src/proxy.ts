@@ -57,9 +57,11 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  // getUser validates the session token and refreshes it if needed
-  const { data: { user } } = await supabase.auth.getUser();
-  const isLoggedIn = !!user;
+  // getSession reads from the cookie — zero network round-trip.
+  // The middleware only needs to know if a session exists for redirecting.
+  // Full JWT validation still happens in Server Components via getUser().
+  const { data: { session } } = await supabase.auth.getSession();
+  const isLoggedIn = !!session;
 
   if (isProtected && !isLoggedIn) {
     const redirectUrl = new URL(`/${locale}/auth/sign-in`, request.url);

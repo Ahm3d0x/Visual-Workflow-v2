@@ -39,10 +39,10 @@ export default async function DashboardPage({
   const { w: activeWorkspaceId } = (await searchParams) || {};
   const supabase = await createClient();
 
-  // 1. Validate active user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Use getSession() (cookie-only, zero network) — the layout's getUser() already
+  // performed the authoritative JWT validation and would have redirected if invalid.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
 
   if (!user) {
     redirect(`/${locale}/auth/sign-in`);

@@ -31,46 +31,49 @@ export default async function MainLayout({
   // 1. Create Supabase Server Client
   const supabase = await createClient();
 
-  // 2. Validate current session user
+  // 2. Validate session — this is the single authoritative getUser() call.
+  //    Middleware already redirects unauthenticated users, but we still call
+  //    getUser() here for full server-side JWT validation on protected pages.
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    // Redirect unauthenticated users straight to localized sign-in
     redirect(`/${locale}/auth/sign-in`);
   }
 
-  // 3. Fetch user profile record
-  const { data: profile } = await (supabase
-    .from('profiles')
-    .select('full_name, email, avatar_url, is_admin')
-    .eq('id', user.id)
-    .single() as unknown as { data: ProfileRecord | null });
+  // 3. Fetch profile + workspaces in parallel — eliminates sequential DB round-trips
+  const [
+    { data: profile },
+    { data: memberRecords },
+  ] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('full_name, email, avatar_url, is_admin')
+      .eq('id', user.id)
+      .single() as unknown as Promise<{ data: ProfileRecord | null }>,
 
-  // 4. Fetch workspaces this user is a member of
-  const { data: memberRecords } = await (supabase
-    .from('workspace_members')
-    .select('role, workspaces(id, name, plan)')
-    .eq('user_id', user.id) as unknown as { data: WorkspaceRecord[] | null });
+    supabase
+      .from('workspace_members')
+      .select('role, workspaces(id, name, plan)')
+      .eq('user_id', user.id) as unknown as Promise<{ data: WorkspaceRecord[] | null }>,
+  ]);
 
-  // Map joined records to workspace lists (including user role in workspace)
+  // Map joined records to workspace list (including user role)
   let workspaces: Array<{ id: string; name: string; plan: string; role?: string }> = memberRecords
     ? memberRecords
         .map((r) => r.workspaces ? { ...r.workspaces, role: r.role } : null)
         .filter((w): w is { id: string; name: string; plan: string; role: string } => w !== null)
     : [];
 
-  // Fallback workspace if user trigger hasn't finished in rare races
+  // Fallback: self-heal if DB trigger hasn't provisioned workspace yet
   if (workspaces.length === 0) {
-    // Dynamically self-heal profile by provisioning missing workspaces
     await provisionWorkspaceIfNeeded(user.id, user.email || '', profile?.full_name || null);
 
-    // Refetch membership records
     const { data: refetchedRecords } = await (supabase
       .from('workspace_members')
       .select('role, workspaces(id, name, plan)')
-      .eq('user_id', user.id) as unknown as { data: WorkspaceRecord[] | null });
+      .eq('user_id', user.id) as unknown as Promise<{ data: WorkspaceRecord[] | null }>);
 
     workspaces = refetchedRecords
       ? refetchedRecords
@@ -79,7 +82,7 @@ export default async function MainLayout({
       : [];
   }
 
-  // Double fallback to local mock workspace if RLS prevents inserts
+  // Double fallback: local mock workspace if RLS prevents inserts
   if (workspaces.length === 0) {
     workspaces.push({
       id: 'default',

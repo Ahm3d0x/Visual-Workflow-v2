@@ -10,9 +10,10 @@ export default async function AdminPage({
 }) {
   const { locale } = await params;
 
-  // 1. Verify user session and check if they are an admin
+  // Use getSession() (cookie-only, zero network) — layout already validated JWT.
   const supabase = await createClient();
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  const { data: { session }, error: authError } = await supabase.auth.getSession();
+  const user = session?.user;
 
   if (authError || !user) {
     redirect(`/${locale}/auth/sign-up`);

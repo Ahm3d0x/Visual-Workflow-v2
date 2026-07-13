@@ -18,10 +18,9 @@ export default async function ProfileSettingsPage({
   const { locale } = await params;
   const supabase = await createClient();
 
-  // 1. Authenticate user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Use getSession() (cookie-only, zero network) — layout already validated JWT.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
 
   if (!user) {
     redirect(`/${locale}/auth/sign-in`);

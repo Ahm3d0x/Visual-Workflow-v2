@@ -13,7 +13,9 @@ export default async function MarketplacePage({
   const { w: workspaceId } = await searchParams;
   const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // Use getSession() (cookie-only, zero network) — layout already validated JWT.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) redirect(`/${locale}/auth/sign-in`);
 
   // Fetch published marketplace nodes

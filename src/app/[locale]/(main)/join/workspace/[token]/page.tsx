@@ -16,8 +16,9 @@ export default async function WorkspaceJoinPage({ params }: JoinPageProps) {
   const supabase = await createClient();
   const nowTime = new Date().getTime();
 
-  // 1. Authenticate user - if not logged in, redirect to sign-in with redirect parameter
-  const { data: { user } } = await supabase.auth.getUser();
+  // Use getSession() (cookie-only, zero network) — layout already validated JWT.
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) {
     redirect(`/${locale}/auth/sign-in?redirectUrl=/join/workspace/${token}`);
   }
