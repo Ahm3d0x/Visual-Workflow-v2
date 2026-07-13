@@ -461,6 +461,7 @@ export function QuickActions({ workspaceId, locale }: QuickActionsProps) {
         ref={fileInputRef}
         onChange={handleImportJson}
         className="hidden"
+        suppressHydrationWarning
       />
 
       {/* 1. Create Workflow Trigger Dialog */}

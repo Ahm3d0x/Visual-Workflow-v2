@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getUser } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { DashboardShell } from '@/components/dashboard/DashboardShell';
 import { provisionWorkspaceIfNeeded } from '@/lib/supabase/provision';
@@ -28,19 +28,16 @@ export default async function MainLayout({
 }) {
   const { locale } = await params;
   
-  // 1. Create Supabase Server Client
-  const supabase = await createClient();
-
-  // 2. Validate session — this is the single authoritative getUser() call.
-  //    Middleware already redirects unauthenticated users, but we still call
-  //    getUser() here for full server-side JWT validation on protected pages.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Cached getUser() — React.cache() deduplicates this across layout + page.
+  // Only one network call to Supabase Auth is made per request.
+  const { user } = await getUser();
 
   if (!user) {
     redirect(`/${locale}/auth/sign-in`);
   }
+
+  // Supabase client needed for DB queries (profile + workspaces)
+  const supabase = await createClient();
 
   // 3. Fetch profile + workspaces in parallel — eliminates sequential DB round-trips
   const [

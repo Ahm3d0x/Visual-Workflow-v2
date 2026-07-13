@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getUser } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { StatsBar } from '@/components/dashboard/StatsBar';
 import { QuickActions } from '@/components/dashboard/QuickActions';
@@ -39,10 +39,9 @@ export default async function DashboardPage({
   const { w: activeWorkspaceId } = (await searchParams) || {};
   const supabase = await createClient();
 
-  // Use getSession() (cookie-only, zero network) — the layout's getUser() already
-  // performed the authoritative JWT validation and would have redirected if invalid.
-  const { data: { session } } = await supabase.auth.getSession();
-  const user = session?.user;
+  // Cached getUser() — React.cache() deduplicates with the layout's call.
+  // Secure (full JWT validation) with zero extra network round-trip.
+  const { user } = await getUser();
 
   if (!user) {
     redirect(`/${locale}/auth/sign-in`);

@@ -29,3 +29,20 @@ export async function createClient() {
     }
   )
 }
+
+/**
+ * React cache()-wrapped getUser.
+ *
+ * Deduplicates the getUser() network call across all Server Components in the
+ * same request. If layout AND page both call getUser(), only ONE round-trip
+ * goes to Supabase Auth — giving us the performance benefit without the
+ * security warning from using getSession().
+ *
+ * Use this everywhere instead of supabase.auth.getUser() directly.
+ * (Middleware keeps getSession() since it cannot use React cache.)
+ */
+export const getUser = cache(async () => {
+  const supabase = await createClient()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  return { user, error }
+})

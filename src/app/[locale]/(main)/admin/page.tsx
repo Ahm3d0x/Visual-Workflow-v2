@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getUser } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { getAdminStats, getAdminUsers, getAdminSubscriptions, getAdminPendingNodes, getPricingSettings } from '@/actions/admin.actions';
 import { AdminDashboardClient } from '@/components/admin/AdminDashboardClient';
@@ -10,10 +10,9 @@ export default async function AdminPage({
 }) {
   const { locale } = await params;
 
-  // Use getSession() (cookie-only, zero network) — layout already validated JWT.
+  // Cached getUser() — React.cache() deduplicates with the layout's call.
   const supabase = await createClient();
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  const user = session?.user;
+  const { user, error: authError } = await getUser();
 
   if (authError || !user) {
     redirect(`/${locale}/auth/sign-up`);

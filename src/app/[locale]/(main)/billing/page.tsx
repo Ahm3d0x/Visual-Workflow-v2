@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, getUser } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { getWorkspaceSubscription, getUsageMetrics } from '@/actions/billing.actions';
 import { getPricingSettings } from '@/actions/admin.actions';
@@ -24,9 +24,8 @@ export default async function BillingPage({
   const { locale } = await params;
   const supabase = await createClient();
 
-  // Use getSession() (cookie-only, zero network) — layout already validated JWT.
-  const { data: { session } } = await supabase.auth.getSession();
-  const user = session?.user;
+  // Cached getUser() — React.cache() deduplicates with the layout's call.
+  const { user } = await getUser();
 
   if (!user) {
     redirect(`/${locale}/auth/sign-in`);
