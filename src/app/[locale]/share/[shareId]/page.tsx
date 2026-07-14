@@ -23,6 +23,7 @@ interface WorkflowRecord {
   description: string | null;
   created_at: string;
   updated_at: string;
+  is_whiteboard?: boolean;
 }
 
 interface NodeRecord {
@@ -134,10 +135,10 @@ export default async function SharedWorkflowPage({
     }
   }
 
-  // 4. Fetch the workflow (including workspace_id)
+  // 4. Fetch the workflow (including workspace_id and is_whiteboard)
   const { data: workflow } = await (supabase
     .from('workflows')
-    .select('id, workspace_id, name, description, created_at, updated_at')
+    .select('id, workspace_id, name, description, created_at, updated_at, is_whiteboard')
     .eq('id', share.workflow_id)
     .maybeSingle() as unknown as Promise<{ data: WorkflowRecord | null }>);
 
@@ -170,8 +171,17 @@ export default async function SharedWorkflowPage({
       }
     }
 
+    if (workflow.is_whiteboard) {
+      redirect(`/${locale}/whiteboards/${workflow.id}`);
+    }
+
     if (share.role === 'editor') {
       redirect(`/${locale}/workflows/${share.workflow_id}`);
+    }
+  } else {
+    // If it's a whiteboard and user is not logged in, force login
+    if (workflow.is_whiteboard) {
+      redirect(`/${locale}/auth/sign-in?redirect=/${locale}/share/${shareId}`);
     }
   }
 

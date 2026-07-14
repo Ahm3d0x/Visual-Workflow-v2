@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import { useRouter } from '@/i18n/routing';
 import { createClient } from '@/lib/supabase/client';
 import { BoardCanvas } from '@/components/nodes/BoardCanvas';
 import { ErrorBoundary } from '@/components/editor/ErrorBoundary';
 import type { BoardStroke } from '@/components/nodes/BoardNode';
+import { useEditorStore } from '@/stores/editorStore';
 
 interface WhiteboardClientProps {
   whiteboardId: string;
@@ -19,6 +20,7 @@ interface WhiteboardClientProps {
   };
   workspaceId: string;
   userRole?: string;
+  canShareLinks: boolean;
 }
 
 export function WhiteboardClient({
@@ -27,9 +29,25 @@ export function WhiteboardClient({
   initialBoardData,
   workspaceId,
   userRole,
+  canShareLinks,
 }: WhiteboardClientProps) {
   const router = useRouter();
   const supabase = createClient();
+
+  // Sync whiteboard properties to global editor store
+  const setUserRole = useEditorStore((s) => s.setUserRole);
+  const setWorkspaceId = useEditorStore((s) => s.setWorkspaceId);
+  const setWorkflowId = useEditorStore((s) => s.setWorkflowId);
+  const setWorkflowName = useEditorStore((s) => s.setWorkflowName);
+  const setCanShareLinks = useEditorStore((s) => s.setCanShareLinks);
+
+  useEffect(() => {
+    setUserRole(userRole || null);
+    setWorkspaceId(workspaceId);
+    setWorkflowId(whiteboardId);
+    setWorkflowName(name);
+    setCanShareLinks(canShareLinks);
+  }, [userRole, workspaceId, whiteboardId, name, canShareLinks, setUserRole, setWorkspaceId, setWorkflowId, setWorkflowName, setCanShareLinks]);
 
   const boardDataRef = useRef({
     boardStrokes: initialBoardData?.boardStrokes || [],

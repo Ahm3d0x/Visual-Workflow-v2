@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect, notFound } from 'next/navigation';
 import { WhiteboardClient } from '@/components/whiteboard/WhiteboardClient';
+import { PLAN_LIMITS } from '@/lib/planLimits';
+import type { PlanType } from '@/lib/planLimits';
 
 interface WorkspaceMemberRecord {
   role: 'owner' | 'admin' | 'editor' | 'commenter' | 'viewer';
@@ -79,13 +81,24 @@ export default async function WhiteboardEditorPage({
     redirect(`/${locale}/dashboard`);
   }
 
+  // 4. Fetch subscription to determine plan feature gates
+  const { data: sub } = await (supabase
+    .from('subscriptions')
+    .select('plan')
+    .eq('workspace_id', whiteboard.workspace_id)
+    .maybeSingle() as unknown as { data: { plan: string } | null });
+
+  const plan = (sub?.plan as PlanType) || 'free';
+  const canShareLinks = PLAN_LIMITS[plan]?.can_share_links ?? false;
+
   return (
     <WhiteboardClient
       whiteboardId={whiteboard.id}
       name={whiteboard.name}
-      initialBoardData={(whiteboard.board_data as any) || {}}
+      initialBoardData={(whiteboard.board_data as unknown as Parameters<typeof WhiteboardClient>[0]['initialBoardData']) || {}}
       workspaceId={whiteboard.workspace_id}
       userRole={userRole}
+      canShareLinks={canShareLinks}
     />
   );
 }

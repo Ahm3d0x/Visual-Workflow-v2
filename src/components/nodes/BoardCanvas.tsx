@@ -462,7 +462,9 @@ export function BoardCanvas({
   const [canDrawLocal, setCanDrawLocal] = useState<boolean>(true);
 
   useEffect(() => {
-    if (initialReadOnlyForOthers && roleToUse !== 'owner' && roleToUse !== 'admin') {
+    if (roleToUse === 'viewer' || roleToUse === 'commenter') {
+      setCanDrawLocal(false);
+    } else if (initialReadOnlyForOthers && roleToUse !== 'owner' && roleToUse !== 'admin') {
       setCanDrawLocal(false);
     } else {
       setCanDrawLocal(true);
@@ -761,6 +763,10 @@ export function BoardCanvas({
 
     ch.on('broadcast', { event: 'toggle_drawing' }, ({ payload }) => {
       if (payload?.userId === currentUserId) {
+        if (roleToUse === 'viewer' || roleToUse === 'commenter') {
+          setCanDrawLocal(false);
+          return;
+        }
         setCanDrawLocal(payload.canDraw);
         if (!payload.canDraw) {
           useDialogStore.getState().showNotification('Your drawing permission has been disabled by the owner', 'warning', 4000);
@@ -773,6 +779,10 @@ export function BoardCanvas({
 
     ch.on('broadcast', { event: 'toggle_read_only' }, ({ payload }) => {
       if (roleToUse !== 'owner' && roleToUse !== 'admin') {
+        if (roleToUse === 'viewer' || roleToUse === 'commenter') {
+          setCanDrawLocal(false);
+          return;
+        }
         const canDraw = !payload?.readOnlyForOthers;
         setCanDrawLocal(canDraw);
         if (!canDraw) {
